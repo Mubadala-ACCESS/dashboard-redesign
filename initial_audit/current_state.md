@@ -33,7 +33,7 @@ This folder should contain:
 
 Code snapshot link:
 
-[Download the current dashboard code snapshot](./dashboard-V1.txt)
+[Download the current dashboard code snapshot](.current_views_and_code/dashboard-V1.txt)
 
 ---
 
@@ -43,7 +43,7 @@ Code snapshot link:
 
 This is the current landing view of the dashboard. It presents the monitoring network on a map with a left-hand filter panel.
 
-![Current homepage / map view](./01_homepage.jpg)
+![Current homepage / map view](current_views_and_code/01_homepage.jpg)
 
 #### Observations
 - The map is the dominant content area.
@@ -65,7 +65,7 @@ This is the current landing view of the dashboard. It presents the monitoring ne
 
 This is the station popup shown when a user clicks a station marker on the map.
 
-![Current station info popup](./02_station_info.jpg)
+![Current station info popup](current_views_and_code/02_station_info.jpg)
 
 #### Observations
 - The popup includes:
@@ -85,7 +85,7 @@ This is the station popup shown when a user clicks a station marker on the map.
 
 This is the metadata modal opened from the station popup.
 
-![Current station metadata modal](./03_station_metadata.jpg)
+![Current station metadata modal](current_views_and_code/03_station_metadata.jpg)
 
 #### Observations
 - The modal includes:
@@ -108,7 +108,7 @@ This is the metadata modal opened from the station popup.
 
 This is the detailed station data page.
 
-![Current station data page](./04_station_data.png)
+![Current station data page](current_views_and_code/04_station_data.png)
 
 #### Observations
 - The left sidebar includes:
@@ -171,7 +171,7 @@ The current dashboard is implemented as a **Dash multipage application**.
 ### Current code snapshot included
 The current code snapshot is included in this folder as:
 
-[dashboard-V1.txt](./dashboard-V1.txt)
+[dashboard-V1.txt](current_views_and_code/dashboard-V1.txt)
 
 ---
 
