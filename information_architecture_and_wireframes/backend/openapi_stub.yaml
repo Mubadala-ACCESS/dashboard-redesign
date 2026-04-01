@@ -1,0 +1,57 @@
+openapi: 3.1.0
+info:
+  title: ACCESS Dashboard API
+  version: 0.1.0
+paths:
+  /api/map/stations:
+    get:
+      summary: Get map stations
+      parameters:
+        - in: query
+          name: privacy
+          schema: { type: string }
+        - in: query
+          name: device_type
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+        - in: query
+          name: search
+          schema: { type: string }
+      responses:
+        "200":
+          description: Map station payload
+  /api/stations/{station_id}:
+    get:
+      summary: Get station summary
+      parameters:
+        - in: path
+          name: station_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Station summary
+  /api/stations/{station_id}/latest:
+    get:
+      summary: Get latest readings
+      parameters:
+        - in: path
+          name: station_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Latest readings
+  /api/stations/{station_id}/metadata:
+    get:
+      summary: Get metadata payload
+      parameters:
+        - in: path
+          name: station_id
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Station metadata
