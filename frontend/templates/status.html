@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page simple-page status-page" data-status-summary='{{ status_summary | tojson | safe }}' data-status-rows='{{ status_rows | tojson | safe }}'>
+  <section class="page-hero compact-hero">
+    <div>
+      <span class="eyebrow">Network status</span>
+      <h1>Operational overview</h1>
+      <p class="lead">A professional status table for station availability, freshness, and current issues across the monitored network.</p>
+    </div>
+    <div class="status-hero-actions">
+      <button id="refresh-status" class="primary-button" type="button">Refresh status</button>
+    </div>
+  </section>
+
+  <section class="status-summary-grid">
+    <article class="metric-card"><span>Total stations</span><strong id="status-total">{{ status_summary.total }}</strong><small>Stations in the monitored network.</small></article>
+    <article class="metric-card"><span>Healthy</span><strong id="status-healthy">{{ status_summary.healthy }}</strong><small>Fresh data with no detected problems.</small></article>
+    <article class="metric-card"><span>Maintenance</span><strong id="status-maintenance">{{ status_summary.maintenance }}</strong><small>Stations with stale data or detected issues.</small></article>
+    <article class="metric-card"><span>Decommissioned</span><strong id="status-decommissioned">{{ status_summary.decommissioned }}</strong><small>Excluded from the active monitoring view.</small></article>
+  </section>
+
+  <section class="table-card status-table-card">
+    <div class="section-head">
+      <div>
+        <h3>Status table</h3>
+        <p>Live station health based on the latest available record and readable issue checks.</p>
+      </div>
+    </div>
+    <div class="table-scroll">
+      <table id="status-table">
+        <thead>
+          <tr>
+            <th>Station</th>
+            <th>Device</th>
+            <th>Status</th>
+            <th>Last update</th>
+            <th>Issues</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/status.js"></script>
+{% endblock %}

@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page simple-page">
+  <section class="hero-panel compact">
+    <div>
+      <span class="eyebrow">Support</span>
+      <h1>How to use the dashboard</h1>
+      <p class="lead">A guided overview for public users, analysts, and deployment teams.</p>
+    </div>
+  </section>
+  <section class="support-grid">
+    <article class="support-card">
+      <h2>Quick workflow</h2>
+      <ol>
+        <li>Start on the map and filter by privacy, device type, or station status.</li>
+        <li>Open a marker popup to view metadata or move to the station detail page.</li>
+        <li>Use Quick View for interpreted conditions and Advanced Analysis for exports and trend work.</li>
+      </ol>
+    </article>
+    <article class="support-card">
+      <h2>Research workflow</h2>
+      <ol>
+        <li>Select display period and aggregation.</li>
+        <li>Choose metrics and enable individual sensor readings when needed.</li>
+        <li>Export the exact view as CSV or JSON, or open the printable report for review packages.</li>
+      </ol>
+    </article>
+    <article class="support-card">
+      <h2>Glossary highlights</h2>
+      {% for item in glossary_preview %}
+      <div class="mini-glossary">
+        <strong>{{ item.title }}</strong>
+        <p>{{ item.summary }}</p>
+      </div>
+      {% endfor %}
+      <a href="/glossary">Open full glossary</a>
+    </article>
+    <article class="support-card">
+      <h2>Operational notes</h2>
+      <p>The backend caches filter sets, station summaries, metadata, and network alert rollups to reduce repeated Mongo reads. Recommended Mongo indexes and the long-term PostgreSQL replacement schema are included in the deployment package.</p>
+      <a href="https://fastapi.tiangolo.com/" rel="noreferrer" target="_blank">FastAPI reference</a>
+    </article>
+  </section>
+</main>
+{% endblock %}

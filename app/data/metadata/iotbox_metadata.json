@@ -1,0 +1,45 @@
+[
+  {
+    "column_name": "Temperature",
+    "full_descriptor": "Air Temperature",
+    "units": "°C",
+    "definition": "Measured temperature from air sensors"
+  },
+  {
+    "column_name": "Humidity",
+    "full_descriptor": "Relative Humidity",
+    "units": "%",
+    "definition": "Measured relative humidity from air sensors"
+  },
+  {
+    "column_name": "Pressure",
+    "full_descriptor": "Atmospheric Pressure",
+    "units": "hPa",
+    "definition": "Atmospheric pressure recorded by air sensors"
+  },
+  {
+    "column_name": "CO2",
+    "full_descriptor": "CO2 Concentration",
+    "units": "ppm",
+    "definition": "Concentration of CO2 measured by the sensor"
+  },
+  {
+    "column_name": "PM1Mass",
+    "full_descriptor": "PM1 Mass",
+    "units": "µg/m³",
+    "definition": "Mass of particles per unit volume for PM1 size"
+  },
+  {
+    "column_name": "PM2.5Mass",
+    "full_descriptor": "PM2.5 Mass",
+    "units": "µg/m³",
+    "definition": "Mass of particles per unit volume for PM2.5 size"
+  },
+  {
+    "column_name": "PM10Mass",
+    "full_descriptor": "PM10 Mass",
+    "units": "µg/m³",
+    "definition": "Mass of particles per unit volume for PM10 size"
+  }
+]
+

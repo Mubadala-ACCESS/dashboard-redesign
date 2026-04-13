@@ -1,0 +1,81 @@
+[
+  {
+    "column_name": "Date",
+    "full_descriptor": "Date",
+    "units": "DD-MM-YYYY",
+    "definition": "Calendar date of the measurement"
+  },
+  {
+    "column_name": "Time",
+    "full_descriptor": "Time",
+    "units": "hh:mm:ss",
+    "definition": "Time of day at which the measurement was taken"
+  },
+  {
+    "column_name": "Press",
+    "full_descriptor": "Pressure",
+    "units": "dbar",
+    "definition": "Hydrostatic pressure at the sensor, proportional to depth"
+  },
+  {
+    "column_name": "Temp",
+    "full_descriptor": "Temperature",
+    "units": "°C",
+    "definition": "In-situ water temperature"
+  },
+  {
+    "column_name": "Cond",
+    "full_descriptor": "Conductivity",
+    "units": "mS/cm",
+    "definition": "Electrical conductivity of the water, used to derive salinity"
+  },
+  {
+    "column_name": "Sal",
+    "full_descriptor": "Salinity",
+    "units": "PSU",
+    "definition": "Practical salinity, a unitless ratio derived from conductivity"
+  },
+  {
+    "column_name": "OPTSat",
+    "full_descriptor": "Optical oxygen saturation",
+    "units": "%",
+    "definition": "Percent of dissolved oxygen relative to its saturation concentration"
+  },
+  {
+    "column_name": "OPTppm",
+    "full_descriptor": "Optical oxygen concentration",
+    "units": "ppm",
+    "definition": "Dissolved oxygen concentration measured optically, in parts per million"
+  },
+  {
+    "column_name": "pH",
+    "full_descriptor": "pH",
+    "units": "pH units",
+    "definition": "Acidity/alkalinity of the water"
+  },
+  {
+    "column_name": "PAR",
+    "full_descriptor": "Photosynthetically Active Radiation",
+    "units": "arbitrary units",
+    "definition": "Relative intensity of light usable by phytoplankton"
+  },
+  {
+    "column_name": "Trx-Chl-a",
+    "full_descriptor": "Chlorophyll-a fluorescence",
+    "units": "µg/L",
+    "definition": "Proxy for phytoplankton biomass measured via fluorescence"
+  },
+  {
+    "column_name": "Trx-Neph",
+    "full_descriptor": "Turbidity (nephelometric)",
+    "units": "FTU",
+    "definition": "Water turbidity measured in Nephelometric Turbidity Units"
+  },
+  {
+    "column_name": "Pethr",
+    "full_descriptor": "Phycoerythrin fluorescence",
+    "units": "µg/L",
+    "definition": "Fluorescence signal for phycoerythrin, indicating certain algal pigments"
+  }
+]
+

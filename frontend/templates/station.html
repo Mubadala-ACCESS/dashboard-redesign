@@ -1,0 +1,127 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page station-page" data-station-id="{{ station.station_id }}">
+  <aside class="left-rail">
+    <div class="side-summary-card">
+      <span class="eyebrow">Station {{ station.station_num or station.station_id }}</span>
+      <h1>{{ station.name }}</h1>
+      <p>{{ station.device_label }} · {{ station.location_text }}</p>
+
+      <div class="pill-row">
+        <span class="status-pill {{ station.status|lower|replace(' ', '-') }}">{{ station.status }}</span>
+        <span class="status-pill subtle">{{ station.privacy }}</span>
+      </div>
+
+      <div class="side-kv">
+        <div>
+          <span>Latitude</span>
+          <strong>{{ '%.4f'|format(station.lat or 0) }}</strong>
+        </div>
+        <div>
+          <span>Longitude</span>
+          <strong>{{ '%.4f'|format(station.lon or 0) }}</strong>
+        </div>
+      </div>
+
+      <div class="cta-column">
+        <button class="ghost-button" id="open-station-metadata" type="button">Station metadata</button>
+      </div>
+    </div>
+
+    <div class="control-card">
+      <h3>Display period</h3>
+      <div class="inline-toggle" id="period-buttons">
+        <button type="button" data-period="24H" class="is-active">24H</button>
+        <button type="button" data-period="7D">7D</button>
+        <button type="button" data-period="30D">30D</button>
+        <button type="button" data-period="1Y">1Y</button>
+      </div>
+
+      <h3>Aggregation</h3>
+      <select id="aggregation-select">
+        <option value="raw">No aggregation</option>
+        <option value="15m">15 minutes</option>
+        <option value="1h">Hourly</option>
+        <option value="6h">6 hours</option>
+        <option value="1d">Daily</option>
+      </select>
+
+      <h3>Select parameters</h3>
+      <div id="metric-selector" class="metric-selector"></div>
+
+      <label class="toggle-row">
+        <input type="checkbox" id="split-sensors-toggle" />
+        <span>Individual sensor readings</span>
+      </label>
+
+      <div class="cta-column compact">
+        <button class="primary-button" id="download-csv" type="button">Download CSV</button>
+        <button class="ghost-button" id="download-json" type="button">Download JSON</button>
+      </div>
+    </div>
+  </aside>
+
+  <section class="analysis-column">
+    <section class="analysis-header">
+      <div>
+        <span class="eyebrow">{{ station.device_label }}</span>
+        <h2>Station analysis</h2>
+        <p id="station-freshness-text">Loading latest station status…</p>
+      </div>
+
+      <div class="tab-switch" id="view-tabs">
+        <button type="button" data-tab="quick" class="is-active">Quick View</button>
+        <button type="button" data-tab="advanced">Advanced</button>
+      </div>
+    </section>
+
+    <section id="quick-view" class="tab-panel is-active">
+      <div class="summary-grid" id="latest-cards"></div>
+
+      <div class="event-panel">
+        <div>
+          <h3>Interpretation</h3>
+          <p id="quick-interpretation">Loading context…</p>
+        </div>
+        <div class="event-list" id="event-markers"></div>
+      </div>
+    </section>
+
+    <section id="advanced-view" class="tab-panel">
+      <div id="chart-grid" class="chart-grid"></div>
+
+      <section class="table-card">
+        <div class="section-head">
+          <div>
+            <h3>Raw data</h3>
+            <p>Latest rows for the selected metrics and time range.</p>
+          </div>
+          <div class="inline-actions">
+            <button class="ghost-button" id="open-station-metadata-inline" type="button">Calibration & metadata</button>
+          </div>
+        </div>
+
+        <div class="table-scroll">
+          <table id="raw-data-table">
+            <thead></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="table-card" id="buoy-profile-card" hidden>
+        <div class="section-head">
+          <div>
+            <h3>Latest buoy depth profiles</h3>
+            <p>Depth-aware values preserved separately from the trend charts.</p>
+          </div>
+        </div>
+        <div id="buoy-profile-list" class="profile-list"></div>
+      </section>
+    </section>
+  </section>
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/station.js"></script>
+{% endblock %}

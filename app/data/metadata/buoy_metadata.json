@@ -1,0 +1,75 @@
+[
+  {
+    "column_name": "Datetime",
+    "full_descriptor": "Measurement DateTime",
+    "units": "MM/DD/YYYY HH:mm:ss",
+    "definition": "Timestamp of the measurement"
+  },
+  {
+    "column_name": "Wind Speed",
+    "full_descriptor": "Wind Speed",
+    "units": "m/s",
+    "definition": "Wind speed measured by the buoy's wind sensor"
+  },
+  {
+    "column_name": "Wind Direction",
+    "full_descriptor": "Wind Direction",
+    "units": "°",
+    "definition": "Wind direction measured by the buoy's wind sensor"
+  },
+  {
+    "column_name": "Air Temperature",
+    "full_descriptor": "Air Temperature",
+    "units": "°C",
+    "definition": "Temperature of the air measured by the buoy"
+  },
+  {
+    "column_name": "Barometric Pressure",
+    "full_descriptor": "Barometric Pressure",
+    "units": "hPa",
+    "definition": "Pressure exerted by the atmosphere measured by the buoy"
+  },
+  {
+    "column_name": "Albedo",
+    "full_descriptor": "Albedo",
+    "units": "N/A",
+    "definition": "The fraction of solar radiation reflected by the buoy's surface"
+  },
+  {
+    "column_name": "CTD Temperature",
+    "full_descriptor": "CTD Temperature",
+    "units": "°C",
+    "definition": "Temperature measured at different depths (CTD sensor)"
+  },
+  {
+    "column_name": "Conductivity",
+    "full_descriptor": "Conductivity",
+    "units": "mmho/cm",
+    "definition": "Water conductivity at various depths, indicating salinity"
+  },
+  {
+    "column_name": "Oxygen",
+    "full_descriptor": "Dissolved Oxygen",
+    "units": "µM/L",
+    "definition": "Dissolved oxygen concentration in water"
+  },
+  {
+    "column_name": "Chlorophyll",
+    "full_descriptor": "Chlorophyll-a Fluorescence",
+    "units": "µg/L",
+    "definition": "Chlorophyll-a concentration, measured in fluorescence units"
+  },
+  {
+    "column_name": "Salinity",
+    "full_descriptor": "Practical Salinity",
+    "units": "PSU",
+    "definition": "Practical salinity measured at different depths in the water"
+  },
+  {
+    "column_name": "Density",
+    "full_descriptor": "Water Density",
+    "units": "kg/m³",
+    "definition": "Density of water calculated from salinity and temperature"
+  }
+]
+

@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{{ page_title }}</title>
+    <link rel="stylesheet" href="/static/css/main.css" />
+  </head>
+  <body class="report-body">
+    <main class="report-sheet">
+      <header class="report-header">
+        <div>
+          <span class="eyebrow">Station report</span>
+          <h1>{{ station.name }}</h1>
+          <p>{{ station.device_label }} · {{ station.location_text }}</p>
+        </div>
+        <div class="report-meta">
+          <div><span>Status</span><strong>{{ station.status }}</strong></div>
+          <div><span>Last update</span><strong>{{ station.freshness.last_update }}</strong></div>
+          <div><span>Coordinates</span><strong>{{ '%.4f'|format(station.lat or 0) }}, {{ '%.4f'|format(station.lon or 0) }}</strong></div>
+        </div>
+      </header>
+      <section class="report-section">
+        <h2>Latest interpretation</h2>
+        <div class="summary-grid printable">
+          {% for card in latest.cards %}
+          <article class="metric-card printable">
+            <span>{{ card.label }}</span>
+            <strong>{{ card.latest if card.latest is not none else 'N/A' }} {{ card.unit }}</strong>
+            <small>Mean {{ card.mean if card.mean is not none else 'N/A' }} · Max {{ card.max if card.max is not none else 'N/A' }}</small>
+          </article>
+          {% endfor %}
+        </div>
+      </section>
+      <section class="report-section">
+        <h2>Metadata</h2>
+        <div class="report-kv-grid">
+          <div><span>Earliest data</span><strong>{{ metadata.summary.earliest_data }}</strong></div>
+          <div><span>Latest data</span><strong>{{ metadata.summary.latest_data }}</strong></div>
+          <div><span>Measurement frequency</span><strong>{{ metadata.summary.measurement_frequency }}</strong></div>
+        </div>
+        {% for tab in metadata.tabs %}
+        <article class="table-card report-table-card">
+          <h3>{{ tab.label }}</h3>
+          <div class="table-scroll">
+            <table>
+              <thead>
+                <tr><th>Column</th><th>Descriptor</th><th>Units</th><th>Definition</th></tr>
+              </thead>
+              <tbody>
+                {% for row in tab.items %}
+                <tr>
+                  <td>{{ row.column_name }}</td>
+                  <td>{{ row.full_descriptor }}</td>
+                  <td>{{ row.units }}</td>
+                  <td>{{ row.definition }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </article>
+        {% endfor %}
+      </section>
+    </main>
+  </body>
+</html>

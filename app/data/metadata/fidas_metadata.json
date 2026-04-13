@@ -1,0 +1,249 @@
+[
+  {
+    "column_name": "PM1Mass",
+    "full_descriptor": "PM1 Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 1 µm in diameter per cubic meter of air measured by the Fidas Palas 200S"
+  },
+  {
+    "column_name": "PM2.5Mass",
+    "full_descriptor": "PM2.5 Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 2.5 µm in diameter per cubic meter of air measured by the Fidas Palas 200S"
+  },
+  {
+    "column_name": "PM4Mass",
+    "full_descriptor": "PM4 Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 4 µm in diameter per cubic meter of air measured by the Fidas Palas 200S"
+  },
+  {
+    "column_name": "PM10Mass",
+    "full_descriptor": "PM10 Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 10 µm in diameter per cubic meter of air measured by the Fidas Palas 200S"
+  },
+  {
+    "column_name": "TotalPMMass",
+    "full_descriptor": "Total PM Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of all measured particulate matter size fractions per cubic meter of air measured by the Fidas Palas 200S"
+  },
+  {
+    "column_name": "CountNumber",
+    "full_descriptor": "Particle Count Number",
+    "units": "particles/cm³",
+    "definition": "Number concentration of particles per cubic centimeter of air measured by the sensor"
+  },
+  {
+    "column_name": "RelativeHumidity",
+    "full_descriptor": "Relative Humidity",
+    "units": "%",
+    "definition": "Water vapor content of air expressed as a percentage of the maximum amount the air can hold at the current temperature"
+  },
+  {
+    "column_name": "DewPoint",
+    "full_descriptor": "Dew Point",
+    "units": "°C",
+    "definition": "Temperature at which air becomes saturated and water vapor begins to condense"
+  },
+  {
+    "column_name": "AirTemperature",
+    "full_descriptor": "Air Temperature",
+    "units": "°C",
+    "definition": "Ambient air temperature measured by the sensor"
+  },
+  {
+    "column_name": "AtmosphericPressure",
+    "full_descriptor": "Atmospheric Pressure",
+    "units": "hPa",
+    "definition": "Atmospheric pressure recorded by the sensor"
+  },
+  {
+    "column_name": "WindSpeed",
+    "full_descriptor": "Wind Speed",
+    "units": "km/h",
+    "definition": "Speed of wind measured by the sensor"
+  },
+  {
+    "column_name": "WindDirection",
+    "full_descriptor": "Wind Direction",
+    "units": "°",
+    "definition": "Compass direction from which the wind is blowing, in degrees"
+  },
+  {
+    "column_name": "WindQuality",
+    "full_descriptor": "Wind Quality",
+    "units": "%",
+    "definition": "Quality index of wind measurement expressed as a percentage based on sensor reliability"
+  },
+  {
+    "column_name": "PrecipitationIntensity",
+    "full_descriptor": "Precipitation Intensity",
+    "units": "l/m²/h",
+    "definition": "Volume of precipitation collected per square meter per hour"
+  },
+  {
+    "column_name": "PrecipitationType",
+    "full_descriptor": "Precipitation Type",
+    "units": "",
+    "definition": "Classification of precipitation such as rain, snow, sleet, or hail"
+  },
+  {
+    "column_name": "Flowrate",
+    "full_descriptor": "Flowrate",
+    "units": "l/min",
+    "definition": "Volume of air drawn through the sensor per minute"
+  },
+  {
+    "column_name": "Velocity",
+    "full_descriptor": "Velocity",
+    "units": "m/s",
+    "definition": "Velocity of airflow measured by the sensor"
+  },
+  {
+    "column_name": "Coincidence",
+    "full_descriptor": "Coincidence",
+    "units": "%",
+    "definition": "Percentage of coincident particle detection events indicating multiple particles detected simultaneously"
+  },
+  {
+    "column_name": "PumpOutput",
+    "full_descriptor": "Pump Output",
+    "units": "%",
+    "definition": "Output level of the sampling pump expressed as a percentage of its maximum capacity"
+  },
+  {
+    "column_name": "IADSTemperature",
+    "full_descriptor": "IADS Temperature",
+    "units": "°C",
+    "definition": "Internal temperature of the IADS (Integrated Aerosol Detection System) module within the instrument"
+  },
+  {
+    "column_name": "ChannelDeviation",
+    "full_descriptor": "Channel Deviation",
+    "units": "",
+    "definition": "Deviation of the measurement channel signal from its calibrated baseline"
+  },
+  {
+    "column_name": "LEDTemperature",
+    "full_descriptor": "LED Temperature",
+    "units": "°C",
+    "definition": "Operating temperature of the instrument's LED light source"
+  },
+  {
+    "column_name": "ErrorFlags",
+    "full_descriptor": "Error Flags",
+    "units": "",
+    "definition": "Binary flags indicating the presence of sensor errors or fault conditions"
+  },
+  {
+    "column_name": "OperationMode",
+    "full_descriptor": "Operation Mode",
+    "units": "",
+    "definition": "Current operating mode of the instrument indicating its measurement configuration"
+  },
+  {
+    "column_name": "PM1AmbientMass",
+    "full_descriptor": "PM1 Ambient Mass",
+    "units": "µg/m³",
+    "definition": "Ambient mass concentration of particulate matter up to 1 µm in diameter per cubic meter of air"
+  },
+  {
+    "column_name": "PM2.5AmbientMass",
+    "full_descriptor": "PM2.5 Ambient Mass",
+    "units": "µg/m³",
+    "definition": "Ambient mass concentration of particulate matter up to 2.5 µm in diameter per cubic meter of air"
+  },
+  {
+    "column_name": "PM4AmbientMass",
+    "full_descriptor": "PM4 Ambient Mass",
+    "units": "µg/m³",
+    "definition": "Ambient mass concentration of particulate matter up to 4 µm in diameter per cubic meter of air"
+  },
+  {
+    "column_name": "PM10AmbientMass",
+    "full_descriptor": "PM10 Ambient Mass",
+    "units": "µg/m³",
+    "definition": "Ambient mass concentration of particulate matter up to 10 µm in diameter per cubic meter of air"
+  },
+  {
+    "column_name": "TotalPMAmbientMass",
+    "full_descriptor": "Total PM Ambient Mass",
+    "units": "µg/m³",
+    "definition": "Ambient mass concentration of all measured particulate matter size fractions per cubic meter of air"
+  },
+  {
+    "column_name": "PM1ClassicMass",
+    "full_descriptor": "PM1 Classic Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 1 µm in diameter measured in classic mode per cubic meter of air"
+  },
+  {
+    "column_name": "PM2.5ClassicMass",
+    "full_descriptor": "PM2.5 Classic Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 2.5 µm in diameter measured in classic mode per cubic meter of air"
+  },
+  {
+    "column_name": "PM4ClassicMass",
+    "full_descriptor": "PM4 Classic Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 4 µm in diameter measured in classic mode per cubic meter of air"
+  },
+  {
+    "column_name": "PM10ClassicMass",
+    "full_descriptor": "PM10 Classic Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of particulate matter up to 10 µm in diameter measured in classic mode per cubic meter of air"
+  },
+  {
+    "column_name": "TotalPMClassicMass",
+    "full_descriptor": "Total PM Classic Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of all measured particulate matter size fractions in classic mode per cubic meter of air"
+  },
+  {
+    "column_name": "ThoracicPMMass",
+    "full_descriptor": "Thoracic PM Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of the thoracic particle fraction per cubic meter of air"
+  },
+  {
+    "column_name": "AlveolarPMMass",
+    "full_descriptor": "Alveolar PM Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of the alveolar particle fraction per cubic meter of air"
+  },
+  {
+    "column_name": "RespirablePMMass",
+    "full_descriptor": "Respirable PM Mass",
+    "units": "µg/m³",
+    "definition": "Mass concentration of the respirable particle fraction per cubic meter of air"
+  },
+  {
+    "column_name": "PerceivedTemperature",
+    "full_descriptor": "Perceived Temperature",
+    "units": "°C",
+    "definition": "Apparent temperature perceived by humans calculated from air temperature and humidity"
+  },
+  {
+    "column_name": "FeelsLikeTemperature",
+    "full_descriptor": "Feels Like Temperature",
+    "units": "°C",
+    "definition": "Temperature experienced by humans accounting for factors like wind chill and humidity"
+  },
+  {
+    "column_name": "HeatIndex",
+    "full_descriptor": "Heat Index",
+    "units": "°C",
+    "definition": "Index combining air temperature and humidity to reflect the human-perceived equivalent temperature"
+  },
+  {
+    "column_name": "WBGT",
+    "full_descriptor": "Wet Bulb Globe Temperature",
+    "units": "°C",
+    "definition": "Measurement indicating heat stress in direct sunlight by combining temperature, humidity, wind speed, and solar radiation"
+  }
+]
+

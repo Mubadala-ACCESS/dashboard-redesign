@@ -1,0 +1,23 @@
+[
+  {
+    "station_type": "SBNTransect",
+    "earliest": "2022-09-06",
+    "latest":   "2026-02-16"
+  },
+  {
+    "station_type": "JWCruise",
+    "earliest": "2023-07-08",
+    "latest":   "2026-01-27"
+  },
+  {
+    "station_type": "underwater_probe",
+    "earliest": "N/A",
+    "latest":   "N/A"
+  },
+  {
+    "station_type": "coral_reef",
+    "earliest": "N/A",
+    "latest":   "N/A"
+  }
+]
+

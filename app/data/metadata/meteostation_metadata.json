@@ -1,0 +1,51 @@
+[
+  {
+    "column_name": "Radiation",
+    "full_descriptor": "Solar Radiation",
+    "units": "W/m²",
+    "definition": "Solar radiation incident on a horizontal surface measured in watts per square meter"
+  },
+  {
+    "column_name": "DewPoint",
+    "full_descriptor": "Dew Point",
+    "units": "°C",
+    "definition": "Temperature at which air reaches saturation and dew forms"
+  },
+  {
+    "column_name": "AtmosphericPressure",
+    "full_descriptor": "Atmospheric Pressure",
+    "units": "hPa",
+    "definition": "Pressure exerted by the atmosphere measured in hectopascals"
+  },
+  {
+    "column_name": "Precipitation",
+    "full_descriptor": "Precipitation",
+    "units": "mm",
+    "definition": "Depth of precipitation accumulation measured in millimeters"
+  },
+  {
+    "column_name": "RelativeHumidity",
+    "full_descriptor": "Relative Humidity",
+    "units": "%",
+    "definition": "Ratio of water vapor present to the maximum possible at the same temperature, expressed as a percentage"
+  },
+  {
+    "column_name": "Temperature",
+    "full_descriptor": "Air Temperature",
+    "units": "°C",
+    "definition": "Ambient air temperature measured by a temperature sensor"
+  },
+  {
+    "column_name": "WindDirection",
+    "full_descriptor": "Wind Direction",
+    "units": "°",
+    "definition": "Direction from which the wind originates, in degrees clockwise from true north"
+  },
+  {
+    "column_name": "WindSpeed",
+    "full_descriptor": "Wind Speed",
+    "units": "m/s",
+    "definition": "Speed of the wind measured in meters per second"
+  }
+]
+

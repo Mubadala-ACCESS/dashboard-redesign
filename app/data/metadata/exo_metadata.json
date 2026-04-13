@@ -1,0 +1,195 @@
+[
+  {
+    "column_name": "Date",
+    "full_descriptor": "Measurement Date",
+    "units": "MM/DD/YYYY",
+    "definition": "Date of measurement"
+  },
+  {
+    "column_name": "Time",
+    "full_descriptor": "Measurement Time",
+    "units": "HH:mm:ss",
+    "definition": "Time of measurement"
+  },
+  {
+    "column_name": "Time (Fract. Sec)",
+    "full_descriptor": "Time Fractional Seconds",
+    "units": "seconds",
+    "definition": "Fractional part of the second for the measurement timestamp"
+  },
+  {
+    "column_name": "Site Name",
+    "full_descriptor": "Site Name",
+    "units": "N/A",
+    "definition": "User-defined sampling site identifier"
+  },
+  {
+    "column_name": "Chlorophyll RFU",
+    "full_descriptor": "Chlorophyll-a fluorescence",
+    "units": "RFU",
+    "definition": "Relative fluorescence units indicating chlorophyll-a concentration"
+  },
+  {
+    "column_name": "Cond µS/cm",
+    "full_descriptor": "Conductivity",
+    "units": "µS/cm",
+    "definition": "Electrical conductivity of water, used to derive salinity"
+  },
+  {
+    "column_name": "Depth m",
+    "full_descriptor": "Depth",
+    "units": "m",
+    "definition": "Depth below water surface measured by internal pressure sensor"
+  },
+  {
+    "column_name": "fDOM QSU",
+    "full_descriptor": "Fluorescent Dissolved Organic Matter",
+    "units": "QSU",
+    "definition": "Fluorescence from dissolved organic matter measured in Quinine Sulfate Units"
+  },
+  {
+    "column_name": "fDOM RFU",
+    "full_descriptor": "Fluorescent Dissolved Organic Matter",
+    "units": "RFU",
+    "definition": "Relative fluorescence units measuring dissolved organic matter"
+  },
+  {
+    "column_name": "nLF Cond µS/cm",
+    "full_descriptor": "Non-linear function conductivity",
+    "units": "µS/cm",
+    "definition": "Temperature-compensated conductivity using proprietary algorithm"
+  },
+  {
+    "column_name": "ODO % sat",
+    "full_descriptor": "Dissolved Oxygen % saturation",
+    "units": "%",
+    "definition": "Percent of dissolved oxygen relative to its solubility at measured temperature and salinity"
+  },
+  {
+    "column_name": "ODO % CB",
+    "full_descriptor": "Dissolved Oxygen % local calibration barometer",
+    "units": "%",
+    "definition": "Percent of dissolved oxygen saturation calculated using local barometric pressure"
+  },
+  {
+    "column_name": "ODO mg/L",
+    "full_descriptor": "Dissolved Oxygen concentration",
+    "units": "mg/L",
+    "definition": "Concentration of dissolved oxygen in milligrams per liter"
+  },
+  {
+    "column_name": "ORP mV",
+    "full_descriptor": "Oxidation-Reduction Potential",
+    "units": "mV",
+    "definition": "Electrode potential measuring the water's oxidizing or reducing conditions"
+  },
+  {
+    "column_name": "Pressure psi a",
+    "full_descriptor": "Absolute Pressure",
+    "units": "psi",
+    "definition": "Absolute pressure measured by internal pressure transducer"
+  },
+  {
+    "column_name": "Sal psu",
+    "full_descriptor": "Practical Salinity",
+    "units": "PSU",
+    "definition": "Salinity measured on the practical salinity scale"
+  },
+  {
+    "column_name": "SpCond µS/cm",
+    "full_descriptor": "Specific Conductance",
+    "units": "µS/cm",
+    "definition": "Conductivity normalized to a standard temperature"
+  },
+  {
+    "column_name": "TAL PE RFU",
+    "full_descriptor": "Total Algae Phycoerythrin fluorescence",
+    "units": "RFU",
+    "definition": "Relative fluorescence units for phycoerythrin, indicating algal presence"
+  },
+  {
+    "column_name": "TDS mg/L",
+    "full_descriptor": "Total Dissolved Solids",
+    "units": "mg/L",
+    "definition": "Estimated mass of dissolved solids per liter calculated from conductivity"
+  },
+  {
+    "column_name": "Turbidity FNU",
+    "full_descriptor": "Turbidity",
+    "units": "FNU",
+    "definition": "Formazin Nephelometric Units measuring water clarity based on scattered light"
+  },
+  {
+    "column_name": "TSS mg/L",
+    "full_descriptor": "Total Suspended Solids",
+    "units": "mg/L",
+    "definition": "Mass of suspended particles per liter inferred from turbidity calibration"
+  },
+  {
+    "column_name": "Wiper Position volt",
+    "full_descriptor": "Central Wiper Position",
+    "units": "V",
+    "definition": "Voltage indicating the position of the internal wiper blade"
+  },
+  {
+    "column_name": "pH",
+    "full_descriptor": "pH",
+    "units": "pH units",
+    "definition": "Measure of acidity or alkalinity of water"
+  },
+  {
+    "column_name": "pH mV",
+    "full_descriptor": "pH Sensor Millivolt",
+    "units": "mV",
+    "definition": "Millivolt output of the pH electrode"
+  },
+  {
+    "column_name": "Temp °C",
+    "full_descriptor": "Temperature",
+    "units": "°C",
+    "definition": "In-situ water temperature"
+  },
+  {
+    "column_name": "Vertical Position m",
+    "full_descriptor": "Vertical Position",
+    "units": "m",
+    "definition": "Vertical position measurement from altimeter sensor"
+  },
+  {
+    "column_name": "GPS Latitude °",
+    "full_descriptor": "Latitude",
+    "units": "decimal degrees",
+    "definition": "North–south geographic coordinate from GPS"
+  },
+  {
+    "column_name": "GPS Longitude °",
+    "full_descriptor": "Longitude",
+    "units": "decimal degrees",
+    "definition": "East–west geographic coordinate from GPS"
+  },
+  {
+    "column_name": "Altitude m",
+    "full_descriptor": "Altitude",
+    "units": "m",
+    "definition": "Height above mean sea level from barometric sensor"
+  },
+  {
+    "column_name": "Battery V",
+    "full_descriptor": "Battery Voltage",
+    "units": "V",
+    "definition": "Voltage level of the internal battery pack"
+  },
+  {
+    "column_name": "Cable Pwr V",
+    "full_descriptor": "External Power Voltage",
+    "units": "V",
+    "definition": "Voltage supplied via external power cable"
+  },
+  {
+    "column_name": "Barometer mmHg",
+    "full_descriptor": "Barometric Pressure",
+    "units": "mmHg",
+    "definition": "Atmospheric pressure measured by internal barometer"
+  }
+]
+

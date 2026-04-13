@@ -1,0 +1,137 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page home-page" data-network='{{ network_summary | tojson | safe }}'>
+  <aside class="sidebar-card desktop-only home-sidebar-card">
+    <div class="sidebar-section">
+      <label for="station-search">Search station</label>
+      <div class="search-wrap">
+        <input id="station-search" type="search" placeholder="Search stations, numbers, or IDs" />
+        <span class="search-icon">⌕</span>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <label for="privacy-select">Privacy</label>
+      <select id="privacy-select" class="filter-select">
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <div class="sidebar-section">
+      <label for="device-type-select">Device type</label>
+      <select id="device-type-select" class="filter-select">
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <div class="sidebar-section">
+      <label for="status-select">Status</label>
+      <select id="status-select" class="filter-select">
+        <option value="all">All</option>
+      </select>
+    </div>
+
+    <div class="sidebar-actions">
+      <button id="reset-filters" class="ghost-button">Reset filters</button>
+    </div>
+  </aside>
+
+  <section class="content-column home-map-column">
+    <section class="map-panel" id="map-region">
+      <div class="map-toolbar mobile-only">
+        <div class="search-wrap grow">
+          <input id="station-search-mobile" type="search" placeholder="Search station" />
+          <span class="search-icon">⌕</span>
+        </div>
+        <button id="open-mobile-filters" class="ghost-button">Filters</button>
+      </div>
+
+      <div id="map"></div>
+
+      <footer class="map-footer">
+        <span>Drag, zoom, and tap markers to open station views.</span>
+        <span class="legend-inline">
+          <em class="dot active"></em> Active
+          <em class="dot maintenance"></em> Maintenance
+          <em class="dot private"></em> Private
+        </span>
+      </footer>
+    </section>
+  </section>
+
+  <aside id="station-drawer" class="station-drawer" aria-hidden="true">
+    <div class="station-drawer__header">
+      <div>
+        <span class="eyebrow">Station quick view</span>
+        <h2 id="drawer-title">Select a station</h2>
+        <p id="drawer-subtitle">Tap a marker to open summary, current readings, and metadata.</p>
+      </div>
+      <button id="close-drawer" class="ghost-button station-drawer__close" type="button">Close</button>
+    </div>
+
+    <div class="station-drawer__tabs" id="drawer-tabs">
+      <button type="button" class="is-active" data-drawer-tab="summary">Summary</button>
+      <button type="button" data-drawer-tab="current">Current</button>
+      <button type="button" data-drawer-tab="details">Details</button>
+    </div>
+
+    <section class="station-drawer__panel is-active" data-drawer-panel="summary">
+      <div id="drawer-summary" class="drawer-stack"></div>
+    </section>
+
+    <section class="station-drawer__panel" data-drawer-panel="current">
+      <div id="drawer-current" class="drawer-stack"></div>
+    </section>
+
+    <section class="station-drawer__panel" data-drawer-panel="details">
+      <div id="drawer-details" class="drawer-stack"></div>
+    </section>
+
+    <footer class="station-drawer__actions">
+      <button id="drawer-open-metadata" class="ghost-button" type="button" disabled>Metadata</button>
+      <a id="drawer-open-station" class="primary-button disabled-link" href="#" aria-disabled="true">Open station</a>
+    </footer>
+  </aside>
+
+  <dialog id="mobile-filter-modal" class="modal-shell">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <h2>Filters</h2>
+          <p>Refine stations shown on the map.</p>
+        </div>
+        <button class="ghost-button" id="close-mobile-filters" type="button">Close</button>
+      </div>
+
+      <div class="sidebar-section">
+        <label for="privacy-select-mobile">Privacy</label>
+        <select id="privacy-select-mobile" class="filter-select">
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      <div class="sidebar-section">
+        <label for="device-type-select-mobile">Device type</label>
+        <select id="device-type-select-mobile" class="filter-select">
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      <div class="sidebar-section">
+        <label for="status-select-mobile">Status</label>
+        <select id="status-select-mobile" class="filter-select">
+          <option value="all">All</option>
+        </select>
+      </div>
+
+      <div class="modal-actions">
+        <button id="reset-filters-mobile" class="ghost-button" type="button">Reset</button>
+        <button id="apply-mobile-filters" class="primary-button" type="button">Apply</button>
+      </div>
+    </div>
+  </dialog>
+</main>
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/home.js"></script>
+{% endblock %}

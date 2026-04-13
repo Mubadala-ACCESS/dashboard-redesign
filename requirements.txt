@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+pydantic
+pydantic-settings
+python-dotenv
+pandas
+numpy
+orjson
+cachetools
+psycopg[binary]
+pymongo

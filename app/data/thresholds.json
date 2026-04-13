@@ -1,0 +1,40 @@
+{
+  "PM2.5": {
+    "unit": "µg/m³",
+    "reference": "EPA AQI / configurable local policy",
+    "bands": [
+      {"label": "Good", "min": 0.0, "max": 9.0, "color": "rgba(13, 148, 136, 0.12)", "line": "#0f766e"},
+      {"label": "Moderate", "min": 9.1, "max": 35.4, "color": "rgba(245, 158, 11, 0.12)", "line": "#b45309"},
+      {"label": "Unhealthy for Sensitive Groups", "min": 35.5, "max": 55.4, "color": "rgba(239, 68, 68, 0.10)", "line": "#dc2626"},
+      {"label": "Unhealthy", "min": 55.5, "max": 125.4, "color": "rgba(127, 29, 29, 0.10)", "line": "#991b1b"}
+    ]
+  },
+  "PM10": {
+    "unit": "µg/m³",
+    "reference": "EPA AQI / configurable local policy",
+    "bands": [
+      {"label": "Good", "min": 0.0, "max": 54.0, "color": "rgba(13, 148, 136, 0.12)", "line": "#0f766e"},
+      {"label": "Moderate", "min": 55.0, "max": 154.0, "color": "rgba(245, 158, 11, 0.12)", "line": "#b45309"},
+      {"label": "Unhealthy for Sensitive Groups", "min": 155.0, "max": 254.0, "color": "rgba(239, 68, 68, 0.10)", "line": "#dc2626"},
+      {"label": "Unhealthy", "min": 255.0, "max": 354.0, "color": "rgba(127, 29, 29, 0.10)", "line": "#991b1b"}
+    ]
+  },
+  "CO2": {
+    "unit": "ppm",
+    "reference": "Comfort / indoor air screening bands",
+    "bands": [
+      {"label": "Typical outdoor", "min": 0, "max": 450, "color": "rgba(13, 148, 136, 0.12)", "line": "#0f766e"},
+      {"label": "Elevated", "min": 451, "max": 1000, "color": "rgba(245, 158, 11, 0.12)", "line": "#b45309"},
+      {"label": "High", "min": 1001, "max": 5000, "color": "rgba(239, 68, 68, 0.10)", "line": "#dc2626"}
+    ]
+  },
+  "Temperature": {
+    "unit": "°C",
+    "reference": "Context band",
+    "bands": [
+      {"label": "Cool", "min": 0, "max": 20, "color": "rgba(37, 99, 235, 0.08)", "line": "#2563eb"},
+      {"label": "Warm", "min": 20.1, "max": 35, "color": "rgba(245, 158, 11, 0.08)", "line": "#d97706"},
+      {"label": "Hot", "min": 35.1, "max": 60, "color": "rgba(239, 68, 68, 0.08)", "line": "#dc2626"}
+    ]
+  }
+}

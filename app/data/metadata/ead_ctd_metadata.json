@@ -1,0 +1,195 @@
+[
+  {
+    "column_name": "accM",
+    "full_descriptor": "Accelerometer magnitude",
+    "units": "m/s²",
+    "definition": "Magnitude of acceleration from the instrument’s tilt/accelerometer sensor"
+  },
+  {
+    "column_name": "altM",
+    "full_descriptor": "Altitude",
+    "units": "m",
+    "definition": "Height above sea surface (from pressure or GPS)"
+  },
+  {
+    "column_name": "avgsvCM",
+    "full_descriptor": "Avg. volume scattering coefficient",
+    "units": "1/m",
+    "definition": "Mean acoustic backscatter per meter, indicating particle concentration"
+  },
+  {
+    "column_name": "nbf",
+    "full_descriptor": "Number of beams fired",
+    "units": "count",
+    "definition": "Count of acoustic pulses emitted by the echo-sounder per scan"
+  },
+  {
+    "column_name": "bct",
+    "full_descriptor": "Beam crosstalk",
+    "units": "%",
+    "definition": "Percent contamination between acoustic beams"
+  },
+  {
+    "column_name": "c0mS/cm",
+    "full_descriptor": "Conductivity",
+    "units": "mS/cm",
+    "definition": "Electrical conductivity of seawater; used to calculate salinity"
+  },
+  {
+    "column_name": "density",
+    "full_descriptor": "In-situ density",
+    "units": "kg/m³",
+    "definition": "Mass per unit volume of seawater at measured temperature and pressure"
+  },
+  {
+    "column_name": "sigma-θ00",
+    "full_descriptor": "Sigma-theta (σ₀)",
+    "units": "kg/m³",
+    "definition": "Density anomaly: in-situ density minus 1000 kg/m³, referenced to surface pressure"
+  },
+  {
+    "column_name": "DEPTH",
+    "full_descriptor": "Depth",
+    "units": "m",
+    "definition": "Vertical distance below sea surface (from pressure sensor)"
+  },
+  {
+    "column_name": "descentrate",
+    "full_descriptor": "Descent rate",
+    "units": "m/s",
+    "definition": "Rate of change of depth over time during profiling"
+  },
+  {
+    "column_name": "flECO-AFL",
+    "full_descriptor": "Fluorescence (ECO-AFL sensor)",
+    "units": "µg Chl-a/L (RFU)",
+    "definition": "Chlorophyll-a fluorescence proxy for phytoplankton biomass"
+  },
+  {
+    "column_name": "LATITUDE",
+    "full_descriptor": "Latitude",
+    "units": "decimal degrees",
+    "definition": "North–south geographic coordinate"
+  },
+  {
+    "column_name": "LONGITUDE",
+    "full_descriptor": "Longitude",
+    "units": "decimal degrees",
+    "definition": "East–west geographic coordinate"
+  },
+  {
+    "column_name": "sbeox0Mg/L",
+    "full_descriptor": "Dissolved O₂ (Sea-Bird sensor)",
+    "units": "mg/L",
+    "definition": "Oxygen concentration measured by Sea-Bird dissolved-oxygen sensor"
+  },
+  {
+    "column_name": "oxygen_ml_L",
+    "full_descriptor": "Dissolved O₂",
+    "units": "mL/L",
+    "definition": "Oxygen concentration in volume units"
+  },
+  {
+    "column_name": "sbeox0PS",
+    "full_descriptor": "Oxygen partial pressure (Sea-Bird)",
+    "units": "µatm",
+    "definition": "Partial pressure of dissolved oxygen"
+  },
+  {
+    "column_name": "oxsolMg/L",
+    "full_descriptor": "O₂ solubility",
+    "units": "mg/L",
+    "definition": "Theoretical maximum dissolved-O₂ at given temperature, salinity, and pressure"
+  },
+  {
+    "column_name": "oxsat%",
+    "full_descriptor": "O₂ saturation",
+    "units": "%",
+    "definition": "Percent of dissolved-O₂ relative to its solubility"
+  },
+  {
+    "column_name": "par/sat/log",
+    "full_descriptor": "PAR (log scale)",
+    "units": "µmol photons m⁻² s⁻¹ (log)",
+    "definition": "Photosynthetically Active Radiation measured on a logarithmic scale"
+  },
+  {
+    "column_name": "spar/sat/lin",
+    "full_descriptor": "PAR (linear scale)",
+    "units": "µmol photons m⁻² s⁻¹",
+    "definition": "Photosynthetically Active Radiation on a linear scale"
+  },
+  {
+    "column_name": "ph",
+    "full_descriptor": "pH",
+    "units": "pH units",
+    "definition": "Acidity/alkalinity of seawater"
+  },
+  {
+    "column_name": "PRES",
+    "full_descriptor": "Pressure",
+    "units": "dbar",
+    "definition": "Hydrostatic pressure at instrument depth"
+  },
+  {
+    "column_name": "pumps",
+    "full_descriptor": "Pump status",
+    "units": "on/off (1/0)",
+    "definition": "Indicator whether internal pump is running"
+  },
+  {
+    "column_name": "PSAL",
+    "full_descriptor": "Practical salinity",
+    "units": "PSU",
+    "definition": "Dimensionless salinity scale"
+  },
+  {
+    "column_name": "scan",
+    "full_descriptor": "Scan number",
+    "units": "count",
+    "definition": "Sequential index of profiling scan"
+  },
+  {
+    "column_name": "sfdSM",
+    "full_descriptor": "Scattered fluorescence (side-facing)",
+    "units": "RFU",
+    "definition": "Side-facing fluorescence reading (e.g., CDOM proxy)"
+  },
+  {
+    "column_name": "svWM",
+    "full_descriptor": "Sound velocity",
+    "units": "m/s",
+    "definition": "Speed of sound in water at in-situ temperature and salinity"
+  },
+  {
+    "column_name": "TEMP",
+    "full_descriptor": "Temperature",
+    "units": "°C",
+    "definition": "In-situ water temperature"
+  },
+  {
+    "column_name": "timeS",
+    "full_descriptor": "Time since start",
+    "units": "s",
+    "definition": "Seconds elapsed since the beginning of the cast"
+  },
+  {
+    "column_name": "turbWETntu0",
+    "full_descriptor": "Turbidity (WET Labs sensor)",
+    "units": "NTU",
+    "definition": "Nephelometric Turbidity Units; measures water clarity"
+  },
+  {
+    "column_name": "flag",
+    "full_descriptor": "Quality control flag",
+    "units": "integer",
+    "definition": "Data QC flag (e.g., 0 = good, 1 = suspect, 2 = bad)"
+  },
+  {
+    "column_name": "timestamp",
+    "full_descriptor": "Timestamp",
+    "units": "YYYY-MM-DD hh:mm:ss",
+    "definition": "Date and time of each measurement"
+  }
+]
+

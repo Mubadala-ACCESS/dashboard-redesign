@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page simple-page">
+  <section class="hero-panel compact">
+    <div>
+      <span class="eyebrow">Network alerts</span>
+      <h1>City-wide elevated conditions</h1>
+      <p class="lead">Alerts aggregate the latest particulate interpretation across stations with recent data.</p>
+    </div>
+  </section>
+  <section class="alert-list-page">
+    {% if alerts %}
+      {% for alert in alerts %}
+      <article class="alert-card">
+        <div>
+          <span class="status-pill warning">{{ alert.aqi.category }}</span>
+          <h2>{{ alert.station_name }}</h2>
+          <p>{{ alert.headline }}</p>
+        </div>
+        <div>
+          <strong>AQI {{ alert.aqi.aqi }}</strong>
+          <p>{{ alert.message }}</p>
+          <a href="/station/{{ alert.station_id }}">Open station</a>
+        </div>
+      </article>
+      {% endfor %}
+    {% else %}
+      <article class="empty-state">
+        <h2>No elevated network alerts right now</h2>
+        <p>The latest cached readings did not produce AQI-sensitive particulate alerts.</p>
+      </article>
+    {% endif %}
+  </section>
+</main>
+{% endblock %}

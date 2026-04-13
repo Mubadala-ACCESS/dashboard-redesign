@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page simple-page">
+  <section class="hero-panel compact">
+    <div>
+      <span class="eyebrow">Glossary</span>
+      <h1>Environmental terms and interpretation</h1>
+      <p class="lead">A reference page for particulate matter, meteorological signals, and the context layers used across the dashboard.</p>
+    </div>
+  </section>
+  <section class="glossary-grid">
+    {% for item in glossary %}
+    <article class="glossary-card">
+      <div class="glossary-meta">
+        <span>{{ item.category }}</span>
+        <strong>{{ item.unit }}</strong>
+      </div>
+      <h2>{{ item.title }}</h2>
+      <p>{{ item.summary }}</p>
+      <div class="glossary-block">
+        <h3>Why it matters</h3>
+        <p>{{ item.why_it_matters }}</p>
+      </div>
+      <div class="glossary-block">
+        <h3>How to read it</h3>
+        <p>{{ item.how_to_read }}</p>
+      </div>
+    </article>
+    {% endfor %}
+  </section>
+</main>
+{% endblock %}

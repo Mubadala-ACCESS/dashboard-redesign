@@ -1,0 +1,90 @@
+[
+  {
+    "slug": "pm25",
+    "title": "PM2.5",
+    "short_title": "PM2.5",
+    "unit": "µg/m³",
+    "category": "Air Quality",
+    "summary": "Fine particulate matter with a diameter of 2.5 micrometres or smaller.",
+    "why_it_matters": "Because these particles are very small, they can travel deep into the lungs and are commonly used in public air-quality messaging.",
+    "how_to_read": "Lower values are generally better. Sustained spikes usually indicate dust, combustion, traffic, or other particulate events.",
+    "related": ["PM10", "AQI"]
+  },
+  {
+    "slug": "pm10",
+    "title": "PM10",
+    "short_title": "PM10",
+    "unit": "µg/m³",
+    "category": "Air Quality",
+    "summary": "Coarser particulate matter up to 10 micrometres in diameter.",
+    "why_it_matters": "PM10 is useful for understanding dust-heavy conditions, including regional dust storms and coarse suspended particles.",
+    "how_to_read": "PM10 can rise sharply during wind-driven dust events. Compare it with PM2.5 to understand how coarse or fine the particulate load is.",
+    "related": ["PM2.5", "Dust Storm"]
+  },
+  {
+    "slug": "co2",
+    "title": "CO₂",
+    "short_title": "CO₂",
+    "unit": "ppm",
+    "category": "Air Quality",
+    "summary": "Carbon dioxide concentration measured in parts per million.",
+    "why_it_matters": "CO₂ is commonly used as a ventilation and occupancy proxy, especially for indoor or near-building deployments.",
+    "how_to_read": "Treat CO₂ as a context signal rather than a general outdoor pollution score.",
+    "related": ["Humidity", "Temperature"]
+  },
+  {
+    "slug": "humidity",
+    "title": "Relative Humidity",
+    "short_title": "Humidity",
+    "unit": "%",
+    "category": "Weather",
+    "summary": "The amount of water vapour in the air relative to the maximum it can hold at that temperature.",
+    "why_it_matters": "Humidity affects comfort, sensor interpretation, haze, and the apparent feel of outdoor conditions.",
+    "how_to_read": "Humidity is most useful when read together with temperature and precipitation.",
+    "related": ["Temperature", "Dew Point"]
+  },
+  {
+    "slug": "pressure",
+    "title": "Atmospheric Pressure",
+    "short_title": "Pressure",
+    "unit": "hPa",
+    "category": "Weather",
+    "summary": "The pressure exerted by the atmosphere on the sensor location.",
+    "why_it_matters": "Pressure helps interpret weather changes and supports quality-control checks for meteorological stations.",
+    "how_to_read": "Pressure trends are usually more informative than a single reading.",
+    "related": ["Wind Speed", "Temperature"]
+  },
+  {
+    "slug": "temperature",
+    "title": "Temperature",
+    "short_title": "Temperature",
+    "unit": "°C",
+    "category": "Weather",
+    "summary": "Air temperature measured at the station.",
+    "why_it_matters": "Temperature helps contextualize heat events, comfort, and the behaviour of other signals such as humidity and ozone.",
+    "how_to_read": "Look for persistent daytime peaks, nighttime recovery, and sudden anomalies during heat events.",
+    "related": ["Humidity", "Heatwave"]
+  },
+  {
+    "slug": "aqi",
+    "title": "Air Quality Index",
+    "short_title": "AQI",
+    "unit": "Index",
+    "category": "Interpretation",
+    "summary": "A public-facing interpretation layer that converts pollutant concentrations into easier-to-read categories.",
+    "why_it_matters": "AQI helps general audiences quickly understand whether conditions are good, moderate, or unhealthy.",
+    "how_to_read": "This redesign uses AQI-style contextual bands for particulate matter so that charts communicate meaning, not just numbers.",
+    "related": ["PM2.5", "PM10"]
+  },
+  {
+    "slug": "dust-storm",
+    "title": "Dust Storm Event",
+    "short_title": "Dust Storm",
+    "unit": "Event",
+    "category": "Events",
+    "summary": "A marker used to flag a likely dust-driven particulate spike or wind-driven event in the time-series view.",
+    "why_it_matters": "Event markers help users connect sudden changes in particulate matter to real-world environmental conditions.",
+    "how_to_read": "Markers are heuristically detected from recent data and can be supplemented with manual or forecast-based events later.",
+    "related": ["PM10", "Wind Speed"]
+  }
+]
