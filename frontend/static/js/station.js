@@ -93,10 +93,12 @@
     const root = document.getElementById('quick-trends');
     const context = document.getElementById('quick-trend-context');
     const toggle = document.getElementById('quick-sensor-toggle');
+    const comparison = document.getElementById('quick-sensor-comparison');
     const trends = payload.trends || [];
 
     if (!panel || !root) return;
     root.innerHTML = '';
+    if (comparison) comparison.innerHTML = '';
 
     if (!trends.length) {
       panel.hidden = true;
@@ -114,11 +116,14 @@
       context.textContent = `${payload.period || state.period} trends using ${aggregationLabel(payload.trend_aggregation)} values${sensorText}.`;
     }
 
+    renderSensorComparison(trends, payload);
+
     trends.forEach((trend, index) => {
       const hostId = trendHostId(trend.metric, index);
       const unit = trend.unit ? ` ${trend.unit}` : '';
       const card = document.createElement('article');
       card.className = 'chart-card quick-trend-card';
+      card.id = `quick-trend-card-${index}`;
       card.innerHTML = `
         <header>
           <div>
@@ -131,6 +136,87 @@
       root.appendChild(card);
       renderQuickTrendChart(hostId, trend, trendColors[index % trendColors.length], unit, state.quickSplitSensors && payload.supports_sensor_trends);
     });
+  }
+
+  function sensorGapStats(trend) {
+    const sensors = (trend.sensor_trends || []).slice(0, 2);
+    if (sensors.length < 2) return null;
+    const seriesA = (sensors[0].series || []).filter((point) => point.y !== null && point.y !== undefined);
+    const seriesB = (sensors[1].series || []).filter((point) => point.y !== null && point.y !== undefined);
+    if (!seriesA.length || !seriesB.length) return null;
+
+    const byTime = new Map(seriesB.map((point) => [point.x, point.y]));
+    const gaps = [];
+    seriesA.forEach((point) => {
+      if (!byTime.has(point.x)) return;
+      const a = Number(point.y);
+      const b = Number(byTime.get(point.x));
+      if (Number.isFinite(a) && Number.isFinite(b)) gaps.push(Math.abs(a - b));
+    });
+
+    const latestA = seriesA[seriesA.length - 1]?.y;
+    const latestB = seriesB[seriesB.length - 1]?.y;
+    const latestGap = latestA !== undefined && latestB !== undefined ? roundedGap(Math.abs(Number(latestA) - Number(latestB))) : null;
+    const avgGap = gaps.length ? roundedGap(gaps.reduce((sum, value) => sum + value, 0) / gaps.length) : null;
+    const maxGap = gaps.length ? roundedGap(Math.max(...gaps)) : null;
+
+    return { sensors, latestA, latestB, latestGap, avgGap, maxGap };
+  }
+
+  function roundedGap(value) {
+    return Number.isFinite(value) ? Number(value.toFixed(2)) : null;
+  }
+
+  function sensorCardValue(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : value;
+  }
+
+  function renderSensorComparison(trends, payload) {
+    const comparison = document.getElementById('quick-sensor-comparison');
+    if (!comparison) return;
+
+    const enabled = state.quickSplitSensors && payload.supports_sensor_trends;
+    comparison.hidden = !enabled;
+    comparison.innerHTML = '';
+    if (!enabled) return;
+
+    trends.forEach((trend, index) => {
+      const stats = sensorGapStats(trend);
+      if (!stats) return;
+      const unit = trend.unit || '';
+      const button = document.createElement('button');
+      button.className = 'sensor-comparison-card';
+      button.type = 'button';
+      button.dataset.trendIndex = String(index);
+      const sensorALabel = stats.sensors[0].label.split(' - ').pop() || 'Sensor 1';
+      const sensorBLabel = stats.sensors[1].label.split(' - ').pop() || 'Sensor 2';
+      button.innerHTML = `
+        <span>${App.escapeHtml(trend.label)}</span>
+        <div class="sensor-readout-row">
+          <em><small>${App.escapeHtml(sensorALabel)}</small><b>${metricValue(sensorCardValue(stats.latestA), unit)}</b></em>
+          <em><small>${App.escapeHtml(sensorBLabel)}</small><b>${metricValue(sensorCardValue(stats.latestB), unit)}</b></em>
+        </div>
+        <div class="sensor-comparison-card__stats">
+          <em>Latest gap <b>${metricValue(stats.latestGap, unit)}</b></em>
+          <em>Avg gap <b>${metricValue(stats.avgGap, unit)}</b></em>
+          <em>Max gap <b>${metricValue(stats.maxGap, unit)}</b></em>
+        </div>
+      `;
+      button.addEventListener('click', () => focusTrendCard(index));
+      comparison.appendChild(button);
+    });
+
+    if (!comparison.children.length) comparison.hidden = true;
+  }
+
+  function focusTrendCard(index) {
+    document.querySelectorAll('.quick-trend-card.is-focused').forEach((card) => card.classList.remove('is-focused'));
+    const card = document.getElementById(`quick-trend-card-${index}`);
+    if (!card) return;
+    card.classList.add('is-focused');
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    window.setTimeout(() => card.classList.remove('is-focused'), 2200);
   }
 
   function renderQuickTrendChart(hostId, trend, color, unit, showSensorTrends = false) {
