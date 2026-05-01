@@ -9,12 +9,14 @@
     aggregation: 'raw',
     selectedMetrics: [],
     splitSensors: false,
+    quickSplitSensors: false,
     availableMetrics: [],
     latestPayload: null,
   };
 
   const emptyValue = '&mdash;';
   const trendColors = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#be185d', '#64748b'];
+  const sensorTrendColors = ['#0f766e', '#2563eb', '#d97706', '#be185d'];
 
   function displayValue(value) {
     return value === null || value === undefined || value === '' ? emptyValue : App.escapeHtml(String(value));
@@ -90,6 +92,7 @@
     const panel = document.getElementById('quick-trend-panel');
     const root = document.getElementById('quick-trends');
     const context = document.getElementById('quick-trend-context');
+    const toggle = document.getElementById('quick-sensor-toggle');
     const trends = payload.trends || [];
 
     if (!panel || !root) return;
@@ -101,8 +104,14 @@
     }
 
     panel.hidden = false;
+    if (toggle) {
+      toggle.hidden = !payload.supports_sensor_trends;
+      const input = document.getElementById('quick-split-sensors-toggle');
+      if (input) input.checked = state.quickSplitSensors && !!payload.supports_sensor_trends;
+    }
     if (context) {
-      context.textContent = `${payload.period || state.period} trends using ${aggregationLabel(payload.trend_aggregation)} values.`;
+      const sensorText = state.quickSplitSensors && payload.supports_sensor_trends ? ' with individual IoT sensor overlays' : '';
+      context.textContent = `${payload.period || state.period} trends using ${aggregationLabel(payload.trend_aggregation)} values${sensorText}.`;
     }
 
     trends.forEach((trend, index) => {
@@ -120,11 +129,11 @@
         <div id="${hostId}" class="chart-host quick-trend-host"></div>
       `;
       root.appendChild(card);
-      renderQuickTrendChart(hostId, trend, trendColors[index % trendColors.length], unit);
+      renderQuickTrendChart(hostId, trend, trendColors[index % trendColors.length], unit, state.quickSplitSensors && payload.supports_sensor_trends);
     });
   }
 
-  function renderQuickTrendChart(hostId, trend, color, unit) {
+  function renderQuickTrendChart(hostId, trend, color, unit, showSensorTrends = false) {
     const host = document.getElementById(hostId);
     if (!host || !window.Plotly) return;
     const points = (trend.series || []).filter((point) => point.y !== null && point.y !== undefined);
@@ -133,22 +142,42 @@
       return;
     }
 
-    Plotly.newPlot(host, [{
+    const traces = [{
       x: points.map((point) => point.x),
       y: points.map((point) => point.y),
       type: 'scatter',
       mode: 'lines',
+      name: 'Station mean',
       line: { color, width: 2.4, shape: 'spline' },
       fill: 'tozeroy',
       fillcolor: 'rgba(91, 33, 182, 0.06)',
       hovertemplate: `%{x}<br>%{y:.2f}${unit}<extra></extra>`,
-    }], {
+    }];
+
+    if (showSensorTrends) {
+      (trend.sensor_trends || []).forEach((sensorTrend, index) => {
+        const sensorPoints = (sensorTrend.series || []).filter((point) => point.y !== null && point.y !== undefined);
+        if (!sensorPoints.length) return;
+        traces.push({
+          x: sensorPoints.map((point) => point.x),
+          y: sensorPoints.map((point) => point.y),
+          type: 'scatter',
+          mode: 'lines',
+          name: sensorTrend.label.split(' - ').pop() || `Sensor ${index + 1}`,
+          line: { color: sensorTrendColors[index % sensorTrendColors.length], width: 1.9, dash: index % 2 ? 'dot' : 'solid', shape: 'spline' },
+          hovertemplate: `%{fullData.name}<br>%{x}<br>%{y:.2f}${unit}<extra></extra>`,
+        });
+      });
+    }
+
+    Plotly.newPlot(host, traces, {
       margin: { t: 10, r: 18, b: 38, l: 54 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
       xaxis: { gridcolor: 'rgba(91,101,118,.12)', tickfont: { size: 11 } },
       yaxis: { title: unit.trim(), gridcolor: 'rgba(91,101,118,.12)', zerolinecolor: 'rgba(91,101,118,.16)' },
-      showlegend: false,
+      legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 11 } },
+      showlegend: traces.length > 1,
     }, { displaylogo: false, responsive: true });
   }
 
@@ -275,6 +304,7 @@
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/latest`, window.location.origin);
     url.searchParams.set('period', state.period);
     url.searchParams.set('include_trends', 'true');
+    if (state.quickSplitSensors) url.searchParams.set('include_sensor_trends', 'true');
     const payload = await App.fetchJSON(url.toString());
     updateLatestCards(payload);
   }
@@ -323,6 +353,10 @@
     document.getElementById('split-sensors-toggle')?.addEventListener('change', (event) => {
       state.splitSensors = event.target.checked;
       loadTimeseries();
+    });
+    document.getElementById('quick-split-sensors-toggle')?.addEventListener('change', (event) => {
+      state.quickSplitSensors = event.target.checked;
+      loadLatest();
     });
 
     document.querySelectorAll('#view-tabs button').forEach((button) => {

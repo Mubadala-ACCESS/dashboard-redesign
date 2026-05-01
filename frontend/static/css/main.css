@@ -410,6 +410,9 @@ img { max-width: 100%; }
 .chart-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; color: var(--muted); font-size: 0.92rem; }
 .chart-host { min-height: 320px; }
 .quick-trend-panel { display: grid; gap: 16px; overflow: hidden; }
+.quick-trend-panel .section-head { margin-bottom: 0; }
+.quick-sensor-toggle[hidden] { display: none !important; }
+.quick-sensor-toggle { margin-top: 0; }
 .quick-trend-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
 .quick-trend-card { min-width: 0; }
 .quick-trend-host { min-height: 240px; }

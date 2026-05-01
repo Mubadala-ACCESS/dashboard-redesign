@@ -48,6 +48,10 @@
             <h3>Trends</h3>
             <p id="quick-trend-context">Selected display period trends.</p>
           </div>
+          <label class="toggle-row quick-sensor-toggle" id="quick-sensor-toggle" hidden>
+            <input type="checkbox" id="quick-split-sensors-toggle" />
+            <span>Individual sensor readings</span>
+          </label>
         </div>
         <div class="quick-trend-grid" id="quick-trends"></div>
       </section>
@@ -121,5 +125,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/station.js?v=station-trends-2"></script>
+<script src="/static/js/station.js?v=station-iot-sensors-1"></script>
 {% endblock %}

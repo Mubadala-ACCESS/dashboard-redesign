@@ -833,14 +833,32 @@ class MongoDashboardRepository:
             'ALL': '1d',
         }.get(period.upper(), '15m')
 
-    def get_latest_cards(self, station_id: str, period: str = '24H', include_trends: bool = False) -> Dict[str, Any]:
+    def get_latest_cards(
+        self,
+        station_id: str,
+        period: str = '24H',
+        include_trends: bool = False,
+        include_sensor_trends: bool = False,
+    ) -> Dict[str, Any]:
         station = self.get_station_summary(station_id)
         aggregation = self._quick_aggregation_for_period(period)
         timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=[], split_sensors=False)
         charts = timeseries.get('charts', [])
         cards = []
         trends = []
+        sensor_trends_by_label: Dict[str, List[Dict[str, Any]]] = {}
         primary_aqi = None
+        if include_trends and include_sensor_trends and station['device_type'] == 'IoTBox':
+            sensor_timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=[], split_sensors=True)
+            for sensor_chart in sensor_timeseries.get('charts', []):
+                sensor_trends_by_label.setdefault(sensor_chart['canonical_label'], []).append({
+                    'metric': sensor_chart['metric'],
+                    'label': sensor_chart['label'],
+                    'canonical_label': sensor_chart['canonical_label'],
+                    'unit': self._extract_unit(sensor_chart['label']),
+                    'summary': sensor_chart['summary'],
+                    'series': sensor_chart['series'],
+                })
         for chart in charts[:6]:
             label = chart['label']
             latest = chart['summary'].get('latest')
@@ -866,11 +884,13 @@ class MongoDashboardRepository:
                     'unit': self._extract_unit(label),
                     'summary': chart['summary'],
                     'series': chart['series'],
+                    'sensor_trends': sensor_trends_by_label.get(chart['canonical_label'], []),
                 })
         return {
             'station': station,
             'period': period,
             'trend_aggregation': aggregation,
+            'supports_sensor_trends': station['device_type'] == 'IoTBox',
             'cards': cards,
             'trends': trends,
             'primary_aqi': primary_aqi,
