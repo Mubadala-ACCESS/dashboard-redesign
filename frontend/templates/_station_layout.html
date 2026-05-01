@@ -123,36 +123,56 @@
         </aside>
 
         <section class="advanced-main">
-          <div id="chart-grid" class="chart-grid"></div>
+          {% if station_template in ['fidas', 'buoy'] %}
+          <div class="advanced-subtabs tab-switch" id="advanced-subtabs">
+            {% if station_template == 'fidas' %}
+            <button type="button" data-advanced-panel="timeseries" class="is-active">Time series</button>
+            <button type="button" data-advanced-panel="spectra">Spectra</button>
+            {% elif station_template == 'buoy' %}
+            <button type="button" data-advanced-panel="atmospheric" class="is-active">Atmospheric</button>
+            <button type="button" data-advanced-panel="profiles">Profiles</button>
+            {% endif %}
+          </div>
 
-          <section class="table-card">
-            <div class="section-head">
-              <div>
-                <h3>Raw data</h3>
-                <p>Latest rows for the selected metrics and time range.</p>
-              </div>
-              <div class="inline-actions">
-                <button class="ghost-button" id="open-station-metadata-inline" type="button">Calibration &amp; metadata</button>
-              </div>
-            </div>
+          <div class="advanced-panel is-active" id="advanced-timeseries-panel" data-advanced-panel="{{ 'atmospheric' if station_template == 'buoy' else 'timeseries' }}">
+          {% endif %}
+            <div id="chart-grid" class="chart-grid"></div>
+          {% if station_template in ['fidas', 'buoy'] %}
+          </div>
+          {% endif %}
 
-            <div class="table-scroll">
-              <table id="raw-data-table">
-                <thead></thead>
-                <tbody></tbody>
-              </table>
-            </div>
+          {% if station_template == 'fidas' %}
+          <section class="advanced-panel fidas-spectra-panel" id="fidas-spectra-panel" data-advanced-panel="spectra" hidden>
+            <article class="chart-card">
+              <header class="section-head">
+                <div>
+                  <h3>Particle spectra</h3>
+                  <p>Log-scale particle size distribution from the Fidas spectra documents.</p>
+                </div>
+                <strong class="spectra-time-label" id="spectra-frame-label">Latest sample</strong>
+              </header>
+              <div id="fidas-spectra-chart" class="chart-host spectra-chart-host"></div>
+              <div class="spectra-controls">
+                <div class="spectra-step-buttons" aria-label="Spectra time controls">
+                  <button type="button" data-spectra-step="-1440">-1D</button>
+                  <button type="button" data-spectra-step="-60">-1H</button>
+                  <button type="button" data-spectra-step="-1">-1M</button>
+                  <button type="button" data-spectra-step="1">+1M</button>
+                  <button type="button" data-spectra-step="60">+1H</button>
+                  <button type="button" data-spectra-step="1440">+1D</button>
+                </div>
+                <label class="spectra-slider-row">
+                  <span>Sample time</span>
+                  <input type="range" id="spectra-index-slider" min="0" max="0" value="0" />
+                </label>
+              </div>
+            </article>
           </section>
-
-          <section class="table-card" id="buoy-profile-card" hidden>
-            <div class="section-head">
-              <div>
-                <h3>Latest buoy depth profiles</h3>
-                <p>Depth-aware values preserved separately from the trend charts.</p>
-              </div>
-            </div>
-            <div id="buoy-profile-list" class="profile-list"></div>
+          {% elif station_template == 'buoy' %}
+          <section class="advanced-panel buoy-profiles-panel" id="buoy-profiles-panel" data-advanced-panel="profiles" hidden>
+            <div id="buoy-profile-grid" class="profile-chart-grid"></div>
           </section>
+          {% endif %}
         </section>
       </div>
     </section>

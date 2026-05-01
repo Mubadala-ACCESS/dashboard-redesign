@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
         station_templates = {
             'Fidas_Palas': 'fidas_station.html',
             'Meteorological': 'meteostation_station.html',
+            'Buoy': 'buoy_station.html',
         }
         template_name = station_templates.get(summary.get('device_type'), 'station.html')
         return templates.TemplateResponse(request, template_name, {
@@ -169,6 +170,31 @@ def create_app() -> FastAPI:
         metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
         try:
             return repo.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get('/api/stations/{station_id}/spectra')
+    def api_station_spectra(
+        station_id: str,
+        period: str = Query(default='24H'),
+        max_frames: int = Query(default=700, ge=24, le=1000),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        try:
+            return repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    @app.get('/api/stations/{station_id}/profiles')
+    def api_station_profiles(
+        station_id: str,
+        period: str = Query(default='24H'),
+        metrics: Optional[str] = Query(default=None, description='Comma-separated profile metric keys'),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
+        try:
+            return repo.get_buoy_profiles(station_id, period=period, metrics=metric_list)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 

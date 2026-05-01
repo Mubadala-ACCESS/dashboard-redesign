@@ -3,15 +3,21 @@
   if (!page) return;
 
   const stationId = page.dataset.stationId;
+  const stationTemplate = page.dataset.stationTemplate || 'standard';
   const state = {
     stationId,
+    stationTemplate,
     period: '24H',
     aggregation: 'raw',
     selectedMetrics: [],
+    selectedProfileMetrics: [],
     splitSensors: false,
     quickSplitSensors: false,
     availableMetrics: [],
     latestPayload: null,
+    spectraPayload: null,
+    spectraIndex: 0,
+    advancedPanel: 'timeseries',
   };
 
   const emptyValue = '&mdash;';
@@ -39,6 +45,28 @@
       '6h': '6 hour',
       '1d': 'daily',
     }[value] || value || 'trend';
+  }
+
+  function isBuoyProfilePanel() {
+    return state.stationTemplate === 'buoy' && state.advancedPanel === 'profiles';
+  }
+
+  function activeMetricKeys() {
+    return isBuoyProfilePanel() ? state.selectedProfileMetrics : state.selectedMetrics;
+  }
+
+  function setActiveMetricKeys(keys) {
+    if (isBuoyProfilePanel()) {
+      state.selectedProfileMetrics = keys;
+    } else {
+      state.selectedMetrics = keys;
+    }
+  }
+
+  function metricsForActivePanel(metrics) {
+    if (state.stationTemplate !== 'buoy') return metrics || [];
+    const profileKeys = new Set(['CTD_tmp', 'conductivity', 'O2', 'chlorophyll', 'salinity_practical', 'density']);
+    return (metrics || []).filter((metric) => isBuoyProfilePanel() ? profileKeys.has(metric.key) : !profileKeys.has(metric.key));
   }
 
   function makeCard(card) {
@@ -270,11 +298,14 @@
   function renderMetricSelector(metrics, activeMetrics = []) {
     const root = document.getElementById('metric-selector');
     root.innerHTML = '';
+    const visibleMetrics = metricsForActivePanel(metrics);
+    const selectedKeys = activeMetricKeys();
+    const hadSelection = selectedKeys.length > 0;
     const activeKeys = new Set(activeMetrics.map((metric) => metric.key));
-    metrics.forEach((metric, index) => {
+    visibleMetrics.forEach((metric, index) => {
       const id = `metric-${metric.key}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-      const checked = state.selectedMetrics.includes(metric.key) || (state.selectedMetrics.length === 0 && (activeKeys.has(metric.key) || (!activeKeys.size && index < 6)));
-      if (checked && !state.selectedMetrics.includes(metric.key)) state.selectedMetrics.push(metric.key);
+      const checked = selectedKeys.includes(metric.key) || (!hadSelection && (activeKeys.has(metric.key) || (!activeKeys.size && index < 6)));
+      if (checked && !selectedKeys.includes(metric.key)) selectedKeys.push(metric.key);
       const label = document.createElement('label');
       label.className = 'metric-option';
       label.innerHTML = `
@@ -288,8 +319,12 @@
     });
     root.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
       checkbox.addEventListener('change', () => {
-        state.selectedMetrics = Array.from(root.querySelectorAll('input:checked')).map((item) => item.value);
-        loadTimeseries();
+        setActiveMetricKeys(Array.from(root.querySelectorAll('input:checked')).map((item) => item.value));
+        if (isBuoyProfilePanel()) {
+          loadBuoyProfiles();
+        } else {
+          loadTimeseries();
+        }
       });
     });
   }
@@ -356,6 +391,7 @@
 
   function updateTable(payload) {
     const table = document.getElementById('raw-data-table');
+    if (!table) return;
     const headers = payload.metrics.slice(0, 6);
     table.querySelector('thead').innerHTML = `
       <tr>
@@ -374,6 +410,7 @@
   function updateBuoyProfiles(payload) {
     const card = document.getElementById('buoy-profile-card');
     const list = document.getElementById('buoy-profile-list');
+    if (!card || !list) return;
     if (!payload.profiles?.length) {
       card.hidden = true;
       return;
@@ -385,6 +422,164 @@
         <code>depth: ${App.escapeHtml(JSON.stringify(profile.depth || []))}\nvalues: ${App.escapeHtml(JSON.stringify(profile.values || []))}</code>
       </article>
     `).join('');
+  }
+
+  async function loadBuoyProfiles() {
+    const panel = document.getElementById('buoy-profiles-panel');
+    const grid = document.getElementById('buoy-profile-grid');
+    if (!panel || !grid) return;
+    const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/profiles`, window.location.origin);
+    url.searchParams.set('period', state.period);
+    if (state.selectedProfileMetrics.length) url.searchParams.set('metrics', state.selectedProfileMetrics.join(','));
+    grid.innerHTML = '<article class="empty-state"><h2>Loading profiles</h2><p>Reading the selected depth profiles.</p></article>';
+    const payload = await App.fetchJSON(url.toString());
+    if (payload.available_metrics?.length && state.availableMetrics.length) {
+      renderMetricSelector(state.availableMetrics, payload.metrics || []);
+    }
+    renderBuoyProfileCharts(payload);
+  }
+
+  function renderBuoyProfileCharts(payload) {
+    const grid = document.getElementById('buoy-profile-grid');
+    if (!grid) return;
+    grid.innerHTML = '';
+    if (!payload.charts?.length) {
+      grid.innerHTML = `<article class="empty-state"><h2>No profile data</h2><p>${App.escapeHtml(payload.message || 'No profiles were available for this display period.')}</p></article>`;
+      return;
+    }
+
+    payload.charts.forEach((chart, chartIndex) => {
+      const card = document.createElement('article');
+      card.className = 'chart-card';
+      card.innerHTML = `
+        <header>
+          <div>
+            <h3>${App.escapeHtml(chart.label)}</h3>
+            <p>Latest profile ${App.escapeHtml(chart.latest_label || '')}</p>
+          </div>
+        </header>
+        <div class="chart-host profile-chart-host"></div>
+      `;
+      grid.appendChild(card);
+      renderBuoyProfileChart(card.querySelector('.profile-chart-host'), chart, chartIndex);
+    });
+  }
+
+  function renderBuoyProfileChart(host, chart, chartIndex) {
+    if (!host || !window.Plotly) return;
+    const traces = (chart.profiles || []).map((profile, index) => ({
+      x: profile.values || [],
+      y: profile.depth || [],
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: profile.label || `Profile ${index + 1}`,
+      line: { width: index === (chart.profiles.length - 1) ? 3 : 1.6, color: trendColors[(chartIndex + index) % trendColors.length] },
+      marker: { size: index === (chart.profiles.length - 1) ? 5 : 3 },
+      hovertemplate: `%{fullData.name}<br>${App.escapeHtml(chart.label)} %{x:.2f}<br>Depth %{y:.2f} m<extra></extra>`,
+    }));
+    Plotly.newPlot(host, traces, {
+      margin: { t: 14, r: 22, b: 48, l: 66 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      xaxis: { title: chart.label, gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis: { title: 'Depth (m)', autorange: 'reversed', gridcolor: 'rgba(91,101,118,.12)' },
+      legend: { orientation: 'h', y: 1.12, x: 0, font: { size: 10 } },
+      showlegend: traces.length > 1,
+    }, { displaylogo: false, responsive: true });
+  }
+
+  function hasSpectraPanel() {
+    return !!document.getElementById('fidas-spectra-panel');
+  }
+
+  function activeSpectraFrame() {
+    const frames = state.spectraPayload?.frames || [];
+    return frames[state.spectraIndex] || null;
+  }
+
+  function syncSpectraSlider() {
+    const slider = document.getElementById('spectra-index-slider');
+    const frames = state.spectraPayload?.frames || [];
+    if (!slider) return;
+    slider.max = String(Math.max(0, frames.length - 1));
+    slider.value = String(Math.max(0, Math.min(state.spectraIndex, frames.length - 1)));
+    slider.disabled = frames.length <= 1;
+  }
+
+  function setSpectraIndex(index) {
+    const frames = state.spectraPayload?.frames || [];
+    if (!frames.length) return;
+    state.spectraIndex = Math.max(0, Math.min(index, frames.length - 1));
+    syncSpectraSlider();
+    renderFidasSpectra();
+  }
+
+  async function loadFidasSpectra(force = false) {
+    if (!hasSpectraPanel()) return;
+    if (!force && state.spectraPayload?.period === state.period) {
+      renderFidasSpectra();
+      return;
+    }
+    const host = document.getElementById('fidas-spectra-chart');
+    if (host) host.innerHTML = '<div class="empty-trend">Loading spectra...</div>';
+    const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/spectra`, window.location.origin);
+    url.searchParams.set('period', state.period);
+    url.searchParams.set('max_frames', '240');
+    const payload = await App.fetchJSON(url.toString());
+    const latestIndex = Number.isInteger(payload.latest_index) ? payload.latest_index : Math.max(0, (payload.frames || []).length - 1);
+    state.spectraPayload = payload;
+    state.spectraIndex = latestIndex;
+    syncSpectraSlider();
+    renderFidasSpectra();
+  }
+
+  function renderFidasSpectra() {
+    const host = document.getElementById('fidas-spectra-chart');
+    const label = document.getElementById('spectra-frame-label');
+    if (!host || !window.Plotly) return;
+    const frame = activeSpectraFrame();
+    const sizes = (state.spectraPayload?.sizes || []).map((value) => Number(value));
+    if (!frame || !sizes.length) {
+      if (label) label.textContent = 'No spectra';
+      host.innerHTML = '<div class="empty-trend">No spectra data for this display period.</div>';
+      return;
+    }
+
+    const values = (frame.values || []).map((value) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+    });
+    const length = Math.min(sizes.length, values.length);
+    const x = sizes.slice(0, length);
+    const y = values.slice(0, length);
+    if (label) label.textContent = frame.label || frame.timestamp || 'Selected sample';
+    host.innerHTML = '';
+
+    Plotly.newPlot(host, [{
+      x,
+      y,
+      type: 'scatter',
+      mode: 'lines',
+      name: 'Particle count',
+      line: { color: '#5b21b6', width: 2.6, shape: 'hv' },
+      hovertemplate: `Size %{x:.4f} ${App.escapeHtml(state.spectraPayload?.size_unit || '')}<br>Count %{y:.4f}<extra></extra>`,
+    }], {
+      margin: { t: 14, r: 24, b: 52, l: 68 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      xaxis: {
+        type: 'log',
+        title: `Size (${state.spectraPayload?.size_unit || 'bin'})`,
+        gridcolor: 'rgba(91,101,118,.14)',
+      },
+      yaxis: {
+        type: 'log',
+        title: state.spectraPayload?.spectra_unit || 'Particle count',
+        gridcolor: 'rgba(91,101,118,.14)',
+        range: [-3, 3],
+      },
+      showlegend: false,
+    }, { displaylogo: false, responsive: true });
   }
 
   async function loadLatest() {
@@ -431,12 +626,18 @@
         const label = document.getElementById('stats-period-label');
         if (label) label.textContent = state.period;
         loadLatest();
-        loadTimeseries();
+        if (state.advancedPanel === 'spectra') {
+          loadFidasSpectra(true);
+        } else if (isBuoyProfilePanel()) {
+          loadBuoyProfiles();
+        } else {
+          loadTimeseries();
+        }
       });
     });
     document.getElementById('aggregation-select')?.addEventListener('change', (event) => {
       state.aggregation = event.target.value;
-      loadTimeseries();
+      if (!isBuoyProfilePanel()) loadTimeseries();
     });
     document.getElementById('split-sensors-toggle')?.addEventListener('change', (event) => {
       state.splitSensors = event.target.checked;
@@ -453,6 +654,23 @@
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `${button.dataset.tab}-view`));
         window.requestAnimationFrame(resizeActiveCharts);
       });
+    });
+
+    document.querySelectorAll('#advanced-subtabs button').forEach((button) => {
+      button.addEventListener('click', () => {
+        setAdvancedPanel(button.dataset.advancedPanel || 'timeseries');
+      });
+    });
+
+    document.querySelectorAll('[data-spectra-step]').forEach((button) => {
+      button.addEventListener('click', () => {
+        const step = Number(button.dataset.spectraStep || 0);
+        setSpectraIndex(state.spectraIndex + step);
+      });
+    });
+
+    document.getElementById('spectra-index-slider')?.addEventListener('input', (event) => {
+      setSpectraIndex(Number(event.target.value));
     });
 
     document.getElementById('open-station-metadata')?.addEventListener('click', () => App.showMetadata(state.stationId));
@@ -475,6 +693,29 @@
       if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
       window.open(url.toString(), '_blank');
     });
+  }
+
+  function setAdvancedPanel(panelName) {
+    state.advancedPanel = panelName;
+    document.querySelectorAll('#advanced-subtabs button').forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.advancedPanel === panelName);
+    });
+    document.querySelectorAll('#advanced-view .advanced-panel[data-advanced-panel]').forEach((panel) => {
+      const isActive = panel.dataset.advancedPanel === panelName;
+      panel.classList.toggle('is-active', isActive);
+      panel.hidden = !isActive;
+    });
+    if (state.stationTemplate === 'buoy' && state.availableMetrics.length) {
+      renderMetricSelector(state.availableMetrics, []);
+    }
+    if (panelName === 'spectra') {
+      loadFidasSpectra().then(() => window.requestAnimationFrame(resizeActiveCharts));
+    } else if (panelName === 'profiles') {
+      loadBuoyProfiles().then(() => window.requestAnimationFrame(resizeActiveCharts));
+    } else {
+      if (panelName === 'atmospheric') loadTimeseries();
+      window.requestAnimationFrame(resizeActiveCharts);
+    }
   }
 
   function resizeActiveCharts() {

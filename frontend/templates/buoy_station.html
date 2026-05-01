@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
-{% set station_template = 'fidas' %}
+{% set station_template = 'buoy' %}
 {% set advanced_sensor_controls = false %}
-{% set advanced_parameter_note = 'Fidas parameters include particulate mass, count, weather, pressure, and comfort indices.' %}
+{% set advanced_parameter_note = 'Buoy Advanced view separates atmospheric time series from vertical water-column profiles.' %}
 {% block content %}
 {% include '_station_layout.html' %}
 {% endblock %}

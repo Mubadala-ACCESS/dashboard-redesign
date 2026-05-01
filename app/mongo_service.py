@@ -51,6 +51,55 @@ class MongoDashboardRepository:
         '1d': '1d',
     }
     SPECIAL_REALTIME_TYPES = {'IoTBox', 'Meteorological', 'Buoy', 'Fidas_Palas'}
+    DOCUMENT_METRIC_EXCLUDES = {'_id', 'datetime', 'Timestamp', 'sizes', 'spectra'}
+    METEO_METRIC_PRIORITY = [
+        'S2_TA[C]', 'S2_RH[%]', 'S2_PA', 'S2_WS[M/S]', 'S2_WD', 'S1_RAD', 'S2_PREC[MM]', 'S2_DP[C]',
+    ]
+    FIDAS_METRIC_PRIORITY = [
+        'PM2.5', 'PM10', 'PM1', 'PM4', 'PMtot', 'Cn', 'T', 'rH', 'p', 'Wspeed', 'Wdir', 'dewT',
+        'feelLike', 'hIdx_nws', 'wbgt', 'pT', 'prec', 'flowrate', 'velocity', 'IADS_T', 'LED_T',
+    ]
+    FIDAS_QUICK_METRIC_PRIORITY = [
+        'PM2.5', 'PM10', 'PM1', 'PM4', 'PMtot', 'Cn', 'T', 'rH', 'p', 'dewT', 'feelLike',
+        'hIdx_nws', 'wbgt', 'pT', 'Wspeed', 'Wdir',
+    ]
+    FIDAS_CALCULATED_KEYS = {'dewT', 'feelLike', 'hIdx_nws', 'wbgt', 'pT'}
+    BUOY_SCALAR_PARAMS = ['wind_speed', 'wind_direction', 'air_temp', 'barometric_pressure', 'albedo']
+    BUOY_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2', 'chlorophyll', 'salinity_practical', 'density']
+    METEO_LABEL_OVERRIDES = {
+        'I3_VPOWER': 'Voltage Power (V)',
+        'I4_VOUT': 'Voltage Output (V)',
+        'S1_RAD': 'Radiation (W/m²)',
+        'S2_DP[C]': 'Dew Point (°C)',
+        'S2_PA': 'Atmospheric Pressure (hPa)',
+        'S2_PREC[MM]': 'Precipitation (mm)',
+        'S2_RH[%]': 'Relative Humidity (%)',
+        'S2_TA[C]': 'Temperature (°C)',
+        'S2_WD': 'Wind Direction (°)',
+        'S2_WS[M/S]': 'Wind Speed (m/s)',
+    }
+    FIDAS_LABEL_OVERRIDES = {
+        'Cn': 'Count Number (particles/cm³)',
+        'IADS_T': 'IADS Temperature (°C)',
+        'LED_T': 'LED Temperature (°C)',
+        'PM1': 'PM1 (µg/m³)',
+        'PM2.5': 'PM2.5 (µg/m³)',
+        'PM2.5a': 'PM2.5 A (µg/m³)',
+        'PM2.5c': 'PM2.5 C (µg/m³)',
+        'PM4': 'PM4 (µg/m³)',
+        'PM10': 'PM10 (µg/m³)',
+        'PMtot': 'Total PM (µg/m³)',
+        'T': 'Temperature (°C)',
+        'Wdir': 'Wind Direction (°)',
+        'Wspeed': 'Wind Speed',
+        'dewT': 'Dew Point (°C)',
+        'feelLike': 'Feels Like (°C)',
+        'hIdx_nws': 'Heat Index NWS (°C)',
+        'p': 'Pressure (hPa)',
+        'prec': 'Precipitation',
+        'rH': 'Relative Humidity (%)',
+        'wbgt': 'Wet Bulb Globe Temperature (°C)',
+    }
 
     def __init__(self, settings: Settings, metadata_service: MetadataService):
         self.settings = settings
@@ -107,6 +156,26 @@ class MongoDashboardRepository:
         if not localized:
             return 'N/A'
         return localized.strftime('%d %b %Y, %I:%M %p GST')
+
+    def _local_tz_offset(self) -> timedelta:
+        return self._now().astimezone(self.local_tz).utcoffset() or timedelta()
+
+    def _station_actual_datetime(self, station: Dict[str, Any], value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if station.get('device_type') == 'Fidas_Palas':
+            base = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+            return base - self._local_tz_offset()
+        return value
+
+    def _localize_station_datetime(self, station: Dict[str, Any], value: datetime | None) -> datetime | None:
+        return self._localize(self._station_actual_datetime(station, value))
+
+    def _dt_string_for_station(self, station: Dict[str, Any], value: datetime | None) -> str | None:
+        return self._dt_string(self._station_actual_datetime(station, value))
+
+    def _human_dt_for_station(self, station: Dict[str, Any], value: datetime | None) -> str:
+        return self._human_dt(self._station_actual_datetime(station, value))
 
     def _station_cache_key(self, station_id: str) -> str:
         return f'station:{station_id}'
@@ -257,9 +326,9 @@ class MongoDashboardRepository:
         first = collection.find_one({time_field: {'$exists': True}}, sort=[(time_field, ASCENDING)], projection={time_field: 1})
         last = collection.find_one({time_field: {'$exists': True}}, sort=[(time_field, DESCENDING)], projection={time_field: 1})
         payload = {
-            'earliest': self._human_dt(first.get(time_field) if first else None) if first else None,
-            'latest': self._human_dt(last.get(time_field) if last else None) if last else None,
-            'latest_iso': self._dt_string(last.get(time_field) if last else None) if last else None,
+            'earliest': self._human_dt_for_station(station, first.get(time_field) if first else None) if first else None,
+            'latest': self._human_dt_for_station(station, last.get(time_field) if last else None) if last else None,
+            'latest_iso': self._dt_string_for_station(station, last.get(time_field) if last else None) if last else None,
         }
         self.cache.set(cache_key, payload, ttl_seconds=300)
         return payload
@@ -280,6 +349,7 @@ class MongoDashboardRepository:
 
     def _freshness_payload(self, station: Dict[str, Any], latest_dt: datetime | None) -> Dict[str, Any]:
         now = self._now()
+        latest_dt = self._station_actual_datetime(station, latest_dt)
         localized = self._localize(latest_dt)
         freshness_minutes = None
         if latest_dt:
@@ -397,20 +467,85 @@ class MongoDashboardRepository:
             'wbgt': 'WBGT (°C)',
         }
 
+    def _is_numeric_scalar(self, value: Any) -> bool:
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            return math.isfinite(float(value))
+        return False
+
+    def _nested_metric_key(self, root: str, child: str) -> str:
+        if root == 'PM2':
+            return f'PM2.{child}'
+        return f'{root}.{child}'
+
+    def _numeric_metric_keys_from_doc(self, doc: Dict[str, Any], time_field: str) -> Iterable[str]:
+        for key, value in doc.items():
+            if key in self.DOCUMENT_METRIC_EXCLUDES or key == time_field:
+                continue
+            if self._is_numeric_scalar(value):
+                yield key
+            elif isinstance(value, dict):
+                for child_key, child_value in value.items():
+                    if self._is_numeric_scalar(child_value):
+                        yield self._nested_metric_key(key, str(child_key))
+
+    def _pretty_metric_label(self, key: str) -> str:
+        spaced = re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', key)
+        spaced = spaced.replace('_', ' ').replace('.', ' ')
+        return spaced.strip().title() or key
+
+    def _document_metric_label(self, station: Dict[str, Any], key: str) -> str:
+        if station['device_type'] == 'Meteorological':
+            return self.METEO_LABEL_OVERRIDES.get(key, self._pretty_metric_label(key))
+        if station['device_type'] == 'Fidas_Palas':
+            if key in self.FIDAS_LABEL_OVERRIDES:
+                return self.FIDAS_LABEL_OVERRIDES[key]
+            if key.startswith('PM') and any(char.isdigit() for char in key):
+                return f'{key} (µg/m³)'
+            return self._pretty_metric_label(key)
+        return self._metric_key_to_label(station, key)
+
+    def _ordered_document_metrics(self, station: Dict[str, Any], keys: Iterable[str]) -> List[str]:
+        if station['device_type'] == 'Meteorological':
+            priority = self.METEO_METRIC_PRIORITY
+        elif station['device_type'] == 'Fidas_Palas':
+            priority = self.FIDAS_METRIC_PRIORITY
+        else:
+            priority = []
+        rank = {key: index for index, key in enumerate(priority)}
+        return sorted(
+            keys,
+            key=lambda item: (
+                rank.get(item, len(priority)),
+                self._document_metric_label(station, item).lower(),
+                item,
+            ),
+        )
+
+    def _document_metric_map(self, station: Dict[str, Any], collection_name: str, time_field: str) -> Dict[str, str]:
+        cache_key = f'document_metrics:{station["device_type"]}:{collection_name}:{time_field}'
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+        if collection_name not in self.db.list_collection_names():
+            return {}
+        collection = self.db[collection_name]
+        query = {time_field: {'$exists': True}}
+        discovered: List[str] = []
+        seen: set[str] = set()
+        for doc in collection.find(query).sort(time_field, DESCENDING).limit(200):
+            for key in self._numeric_metric_keys_from_doc(doc, time_field):
+                if key not in seen:
+                    seen.add(key)
+                    discovered.append(key)
+        ordered = self._ordered_document_metrics(station, discovered)
+        metric_map = {key: self._document_metric_label(station, key) for key in ordered}
+        self.cache.set(cache_key, metric_map, ttl_seconds=300)
+        return metric_map
+
     def _buoy_label_map(self, station: Dict[str, Any]) -> Dict[str, str]:
-        params = [
-            'wind_speed',
-            'wind_direction',
-            'air_temp',
-            'barometric_pressure',
-            'albedo',
-            'CTD_tmp',
-            'conductivity',
-            'O2',
-            'chlorophyll',
-            'salinity_practical',
-            'density',
-        ]
+        params = self.BUOY_SCALAR_PARAMS + self.BUOY_PROFILE_PARAMS
         return {metric: self._metric_key_to_label(station, metric) for metric in params}
 
     def _available_metric_map(self, station: Dict[str, Any]) -> Dict[str, str]:
@@ -418,9 +553,9 @@ class MongoDashboardRepository:
             labels, _full_params = self._iot_discover(int(station['station_num']))
             return labels
         if station['device_type'] == 'Meteorological':
-            return self._meteo_label_map()
+            return self._document_metric_map(station, self.settings.mongo_meteo_collection, 'Timestamp')
         if station['device_type'] == 'Fidas_Palas':
-            return self._fidas_label_map()
+            return self._document_metric_map(station, self.settings.mongo_fidas_collection, 'datetime')
         if station['device_type'] == 'Buoy':
             return self._buoy_label_map(station)
         return {}
@@ -560,6 +695,20 @@ class MongoDashboardRepository:
                 preferred.append(key)
         return preferred[:6]
 
+    def _quick_metrics_for_station(self, station: Dict[str, Any]) -> List[str]:
+        available = self._available_metric_map(station)
+        if station['device_type'] == 'Meteorological':
+            return list(available.keys())
+        if station['device_type'] == 'Fidas_Palas':
+            selected = [key for key in self.FIDAS_QUICK_METRIC_PRIORITY if key in available]
+            for key in available:
+                if key in self.FIDAS_CALCULATED_KEYS and key not in selected:
+                    selected.append(key)
+            return selected or self._default_metrics(available)
+        if station['device_type'] == 'Buoy':
+            return [key for key in self.BUOY_SCALAR_PARAMS if key in available]
+        return []
+
     # ------------------------------------------------------------------
     # Timeseries extraction
     # ------------------------------------------------------------------
@@ -568,6 +717,15 @@ class MongoDashboardRepository:
         if delta is None:
             return {}
         return {time_field: {'$gte': self._now() - delta}}
+
+    def _base_query_for_station_period(self, station: Dict[str, Any], period: str, time_field: str) -> Dict[str, Any]:
+        delta = self.PERIOD_MAP.get(period.upper())
+        if delta is None:
+            return {}
+        now = self._now()
+        if station.get('device_type') == 'Fidas_Palas':
+            now = now + self._local_tz_offset()
+        return {time_field: {'$gte': now - delta}}
 
     def _aggregate_df(self, df: pd.DataFrame, freq: str | None) -> pd.DataFrame:
         if df.empty or not freq:
@@ -634,7 +792,71 @@ class MongoDashboardRepository:
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, plot_labels
 
+    def _metric_projection_root(self, metric: str) -> str:
+        if metric.startswith('PM2.'):
+            return 'PM2'
+        return metric.split('.', 1)[0]
+
+    def _document_metric_value(self, doc: Dict[str, Any], metric: str) -> Any:
+        if metric.startswith('PM2.'):
+            pm2 = doc.get('PM2')
+            if isinstance(pm2, dict):
+                return pm2.get(metric.split('.', 1)[1])
+            return None
+        value: Any = doc
+        for part in metric.split('.'):
+            if not isinstance(value, dict) or part not in value:
+                return None
+            value = value[part]
+        return value
+
+    def _coerce_document_number(self, value: Any) -> Optional[float]:
+        if not self._is_numeric_scalar(value):
+            return None
+        return float(value)
+
+    def _document_dataframe(
+        self,
+        station: Dict[str, Any],
+        collection_name: str,
+        time_field: str,
+        metrics: List[str],
+        period: str,
+        aggregation: str,
+    ) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        label_map = self._available_metric_map(station)
+        if not metrics:
+            if station['device_type'] in {'Meteorological', 'Fidas_Palas'}:
+                metrics = list(label_map.keys())
+            else:
+                metrics = self._default_metrics(label_map)
+        metrics = [metric for metric in metrics if metric in label_map]
+        if not metrics:
+            return pd.DataFrame(), label_map
+
+        query = self._base_query_for_station_period(station, period, time_field)
+        projection = {'_id': 0, time_field: 1}
+        for metric in metrics:
+            projection[self._metric_projection_root(metric)] = 1
+
+        docs = self.db[collection_name].find(query, projection).sort(time_field, ASCENDING)
+        rows: List[Dict[str, Any]] = []
+        for doc in docs:
+            row: Dict[str, Any] = {'timestamp': self._localize_station_datetime(station, doc.get(time_field))}
+            for metric in metrics:
+                value = self._coerce_document_number(self._document_metric_value(doc, metric))
+                if value is not None:
+                    row[metric] = value
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        if df.empty:
+            return df, label_map
+        df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
+        return df, label_map
+
     def _meteo_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        return self._document_dataframe(station, self.settings.mongo_meteo_collection, 'Timestamp', metrics, period, aggregation)
         label_map = {
             'I3_VPOWER': 'Voltage Power (V)',
             'I4_VOUT': 'Voltage Output (V)',
@@ -665,6 +887,7 @@ class MongoDashboardRepository:
         return df, label_map
 
     def _fidas_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        return self._document_dataframe(station, self.settings.mongo_fidas_collection, 'datetime', metrics, period, aggregation)
         label_map = {
             'PM1': 'PM1 (µg/m³)',
             'PM2.5': 'PM2.5 (µg/m³)',
@@ -710,11 +933,11 @@ class MongoDashboardRepository:
         return df, label_map
 
     def _buoy_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str], List[Dict[str, Any]]]:
-        scalar_params = ['wind_speed', 'wind_direction', 'air_temp', 'barometric_pressure', 'albedo']
-        profile_params = ['CTD_tmp', 'conductivity', 'O2', 'chlorophyll', 'salinity_practical', 'density']
+        scalar_params = self.BUOY_SCALAR_PARAMS
+        profile_params = self.BUOY_PROFILE_PARAMS
         label_map = {metric: self._metric_key_to_label(station, metric) for metric in scalar_params + profile_params}
         if not metrics:
-            metrics = ['wind_speed', 'air_temp', 'barometric_pressure', 'CTD_tmp', 'O2']
+            metrics = scalar_params
         query = self._base_query_for_period(period, 'datetime')
         projection = {'_id': 0, 'datetime': 1, 'depth': 1}
         for metric in metrics:
@@ -745,6 +968,69 @@ class MongoDashboardRepository:
             return df, label_map, profiles[-5:]
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, label_map, profiles[-5:]
+
+    def get_buoy_profiles(self, station_id: str, period: str = '24H', metrics: Optional[List[str]] = None) -> Dict[str, Any]:
+        station = self.get_station_summary(station_id)
+        if station['device_type'] != 'Buoy':
+            return {
+                'station': station,
+                'period': period,
+                'available_metrics': [],
+                'charts': [],
+                'message': 'Profile charts are only available for buoy stations.',
+            }
+
+        label_map = {metric: self._metric_key_to_label(station, metric) for metric in self.BUOY_PROFILE_PARAMS}
+        selected = [metric for metric in (metrics or self.BUOY_PROFILE_PARAMS) if metric in label_map]
+        query = self._base_query_for_period(period, 'datetime')
+        projection = {'_id': 0, 'datetime': 1, 'depth': 1}
+        for metric in selected:
+            projection[metric] = 1
+
+        docs = list(self.db[self.settings.mongo_buoy_collection].find(query, projection).sort('datetime', DESCENDING).limit(120))
+        docs = list(reversed(docs))
+        if len(docs) > 12:
+            indexes = np.linspace(0, len(docs) - 1, 12).round().astype(int)
+            docs = [docs[index] for index in sorted(set(indexes.tolist()))]
+
+        charts: List[Dict[str, Any]] = []
+        for metric in selected:
+            profiles: List[Dict[str, Any]] = []
+            for doc in docs:
+                depths = self._numeric_list(doc.get('depth'))
+                values = self._numeric_list(doc.get(metric))
+                pairs = [
+                    (depth, value)
+                    for depth, value in zip(depths, values)
+                    if depth is not None and value is not None
+                ]
+                if not pairs:
+                    continue
+                timestamp = doc.get('datetime')
+                profiles.append({
+                    'timestamp': self._dt_string(timestamp),
+                    'label': self._human_dt(timestamp),
+                    'depth': [float(depth) for depth, _value in pairs],
+                    'values': [float(value) for _depth, value in pairs],
+                })
+            if profiles:
+                latest = profiles[-1]
+                charts.append({
+                    'metric': metric,
+                    'label': label_map.get(metric, metric),
+                    'unit': self._extract_unit(label_map.get(metric, metric)),
+                    'profiles': profiles,
+                    'latest_label': latest['label'],
+                })
+
+        return {
+            'station': station,
+            'period': period,
+            'metrics': [{'key': key, 'label': label_map[key]} for key in selected],
+            'available_metrics': [{'key': key, 'label': label} for key, label in label_map.items()],
+            'charts': charts,
+            'message': None if charts else 'No profile data was available for the selected display period.',
+        }
 
     def get_timeseries(
         self,
@@ -912,7 +1198,8 @@ class MongoDashboardRepository:
     ) -> Dict[str, Any]:
         station = self.get_station_summary(station_id)
         aggregation = self._quick_aggregation_for_period(period)
-        timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=[], split_sensors=False)
+        quick_metrics = self._quick_metrics_for_station(station)
+        timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=quick_metrics, split_sensors=False)
         charts = timeseries.get('charts', [])
         cards = []
         trends = []
@@ -929,7 +1216,8 @@ class MongoDashboardRepository:
                     'summary': sensor_chart['summary'],
                     'series': sensor_chart['series'],
                 })
-        for chart in charts[:6]:
+        card_charts = charts if station['device_type'] in {'Fidas_Palas', 'Meteorological'} else charts[:6]
+        for chart in card_charts:
             label = chart['label']
             latest = chart['summary'].get('latest')
             card = {
@@ -972,6 +1260,109 @@ class MongoDashboardRepository:
         if '(' in label and ')' in label:
             return label.split('(')[-1].split(')')[0]
         return ''
+
+    def _sample_spectra_documents(
+        self,
+        collection_name: str,
+        time_field: str,
+        query: Dict[str, Any],
+        max_frames: int,
+    ) -> List[Dict[str, Any]]:
+        collection = self.db[collection_name]
+        projection = {'_id': 0, time_field: 1, 'sizes': 1, 'spectra': 1}
+        count = collection.count_documents(query)
+        if count <= max_frames:
+            return list(collection.find(query, projection).sort(time_field, ASCENDING))
+        if count <= max_frames * 4:
+            docs = list(collection.find(query, projection).sort(time_field, ASCENDING))
+            indexes = np.linspace(0, len(docs) - 1, max_frames).round().astype(int)
+            return [docs[index] for index in sorted(set(indexes.tolist()))]
+
+        first = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
+        last = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, DESCENDING)])
+        if not first or not last or not first.get(time_field) or not last.get(time_field):
+            return []
+
+        start_dt = first[time_field]
+        end_dt = last[time_field]
+        total_seconds = max(0.0, (end_dt - start_dt).total_seconds())
+        if total_seconds == 0:
+            doc = collection.find_one(query, projection=projection, sort=[(time_field, DESCENDING)])
+            return [doc] if doc else []
+
+        sampled: List[Dict[str, Any]] = []
+        seen: set[datetime] = set()
+        for index in range(max_frames):
+            target = start_dt + timedelta(seconds=(total_seconds * index / max(1, max_frames - 1)))
+            range_query = dict(query)
+            range_query[time_field] = {'$gte': target, '$lte': end_dt}
+            doc = collection.find_one(range_query, projection=projection, sort=[(time_field, ASCENDING)])
+            if not doc:
+                continue
+            stamp = doc.get(time_field)
+            if stamp in seen:
+                continue
+            seen.add(stamp)
+            sampled.append(doc)
+        return sampled
+
+    def _numeric_list(self, values: Any) -> List[Optional[float]]:
+        if not isinstance(values, list):
+            return []
+        numeric: List[Optional[float]] = []
+        for value in values:
+            if self._is_numeric_scalar(value):
+                numeric.append(float(value))
+            else:
+                numeric.append(None)
+        return numeric
+
+    def get_fidas_spectra(self, station_id: str, period: str = '24H', max_frames: int = 700) -> Dict[str, Any]:
+        station = self.get_station_summary(station_id)
+        if station['device_type'] != 'Fidas_Palas':
+            return {
+                'station': station,
+                'period': period,
+                'sizes': [],
+                'frames': [],
+                'message': 'Spectra are only available for Fidas Palas stations.',
+            }
+
+        collection_name = self.settings.mongo_fidas_collection
+        if collection_name not in self.db.list_collection_names():
+            return {'station': station, 'period': period, 'sizes': [], 'frames': [], 'message': 'Fidas collection was not found.'}
+
+        query = self._base_query_for_station_period(station, period, 'datetime')
+        docs = self._sample_spectra_documents(collection_name, 'datetime', query, max(24, min(max_frames, 1000)))
+        sizes: List[Optional[float]] = []
+        frames: List[Dict[str, Any]] = []
+        for doc in docs:
+            values = self._numeric_list(doc.get('spectra'))
+            if not values:
+                continue
+            if not sizes:
+                sizes = self._numeric_list(doc.get('sizes'))
+                if not sizes:
+                    sizes = [float(index + 1) for index in range(len(values))]
+            length = min(len(sizes), len(values))
+            timestamp = self._station_actual_datetime(station, doc.get('datetime'))
+            frames.append({
+                'timestamp': self._dt_string(timestamp),
+                'label': self._human_dt(timestamp),
+                'values': values[:length],
+            })
+
+        sizes = sizes[: min((len(frame['values']) for frame in frames), default=len(sizes))]
+        return {
+            'station': station,
+            'period': period,
+            'sizes': sizes,
+            'size_unit': 'µm',
+            'spectra_unit': 'Particle count',
+            'frames': frames,
+            'frame_count': len(frames),
+            'latest_index': max(0, len(frames) - 1),
+        }
 
     def get_network_summary(self) -> Dict[str, Any]:
         cache_key = 'network_summary'
