@@ -66,6 +66,7 @@ class MongoDashboardRepository:
         'hIdx_nws', 'wbgt', 'pT', 'Wspeed', 'Wdir',
     ]
     FIDAS_CALCULATED_KEYS = {'dewT', 'feelLike', 'hIdx_nws', 'wbgt', 'pT'}
+    FIDAS_DO_NOT_CLEAN = {'errors', 'mode', 'ptype', 'cd', 'po', 'coincidence'}
     BUOY_SCALAR_PARAMS = ['wind_speed', 'wind_direction', 'air_temp', 'barometric_pressure', 'albedo']
     BUOY_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2', 'chlorophyll', 'salinity_practical', 'density']
     BUOY_DEFAULT_SCALAR_PARAMS = ['wind_speed', 'air_temp', 'barometric_pressure']
@@ -846,6 +847,7 @@ class MongoDashboardRepository:
         metrics: List[str],
         period: str,
         aggregation: str,
+        clean: bool = False,
     ) -> Tuple[pd.DataFrame, Dict[str, str]]:
         label_map = self._available_metric_map(station)
         if not metrics:
@@ -858,11 +860,16 @@ class MongoDashboardRepository:
         projection = {'_id': 0, time_field: 1}
         for metric in metrics:
             projection[self._metric_projection_root(metric)] = 1
+        clean_fidas = clean and station['device_type'] == 'Fidas_Palas'
+        if clean_fidas:
+            projection['errors'] = 1
 
         docs = self.db[collection_name].find(query, projection).sort(time_field, ASCENDING)
         rows: List[Dict[str, Any]] = []
         for doc in docs:
             row: Dict[str, Any] = {'timestamp': self._localize_station_datetime(station, doc.get(time_field))}
+            if clean_fidas:
+                row['_fidas_errors'] = self._coerce_document_number(doc.get('errors')) or 0.0
             for metric in metrics:
                 value = self._coerce_document_number(self._document_metric_value(doc, metric))
                 if value is not None:
@@ -872,6 +879,18 @@ class MongoDashboardRepository:
         df = pd.DataFrame(rows)
         if df.empty:
             return df, label_map
+        if clean_fidas and '_fidas_errors' in df.columns:
+            errors = pd.to_numeric(df['_fidas_errors'], errors='coerce').fillna(0.0)
+            averaged = errors.copy()
+            if len(errors) > 2:
+                averaged.iloc[1:-1] = (
+                    errors.shift(-1).iloc[1:-1] + errors.iloc[1:-1] + errors.shift(1).iloc[1:-1]
+                ) / 3
+            cleanable = [metric for metric in metrics if metric in df.columns and metric not in self.FIDAS_DO_NOT_CLEAN]
+            if cleanable:
+                df.loc[averaged > 0, cleanable] = np.nan
+                df = df.dropna(subset=cleanable, how='all')
+            df = df.drop(columns=['_fidas_errors'])
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, label_map
 
@@ -906,8 +925,8 @@ class MongoDashboardRepository:
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, label_map
 
-    def _fidas_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
-        return self._document_dataframe(station, self.settings.mongo_fidas_collection, 'datetime', metrics, period, aggregation)
+    def _fidas_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, clean: bool = False) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        return self._document_dataframe(station, self.settings.mongo_fidas_collection, 'datetime', metrics, period, aggregation, clean=clean)
         label_map = {
             'PM1': 'PM1 (µg/m³)',
             'PM2.5': 'PM2.5 (µg/m³)',
@@ -1067,6 +1086,7 @@ class MongoDashboardRepository:
         aggregation: str = '15m',
         metrics: Optional[List[str]] = None,
         split_sensors: bool = False,
+        clean: bool = False,
     ) -> Dict[str, Any]:
         station = self.get_station_summary(station_id)
         metrics = metrics or []
@@ -1076,7 +1096,7 @@ class MongoDashboardRepository:
         elif station['device_type'] == 'Meteorological':
             df, label_map = self._meteo_dataframe(station, metrics, period, aggregation)
         elif station['device_type'] == 'Fidas_Palas':
-            df, label_map = self._fidas_dataframe(station, metrics, period, aggregation)
+            df, label_map = self._fidas_dataframe(station, metrics, period, aggregation, clean=clean)
         elif station['device_type'] == 'Buoy':
             df, label_map, profiles = self._buoy_dataframe(station, metrics, period, aggregation)
             extra['profiles'] = profiles
@@ -1098,6 +1118,7 @@ class MongoDashboardRepository:
                 'station': station,
                 'period': period,
                 'aggregation': aggregation,
+                'clean': clean and station['device_type'] == 'Fidas_Palas',
                 'metrics': [],
                 'available_metrics': self._metric_options(station, label_map),
                 'charts': [],
@@ -1151,6 +1172,7 @@ class MongoDashboardRepository:
             'station': station,
             'period': period,
             'aggregation': aggregation,
+            'clean': clean and station['device_type'] == 'Fidas_Palas',
             'metrics': [{'key': key, 'label': label_map.get(key, key)} for key in metric_keys],
             'available_metrics': self._metric_options(station, label_map),
             'charts': charts,
@@ -1216,11 +1238,12 @@ class MongoDashboardRepository:
         period: str = '24H',
         include_trends: bool = False,
         include_sensor_trends: bool = False,
+        clean: bool = False,
     ) -> Dict[str, Any]:
         station = self.get_station_summary(station_id)
         aggregation = self._quick_aggregation_for_period(period)
         quick_metrics = self._quick_metrics_for_station(station)
-        timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=quick_metrics, split_sensors=False)
+        timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=quick_metrics, split_sensors=False, clean=clean)
         charts = timeseries.get('charts', [])
         cards = []
         trends = []
@@ -1268,6 +1291,7 @@ class MongoDashboardRepository:
         return {
             'station': station,
             'period': period,
+            'clean': clean and station['device_type'] == 'Fidas_Palas',
             'trend_aggregation': aggregation,
             'supports_sensor_trends': station['device_type'] == 'IoTBox',
             'cards': cards,
@@ -1338,12 +1362,13 @@ class MongoDashboardRepository:
                 numeric.append(None)
         return numeric
 
-    def get_fidas_spectra(self, station_id: str, period: str = '24H', max_frames: int = 700) -> Dict[str, Any]:
+    def get_fidas_spectra(self, station_id: str, period: str = '24H', max_frames: int = 700, clean: bool = False) -> Dict[str, Any]:
         station = self.get_station_summary(station_id)
         if station['device_type'] != 'Fidas_Palas':
             return {
                 'station': station,
                 'period': period,
+                'clean': False,
                 'sizes': [],
                 'frames': [],
                 'message': 'Spectra are only available for Fidas Palas stations.',
@@ -1351,9 +1376,11 @@ class MongoDashboardRepository:
 
         collection_name = self.settings.mongo_fidas_collection
         if collection_name not in self.db.list_collection_names():
-            return {'station': station, 'period': period, 'sizes': [], 'frames': [], 'message': 'Fidas collection was not found.'}
+            return {'station': station, 'period': period, 'clean': clean, 'sizes': [], 'frames': [], 'message': 'Fidas collection was not found.'}
 
         query = self._base_query_for_station_period(station, period, 'datetime')
+        if clean:
+            query['errors'] = {'$lte': 0}
         docs = self._sample_spectra_documents(collection_name, 'datetime', query, max(24, min(max_frames, 1000)))
         sizes: List[Optional[float]] = []
         frames: List[Dict[str, Any]] = []
@@ -1377,6 +1404,7 @@ class MongoDashboardRepository:
         return {
             'station': station,
             'period': period,
+            'clean': clean,
             'sizes': sizes,
             'size_unit': 'µm',
             'spectra_unit': 'Particle count',
@@ -1441,8 +1469,8 @@ class MongoDashboardRepository:
     # ------------------------------------------------------------------
     # Raw export helpers
     # ------------------------------------------------------------------
-    def export_frame(self, station_id: str, period: str, aggregation: str, metrics: Optional[List[str]], split_sensors: bool) -> pd.DataFrame:
-        payload = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metrics, split_sensors=split_sensors)
+    def export_frame(self, station_id: str, period: str, aggregation: str, metrics: Optional[List[str]], split_sensors: bool, clean: bool = False) -> pd.DataFrame:
+        payload = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metrics, split_sensors=split_sensors, clean=clean)
         charts = payload.get('charts', [])
         if not charts:
             return pd.DataFrame()

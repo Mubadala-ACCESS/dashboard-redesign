@@ -18,6 +18,7 @@
     spectraPayload: null,
     spectraIndex: 0,
     advancedPanel: 'timeseries',
+    fidasClean: false,
   };
 
   const emptyValue = '&mdash;';
@@ -50,6 +51,10 @@
 
   function isBuoyProfilePanel() {
     return state.stationTemplate === 'buoy' && state.advancedPanel === 'profiles';
+  }
+
+  function isFidasStation() {
+    return state.stationTemplate === 'fidas';
   }
 
   function activeMetricKeys() {
@@ -589,7 +594,7 @@
 
   async function loadFidasSpectra(force = false) {
     if (!hasSpectraPanel()) return;
-    if (!force && state.spectraPayload?.period === state.period) {
+    if (!force && state.spectraPayload?.period === state.period && state.spectraPayload?.clean === state.fidasClean) {
       renderFidasSpectra();
       return;
     }
@@ -598,6 +603,7 @@
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/spectra`, window.location.origin);
     url.searchParams.set('period', state.period);
     url.searchParams.set('max_frames', '240');
+    if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     const payload = await App.fetchJSON(url.toString());
     const latestIndex = Number.isInteger(payload.latest_index) ? payload.latest_index : Math.max(0, (payload.frames || []).length - 1);
     state.spectraPayload = payload;
@@ -618,13 +624,22 @@
       return;
     }
 
-    const values = (frame.values || []).map((value) => {
-      const numeric = Number(value);
-      return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
-    });
-    const length = Math.min(sizes.length, values.length);
-    const x = sizes.slice(0, length);
-    const y = values.slice(0, length);
+    const rawValues = frame.values || [];
+    const pairs = [];
+    const length = Math.min(sizes.length, rawValues.length);
+    for (let index = 0; index < length; index += 1) {
+      const size = Number(sizes[index]);
+      const value = Number(rawValues[index]);
+      if (!Number.isFinite(size) || size <= 0) continue;
+      pairs.push([size, Number.isFinite(value) && value > 0 ? value : 0.001]);
+    }
+    const x = pairs.map(([size]) => size);
+    const y = pairs.map(([, value]) => value);
+    if (!x.length) {
+      if (label) label.textContent = 'No spectra';
+      host.innerHTML = '<div class="empty-trend">No valid spectra bins for this sample.</div>';
+      return;
+    }
     if (label) label.textContent = frame.label || frame.timestamp || 'Selected sample';
     host.innerHTML = '';
 
@@ -660,6 +675,7 @@
     url.searchParams.set('period', state.period);
     url.searchParams.set('include_trends', 'true');
     if (state.quickSplitSensors) url.searchParams.set('include_sensor_trends', 'true');
+    if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     const payload = await App.fetchJSON(url.toString());
     updateLatestCards(payload);
   }
@@ -669,6 +685,7 @@
     url.searchParams.set('period', state.period);
     url.searchParams.set('aggregation', state.aggregation);
     url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
+    if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
     const payload = await App.fetchJSON(url.toString());
     const selectorMetrics = payload.available_metrics?.length ? payload.available_metrics : payload.metrics;
@@ -721,6 +738,16 @@
       state.quickSplitSensors = event.target.checked;
       loadLatest();
     });
+    document.getElementById('fidas-clean-data-toggle')?.addEventListener('change', (event) => {
+      state.fidasClean = event.target.checked;
+      state.spectraPayload = null;
+      loadLatest();
+      if (state.advancedPanel === 'spectra') {
+        loadFidasSpectra(true).then(scheduleActiveChartResize);
+      } else {
+        loadTimeseries();
+      }
+    });
 
     document.querySelectorAll('#view-tabs button').forEach((button) => {
       button.addEventListener('click', () => {
@@ -756,6 +783,7 @@
       url.searchParams.set('period', state.period);
       url.searchParams.set('aggregation', state.aggregation);
       url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
+      if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
       if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
       window.open(url.toString(), '_blank');
     });
@@ -764,6 +792,7 @@
       url.searchParams.set('period', state.period);
       url.searchParams.set('aggregation', state.aggregation);
       url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
+      if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
       if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
       window.open(url.toString(), '_blank');
     });

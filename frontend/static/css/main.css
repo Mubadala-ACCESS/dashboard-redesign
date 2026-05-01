@@ -367,8 +367,11 @@ img { max-width: 100%; }
 .tab-switch { display: inline-flex; padding: 4px; border-radius: 16px; background: rgba(255, 255, 255, 0.86); border: 1px solid var(--line); gap: 4px; }
 .station-toolbar .inline-toggle,
 .station-toolbar .tab-switch,
-.station-toolbar .ghost-button { min-height: 50px; }
+.station-toolbar .ghost-button,
+.station-toolbar .fidas-clean-toggle { min-height: 50px; }
 .station-toolbar .ghost-button { display: inline-flex; align-items: center; justify-content: center; }
+.station-toolbar .fidas-clean-toggle { margin-top: 0; padding: 0 14px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.86); color: var(--muted); font-weight: 800; }
+.station-toolbar .fidas-clean-toggle input { accent-color: var(--primary); }
 .tab-panel { display: none; gap: 20px; }
 .tab-panel.is-active { display: grid; }
 .summary-grid, .status-summary-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }

@@ -146,6 +146,7 @@ def create_app() -> FastAPI:
         period: str = Query(default='24H'),
         include_trends: bool = Query(default=False),
         include_sensor_trends: bool = Query(default=False),
+        clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
@@ -154,6 +155,7 @@ def create_app() -> FastAPI:
                 period=period,
                 include_trends=include_trends,
                 include_sensor_trends=include_sensor_trends,
+                clean=clean,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
@@ -165,11 +167,12 @@ def create_app() -> FastAPI:
         aggregation: str = Query(default='raw'),
         metrics: Optional[str] = Query(default=None, description='Comma-separated metric keys'),
         split_sensors: bool = Query(default=False),
+        clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
         try:
-            return repo.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors)
+            return repo.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -178,10 +181,11 @@ def create_app() -> FastAPI:
         station_id: str,
         period: str = Query(default='24H'),
         max_frames: int = Query(default=700, ge=24, le=1000),
+        clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            return repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames)
+            return repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames, clean=clean)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -205,10 +209,11 @@ def create_app() -> FastAPI:
         aggregation: str = Query(default='raw'),
         metrics: Optional[str] = Query(default=None),
         split_sensors: bool = Query(default=False),
+        clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
-        frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors)
+        frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
         if frame.empty:
             raise HTTPException(status_code=404, detail='No data available for export.')
         buffer = io.StringIO()
@@ -223,10 +228,11 @@ def create_app() -> FastAPI:
         aggregation: str = Query(default='raw'),
         metrics: Optional[str] = Query(default=None),
         split_sensors: bool = Query(default=False),
+        clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
-        frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors)
+        frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
         if frame.empty:
             raise HTTPException(status_code=404, detail='No data available for export.')
         return Response(orjson.dumps(frame.to_dict(orient='records')), media_type='application/json')

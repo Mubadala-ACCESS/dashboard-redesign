@@ -34,6 +34,13 @@
           <button type="button" data-tab="advanced">Advanced</button>
         </div>
 
+        {% if station_template == 'fidas' %}
+        <label class="toggle-row fidas-clean-toggle">
+          <input type="checkbox" id="fidas-clean-data-toggle" />
+          <span>Clean data</span>
+        </label>
+        {% endif %}
+
         <button class="ghost-button" id="open-station-metadata" type="button">Station metadata</button>
       </div>
     </section>
