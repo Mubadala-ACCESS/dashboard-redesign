@@ -75,14 +75,14 @@ img { max-width: 100%; }
 .left-rail { position: sticky; top: calc(var(--topbar-h) + 18px); align-self: start; }
 .home-map-column { min-width: 0; }
 
-.sidebar-card, .map-panel, .side-summary-card, .control-card, .analysis-header, .quick-period-strip, .event-panel, .table-card, .alert-card, .support-card, .glossary-card, .empty-state, .modal-panel, .page-hero {
+.sidebar-card, .map-panel, .side-summary-card, .control-card, .analysis-header, .quick-period-strip, .quick-trend-panel, .event-panel, .table-card, .alert-card, .support-card, .glossary-card, .empty-state, .modal-panel, .page-hero {
   background: var(--panel-soft);
   border: 1px solid rgba(255, 255, 255, 0.78);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow-md);
   backdrop-filter: blur(14px);
 }
-.sidebar-card, .side-summary-card, .control-card, .analysis-header, .quick-period-strip, .event-panel, .table-card, .alert-card, .support-card, .glossary-card, .empty-state, .modal-panel, .page-hero { padding: 22px; }
+.sidebar-card, .side-summary-card, .control-card, .analysis-header, .quick-period-strip, .quick-trend-panel, .event-panel, .table-card, .alert-card, .support-card, .glossary-card, .empty-state, .modal-panel, .page-hero { padding: 22px; }
 
 .home-sidebar-card,
 .map-panel,
@@ -405,8 +405,15 @@ img { max-width: 100%; }
 .chart-grid { display: grid; gap: 18px; }
 .chart-card { padding: 16px; border-radius: var(--radius-lg); background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(255, 255, 255, 0.75); box-shadow: var(--shadow-sm); }
 .chart-card h3 { margin: 0 0 6px; }
+.chart-card header { margin-bottom: 12px; }
+.chart-card header p { margin: 4px 0 0; color: var(--muted); line-height: 1.45; }
 .chart-meta { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; color: var(--muted); font-size: 0.92rem; }
 .chart-host { min-height: 320px; }
+.quick-trend-panel { display: grid; gap: 16px; overflow: hidden; }
+.quick-trend-grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.quick-trend-card { min-width: 0; }
+.quick-trend-host { min-height: 240px; }
+.empty-trend { display: grid; min-height: 180px; place-items: center; color: var(--muted); border-radius: 14px; background: rgba(91, 33, 182, 0.04); }
 .table-card { overflow: hidden; }
 .section-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; }
 .section-head p { margin: 4px 0 0; color: var(--muted); }

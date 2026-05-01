@@ -46,9 +46,9 @@ class MongoDashboardRepository:
     AGG_MAP = {
         'raw': None,
         '15m': '15min',
-        '1h': '1H',
-        '6h': '6H',
-        '1d': '1D',
+        '1h': '1h',
+        '6h': '6h',
+        '1d': '1d',
     }
     SPECIAL_REALTIME_TYPES = {'IoTBox', 'Meteorological', 'Buoy', 'Fidas_Palas'}
 
@@ -824,11 +824,22 @@ class MongoDashboardRepository:
     # ------------------------------------------------------------------
     # Latest cards and alerts
     # ------------------------------------------------------------------
-    def get_latest_cards(self, station_id: str, period: str = '24H') -> Dict[str, Any]:
+    def _quick_aggregation_for_period(self, period: str) -> str:
+        return {
+            '24H': '15m',
+            '7D': '1h',
+            '30D': '6h',
+            '1Y': '1d',
+            'ALL': '1d',
+        }.get(period.upper(), '15m')
+
+    def get_latest_cards(self, station_id: str, period: str = '24H', include_trends: bool = False) -> Dict[str, Any]:
         station = self.get_station_summary(station_id)
-        timeseries = self.get_timeseries(station_id, period=period, aggregation='15m', metrics=[], split_sensors=False)
+        aggregation = self._quick_aggregation_for_period(period)
+        timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=[], split_sensors=False)
         charts = timeseries.get('charts', [])
         cards = []
+        trends = []
         primary_aqi = None
         for chart in charts[:6]:
             label = chart['label']
@@ -847,10 +858,21 @@ class MongoDashboardRepository:
                 primary_aqi = calculate_aqi(latest, chart['canonical_label'])
                 card['aqi'] = primary_aqi
             cards.append(card)
+            if include_trends:
+                trends.append({
+                    'metric': chart['metric'],
+                    'label': label,
+                    'canonical_label': chart['canonical_label'],
+                    'unit': self._extract_unit(label),
+                    'summary': chart['summary'],
+                    'series': chart['series'],
+                })
         return {
             'station': station,
             'period': period,
+            'trend_aggregation': aggregation,
             'cards': cards,
+            'trends': trends,
             'primary_aqi': primary_aqi,
             'events': timeseries.get('events', []),
             'latest_table': timeseries.get('table', [])[:8],

@@ -14,6 +14,7 @@
   };
 
   const emptyValue = '&mdash;';
+  const trendColors = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#be185d', '#64748b'];
 
   function displayValue(value) {
     return value === null || value === undefined || value === '' ? emptyValue : App.escapeHtml(String(value));
@@ -22,6 +23,20 @@
   function metricValue(value, unit = '') {
     if (value === null || value === undefined || value === '') return emptyValue;
     return `${displayValue(value)}${unit ? ` ${App.escapeHtml(unit)}` : ''}`;
+  }
+
+  function trendHostId(metric, index) {
+    return `quick-trend-${index}-${String(metric).replace(/[^a-zA-Z0-9_-]/g, '-')}`;
+  }
+
+  function aggregationLabel(value) {
+    return {
+      raw: 'raw samples',
+      '15m': '15 min',
+      '1h': 'hourly',
+      '6h': '6 hour',
+      '1d': 'daily',
+    }[value] || value || 'trend';
   }
 
   function makeCard(card) {
@@ -63,10 +78,78 @@
     if (label) label.textContent = period;
     if (!payload.cards?.length) {
       container.innerHTML = '<article class="empty-state"><h2>No current readings</h2><p>No data was available for the selected display period.</p></article>';
+      renderQuickTrends(payload);
       return;
     }
 
     container.innerHTML = payload.cards.map((card) => makeCard(card)).join('');
+    renderQuickTrends(payload);
+  }
+
+  function renderQuickTrends(payload) {
+    const panel = document.getElementById('quick-trend-panel');
+    const root = document.getElementById('quick-trends');
+    const context = document.getElementById('quick-trend-context');
+    const trends = payload.trends || [];
+
+    if (!panel || !root) return;
+    root.innerHTML = '';
+
+    if (!trends.length) {
+      panel.hidden = true;
+      return;
+    }
+
+    panel.hidden = false;
+    if (context) {
+      context.textContent = `${payload.period || state.period} trends using ${aggregationLabel(payload.trend_aggregation)} values.`;
+    }
+
+    trends.forEach((trend, index) => {
+      const hostId = trendHostId(trend.metric, index);
+      const unit = trend.unit ? ` ${trend.unit}` : '';
+      const card = document.createElement('article');
+      card.className = 'chart-card quick-trend-card';
+      card.innerHTML = `
+        <header>
+          <div>
+            <h3>${App.escapeHtml(trend.label)}</h3>
+            <p>Current ${metricValue(trend.summary?.latest, trend.unit)} &middot; Mean ${displayValue(trend.summary?.mean)} &middot; Min ${displayValue(trend.summary?.min)} &middot; Max ${displayValue(trend.summary?.max)}</p>
+          </div>
+        </header>
+        <div id="${hostId}" class="chart-host quick-trend-host"></div>
+      `;
+      root.appendChild(card);
+      renderQuickTrendChart(hostId, trend, trendColors[index % trendColors.length], unit);
+    });
+  }
+
+  function renderQuickTrendChart(hostId, trend, color, unit) {
+    const host = document.getElementById(hostId);
+    if (!host || !window.Plotly) return;
+    const points = (trend.series || []).filter((point) => point.y !== null && point.y !== undefined);
+    if (!points.length) {
+      host.innerHTML = '<div class="empty-trend">No trend data for this display period.</div>';
+      return;
+    }
+
+    Plotly.newPlot(host, [{
+      x: points.map((point) => point.x),
+      y: points.map((point) => point.y),
+      type: 'scatter',
+      mode: 'lines',
+      line: { color, width: 2.4, shape: 'spline' },
+      fill: 'tozeroy',
+      fillcolor: 'rgba(91, 33, 182, 0.06)',
+      hovertemplate: `%{x}<br>%{y:.2f}${unit}<extra></extra>`,
+    }], {
+      margin: { t: 10, r: 18, b: 38, l: 54 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      xaxis: { gridcolor: 'rgba(91,101,118,.12)', tickfont: { size: 11 } },
+      yaxis: { title: unit.trim(), gridcolor: 'rgba(91,101,118,.12)', zerolinecolor: 'rgba(91,101,118,.16)' },
+      showlegend: false,
+    }, { displaylogo: false, responsive: true });
   }
 
   function renderMetricSelector(metrics) {
@@ -191,6 +274,7 @@
   async function loadLatest() {
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/latest`, window.location.origin);
     url.searchParams.set('period', state.period);
+    url.searchParams.set('include_trends', 'true');
     const payload = await App.fetchJSON(url.toString());
     updateLatestCards(payload);
   }

@@ -138,10 +138,11 @@ def create_app() -> FastAPI:
     def api_station_latest(
         station_id: str,
         period: str = Query(default='24H'),
+        include_trends: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            return repo.get_latest_cards(station_id, period=period)
+            return repo.get_latest_cards(station_id, period=period, include_trends=include_trends)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
