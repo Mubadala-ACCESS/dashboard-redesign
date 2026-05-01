@@ -16,6 +16,30 @@
     selectedStationId: null,
   };
 
+  const STATION_TYPE_STYLES = {
+    IoTBox: { label: 'IoT Box', color: '#2563eb' },
+    Meteorological: { label: 'Meteorological', color: '#f59e0b' },
+    Fidas_Palas: { label: 'Fidas Palas', color: '#be123c' },
+    Buoy: { label: 'Buoy', color: '#0891b2' },
+    JWCruise: { label: 'Jaywun Cruise', color: '#16a34a' },
+    SBNTransect: { label: 'SBN Transect', color: '#7c3aed' },
+    coral_reef: { label: 'Coral Reef', color: '#db2777' },
+    underwater_probe: { label: 'Underwater Probe', color: '#0e7490' },
+    Unknown: { label: 'Unknown', color: '#64748b' },
+  };
+
+  const STATUS_COLORS = {
+    Active: '#0f766e',
+    Maintenance: '#d97706',
+    Decommissioned: '#64748b',
+    Unknown: '#94a3b8',
+  };
+
+  const PRIVACY_COLORS = {
+    Public: '#ffffff',
+    Private: '#dc2626',
+  };
+
   const drawer = document.getElementById('station-drawer');
   const summaryEl = document.getElementById('drawer-summary');
   const currentEl = document.getElementById('drawer-current');
@@ -24,6 +48,7 @@
   const drawerSubtitle = document.getElementById('drawer-subtitle');
   const drawerMetadata = document.getElementById('drawer-open-metadata');
   const drawerOpenStation = document.getElementById('drawer-open-station');
+  const legendEl = document.querySelector('.legend-inline');
 
   function populateSelect(select, items, selectedValue) {
     if (!select) return;
@@ -42,18 +67,79 @@
     populateSelect(document.getElementById('status-select-mobile'), state.filters.statuses, state.status);
   }
 
-  function circleStyle(station) {
-    const fillColor = station.status === 'Maintenance' ? '#d97706' : '#0f766e';
-    const strokeColor = station.is_public ? '#ffffff' : '#dc2626';
+  function stationTypeStyle(stationOrType) {
+    const key = typeof stationOrType === 'string' ? stationOrType : stationOrType?.device_type;
+    const fallbackLabel = typeof stationOrType === 'string' ? key : stationOrType?.device_label;
+    const style = STATION_TYPE_STYLES[key] || STATION_TYPE_STYLES.Unknown;
     return {
-      radius: 5.5,
-      fillColor,
-      color: strokeColor,
-      weight: station.is_public ? 2 : 3,
-      opacity: 1,
-      fillOpacity: 1,
-      pane: 'markerPane',
+      key: key || 'Unknown',
+      label: fallbackLabel || style.label,
+      color: style.color,
     };
+  }
+
+  function statusColor(status) {
+    return STATUS_COLORS[status] || STATUS_COLORS.Unknown;
+  }
+
+  function privacyLabel(station) {
+    if (station?.privacy) return station.privacy;
+    return station?.is_public === false ? 'Private' : 'Public';
+  }
+
+  function privacyColor(privacy) {
+    const label = privacy === 'private' ? 'Private' : privacy === 'public' ? 'Public' : privacy;
+    return PRIVACY_COLORS[label] || PRIVACY_COLORS.Public;
+  }
+
+  function markerIcon(station) {
+    const type = stationTypeStyle(station);
+    const privacy = privacyLabel(station);
+    return L.divIcon({
+      className: 'station-marker-wrap',
+      html: `
+        <span class="station-marker" style="--station-type:${type.color}; --station-status:${statusColor(station.status)}; --station-privacy:${privacyColor(privacy)}">
+          <span class="station-marker__status">
+            <span class="station-marker__type"></span>
+          </span>
+        </span>
+      `,
+      iconSize: [18, 18],
+      iconAnchor: [9, 9],
+      popupAnchor: [0, -7],
+    });
+  }
+
+  function renderLegend() {
+    if (!legendEl || !state.filters) return;
+    const typeItems = (state.filters.device_types || []).filter((item) => item.value !== 'all');
+    const statusItems = (state.filters.statuses || []).filter((item) => item.value !== 'all');
+    const privacyItems = (state.filters.privacy || []).filter((item) => item.value !== 'all');
+
+    legendEl.classList.add('station-legend');
+    legendEl.innerHTML = `
+      <span class="legend-group">
+        <strong>Center: station type</strong>
+        <span class="legend-items">
+          ${typeItems.map((item) => {
+            const style = stationTypeStyle(item.value);
+            return `<span class="legend-key"><em class="legend-dot" style="--legend-color:${style.color}"></em>${App.escapeHtml(item.label)}</span>`;
+          }).join('')}
+        </span>
+      </span>
+      <span class="legend-group">
+        <strong>Middle ring: status</strong>
+        <span class="legend-items">
+          ${statusItems.map((item) => `<span class="legend-key"><em class="legend-ring" style="--legend-color:${statusColor(item.value)}"></em>${App.escapeHtml(item.label)}</span>`).join('')}
+        </span>
+      </span>
+      <span class="legend-group">
+        <strong>Outer ring: privacy</strong>
+        <span class="legend-items">
+          ${privacyItems.map((item) => `<span class="legend-key"><em class="legend-ring legend-ring--outer" style="--legend-color:${privacyColor(item.value)}"></em>${App.escapeHtml(item.label)}</span>`).join('')}
+        </span>
+      </span>
+    `;
   }
 
   function jitterStations(stations) {
@@ -91,7 +177,12 @@
     plotted.forEach((station) => {
       if (station.display_lat == null || station.display_lon == null) return;
       bounds.push([station.display_lat, station.display_lon]);
-      const marker = L.circleMarker([station.display_lat, station.display_lon], circleStyle(station));
+      const marker = L.marker([station.display_lat, station.display_lon], {
+        icon: markerIcon(station),
+        keyboard: true,
+        title: `${station.name} - ${station.device_label}`,
+        riseOnHover: true,
+      });
       marker.on('click', () => openDrawer(station.station_id));
       marker.addTo(state.markers);
     });
@@ -222,6 +313,7 @@
     const payload = await App.fetchJSON(url.toString());
     state.stations = payload.stations || [];
     renderMarkers(state.stations);
+    renderLegend();
   }
 
   function debounce(fn, delay = 250) {
