@@ -13,48 +13,60 @@
     latestPayload: null,
   };
 
-  function unitFromLabel(label = '') {
-    const match = label.match(/\(([^)]+)\)/);
-    return match ? match[1] : '';
+  const emptyValue = '&mdash;';
+
+  function displayValue(value) {
+    return value === null || value === undefined || value === '' ? emptyValue : App.escapeHtml(String(value));
   }
 
-  function makeCard(card, primaryAqi) {
-    const unit = card.unit ? ` ${card.unit}` : '';
-    const aqiTag = card.aqi || (!card.aqi && primaryAqi && ['PM2.5', 'PM10'].includes(card.canonical_label) ? primaryAqi : null);
+  function metricValue(value, unit = '') {
+    if (value === null || value === undefined || value === '') return emptyValue;
+    return `${displayValue(value)}${unit ? ` ${App.escapeHtml(unit)}` : ''}`;
+  }
+
+  function makeCard(card) {
+    const unit = card.unit || '';
     return `
       <article class="metric-card">
-        <span>${App.escapeHtml(card.label)}</span>
-        <strong>${card.latest ?? '—'}${unit}</strong>
-        <small>Mean ${card.mean ?? '—'} · Max ${card.max ?? '—'}</small>
-        ${aqiTag ? `<small><strong>${App.escapeHtml(aqiTag.category)}</strong> · AQI ${aqiTag.aqi}</small>` : ''}
+        <div class="metric-card__top">
+          <span>${App.escapeHtml(card.label)}</span>
+          <small>${App.escapeHtml(state.period)}</small>
+        </div>
+        <div class="metric-current">
+          <small>Current</small>
+          <strong>${metricValue(card.latest, unit)}</strong>
+        </div>
+        <div class="metric-stat-grid">
+          <div>
+            <small>Mean</small>
+            <b>${displayValue(card.mean)}</b>
+          </div>
+          <div>
+            <small>Min</small>
+            <b>${displayValue(card.min)}</b>
+          </div>
+          <div>
+            <small>Max</small>
+            <b>${displayValue(card.max)}</b>
+          </div>
+        </div>
       </article>
     `;
   }
 
   function updateLatestCards(payload) {
     state.latestPayload = payload;
+    const period = payload.period || state.period;
+    const label = document.getElementById('stats-period-label');
     const container = document.getElementById('latest-cards');
-    container.innerHTML = payload.cards.map((card) => makeCard(card, payload.primary_aqi)).join('');
-    const freshness = payload.station.freshness;
-    const freshnessText = freshness.is_stale
-      ? `Latest reading is stale. Last update: ${freshness.last_update}.`
-      : `Fresh data available. Last update: ${freshness.last_update}.`;
-    document.getElementById('station-freshness-text').textContent = freshnessText;
-    document.getElementById('quick-interpretation').textContent = payload.primary_aqi
-      ? `${payload.primary_aqi.category}. ${payload.primary_aqi.health_message}`
-      : 'This station does not currently expose particulate AQI-style interpretation from the selected latest metrics.';
 
-    const events = document.getElementById('event-markers');
-    if (!payload.events.length) {
-      events.innerHTML = '<div class="event-chip"><strong>No active event markers</strong><small>Recent data did not trigger heat, rain, or particulate event heuristics.</small></div>';
+    if (label) label.textContent = period;
+    if (!payload.cards?.length) {
+      container.innerHTML = '<article class="empty-state"><h2>No current readings</h2><p>No data was available for the selected display period.</p></article>';
       return;
     }
-    events.innerHTML = payload.events.map((event) => `
-      <article class="event-chip">
-        <strong>${App.escapeHtml(event.type)}</strong>
-        <small>${App.escapeHtml(event.label)} · ${App.escapeHtml(event.timestamp)} · ${event.value}</small>
-      </article>
-    `).join('');
+
+    container.innerHTML = payload.cards.map((card) => makeCard(card)).join('');
   }
 
   function renderMetricSelector(metrics) {
@@ -89,9 +101,10 @@
     card.innerHTML = `
       <h3>${App.escapeHtml(chart.label)}</h3>
       <div class="chart-meta">
-        <span>Latest ${chart.summary.latest ?? '—'}</span>
-        <span>Mean ${chart.summary.mean ?? '—'}</span>
-        <span>Max ${chart.summary.max ?? '—'}</span>
+        <span>Current ${displayValue(chart.summary.latest)}</span>
+        <span>Mean ${displayValue(chart.summary.mean)}</span>
+        <span>Min ${displayValue(chart.summary.min)}</span>
+        <span>Max ${displayValue(chart.summary.max)}</span>
       </div>
       <div class="chart-host"></div>
     `;
@@ -154,7 +167,7 @@
     table.querySelector('tbody').innerHTML = payload.table.map((row) => `
       <tr>
         <td>${App.escapeHtml(row.timestamp)}</td>
-        ${headers.map((metric) => `<td>${row[metric.key] ?? '—'}</td>`).join('')}
+        ${headers.map((metric) => `<td>${row[metric.key] ?? emptyValue}</td>`).join('')}
       </tr>
     `).join('');
   }
@@ -169,14 +182,16 @@
     card.hidden = false;
     list.innerHTML = payload.profiles.map((profile) => `
       <article class="profile-item">
-        <strong>${App.escapeHtml(profile.label)} · ${App.escapeHtml(profile.timestamp)}</strong>
+        <strong>${App.escapeHtml(profile.label)} &middot; ${App.escapeHtml(profile.timestamp)}</strong>
         <code>depth: ${App.escapeHtml(JSON.stringify(profile.depth || []))}\nvalues: ${App.escapeHtml(JSON.stringify(profile.values || []))}</code>
       </article>
     `).join('');
   }
 
   async function loadLatest() {
-    const payload = await App.fetchJSON(`/api/stations/${encodeURIComponent(state.stationId)}/latest`);
+    const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/latest`, window.location.origin);
+    url.searchParams.set('period', state.period);
+    const payload = await App.fetchJSON(url.toString());
     updateLatestCards(payload);
   }
 
@@ -211,14 +226,17 @@
       button.addEventListener('click', () => {
         document.querySelectorAll('#period-buttons button').forEach((item) => item.classList.toggle('is-active', item === button));
         state.period = button.dataset.period;
+        const label = document.getElementById('stats-period-label');
+        if (label) label.textContent = state.period;
+        loadLatest();
         loadTimeseries();
       });
     });
-    document.getElementById('aggregation-select').addEventListener('change', (event) => {
+    document.getElementById('aggregation-select')?.addEventListener('change', (event) => {
       state.aggregation = event.target.value;
       loadTimeseries();
     });
-    document.getElementById('split-sensors-toggle').addEventListener('change', (event) => {
+    document.getElementById('split-sensors-toggle')?.addEventListener('change', (event) => {
       state.splitSensors = event.target.checked;
       loadTimeseries();
     });

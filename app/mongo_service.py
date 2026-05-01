@@ -824,9 +824,9 @@ class MongoDashboardRepository:
     # ------------------------------------------------------------------
     # Latest cards and alerts
     # ------------------------------------------------------------------
-    def get_latest_cards(self, station_id: str) -> Dict[str, Any]:
+    def get_latest_cards(self, station_id: str, period: str = '24H') -> Dict[str, Any]:
         station = self.get_station_summary(station_id)
-        timeseries = self.get_timeseries(station_id, period='24H', aggregation='15m', metrics=[], split_sensors=False)
+        timeseries = self.get_timeseries(station_id, period=period, aggregation='15m', metrics=[], split_sensors=False)
         charts = timeseries.get('charts', [])
         cards = []
         primary_aqi = None
@@ -849,6 +849,7 @@ class MongoDashboardRepository:
             cards.append(card)
         return {
             'station': station,
+            'period': period,
             'cards': cards,
             'primary_aqi': primary_aqi,
             'events': timeseries.get('events', []),
