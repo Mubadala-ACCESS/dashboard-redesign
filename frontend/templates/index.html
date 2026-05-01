@@ -64,26 +64,21 @@
       <div>
         <span class="eyebrow">Station quick view</span>
         <h2 id="drawer-title">Select a station</h2>
-        <p id="drawer-subtitle">Tap a marker to open summary, current readings, and metadata.</p>
+        <p id="drawer-subtitle">Tap a marker to open details, current readings, and metadata.</p>
       </div>
       <button id="close-drawer" class="ghost-button station-drawer__close" type="button">Close</button>
     </div>
 
     <div class="station-drawer__tabs" id="drawer-tabs">
-      <button type="button" class="is-active" data-drawer-tab="summary">Summary</button>
-      <button type="button" data-drawer-tab="current">Current</button>
-      <button type="button" data-drawer-tab="details">Details</button>
+      <button type="button" class="is-active" data-drawer-tab="details">Details</button>
+      <button type="button" data-drawer-tab="current">Current Readings</button>
     </div>
-
-    <section class="station-drawer__panel is-active" data-drawer-panel="summary">
-      <div id="drawer-summary" class="drawer-stack"></div>
-    </section>
 
     <section class="station-drawer__panel" data-drawer-panel="current">
       <div id="drawer-current" class="drawer-stack"></div>
     </section>
 
-    <section class="station-drawer__panel" data-drawer-panel="details">
+    <section class="station-drawer__panel is-active" data-drawer-panel="details">
       <div id="drawer-details" class="drawer-stack"></div>
     </section>
 
@@ -133,5 +128,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/home.js?v=marker-layers-3"></script>
+<script src="/static/js/home.js?v=drawer-compact-3"></script>
 {% endblock %}

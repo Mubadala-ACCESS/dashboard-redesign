@@ -317,6 +317,9 @@ img { max-width: 100%; }
 .drawer-card p { margin: 0; color: var(--muted); line-height: 1.55; }
 .drawer-kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 .drawer-kv div { padding: 12px; border-radius: 14px; background: rgba(91,33,182,.06); }
+.drawer-kv.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.drawer-kv.compact div { padding: 10px 12px; }
+.drawer-kv.compact div:last-child { grid-column: 1 / -1; }
 .drawer-kv span { display: block; color: var(--muted); font-size: .78rem; margin-bottom: 4px; }
 .drawer-kv strong { display: block; font-size: 0.95rem; }
 .drawer-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
@@ -459,6 +462,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .station-marker__type { width: 4px; height: 4px; }
   .station-legend { justify-content: flex-start; }
   .legend-group { grid-template-columns: 1fr; row-gap: 5px; }
+  .drawer-kv.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tab-switch, .inline-toggle { width: 100%; justify-content: space-between; }
   .station-drawer { right: 10px; width: calc(100vw - 20px); }
   :root { --map-height: 58vh; --map-footer-h: 72px; }

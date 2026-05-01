@@ -41,7 +41,6 @@
   };
 
   const drawer = document.getElementById('station-drawer');
-  const summaryEl = document.getElementById('drawer-summary');
   const currentEl = document.getElementById('drawer-current');
   const detailsEl = document.getElementById('drawer-details');
   const drawerTitle = document.getElementById('drawer-title');
@@ -194,10 +193,10 @@
 
   function resetDrawerTabs() {
     document.querySelectorAll('#drawer-tabs button').forEach((item) => {
-      item.classList.toggle('is-active', item.dataset.drawerTab === 'summary');
+      item.classList.toggle('is-active', item.dataset.drawerTab === 'details');
     });
     document.querySelectorAll('[data-drawer-panel]').forEach((panel) => {
-      panel.classList.toggle('is-active', panel.getAttribute('data-drawer-panel') === 'summary');
+      panel.classList.toggle('is-active', panel.getAttribute('data-drawer-panel') === 'details');
     });
   }
 
@@ -222,7 +221,6 @@
     resetDrawerTabs();
     drawer.classList.add('is-open');
     drawer.setAttribute('aria-hidden', 'false');
-    summaryEl.innerHTML = '<article class="drawer-card"><p>Loading station summary…</p></article>';
     currentEl.innerHTML = '<article class="drawer-card"><p>Loading current readings…</p></article>';
     detailsEl.innerHTML = '<article class="drawer-card"><p>Loading station details…</p></article>';
     drawerMetadata.disabled = false;
@@ -238,37 +236,12 @@
     drawerTitle.textContent = summary.name;
     drawerSubtitle.textContent = `${summary.device_label} · ${summary.status} · ${summary.location_text}`;
 
-    summaryEl.innerHTML = `
-      <article class="drawer-card">
-        <div class="pill-row">
-          <span class="status-pill ${summary.status === 'Maintenance' ? 'maintenance' : ''}">${App.escapeHtml(summary.status)}</span>
-          <span class="status-pill subtle">${App.escapeHtml(summary.privacy)}</span>
-        </div>
-      </article>
-      <article class="drawer-card">
-        <h3>Station summary</h3>
-        <div class="drawer-kv">
-          <div><span>Station</span><strong>${App.escapeHtml(summary.station_num ?? summary.station_id)}</strong></div>
-          <div><span>Device</span><strong>${App.escapeHtml(summary.device_label)}</strong></div>
-          <div><span>Latitude</span><strong>${summary.lat?.toFixed?.(4) ?? '—'}</strong></div>
-          <div><span>Longitude</span><strong>${summary.lon?.toFixed?.(4) ?? '—'}</strong></div>
-        </div>
-      </article>
-      <article class="drawer-card">
-        <h3>Data availability</h3>
-        <div class="drawer-kv">
-          <div><span>Freshness</span><strong>${App.escapeHtml(summary.freshness?.freshness_label || 'Unknown')}</strong></div>
-          <div><span>Last update</span><strong>${App.escapeHtml(summary.freshness?.last_update || 'N/A')}</strong></div>
-        </div>
-      </article>
-    `;
-
     if (!latest.cards?.length) {
-      currentEl.innerHTML = '<article class="drawer-card"><h3>Current readings</h3><p>No live readings are available for this station view.</p></article>';
+      currentEl.innerHTML = '<article class="drawer-card"><h3>Current Readings</h3><p>No live readings are available for this station view.</p></article>';
     } else {
       currentEl.innerHTML = `
         <article class="drawer-card">
-          <h3>Current readings</h3>
+          <h3>Current Readings</h3>
           <div class="drawer-metrics">
             ${latest.cards.slice(0, 6).map((card) => `
               <div class="drawer-metric">
@@ -278,28 +251,22 @@
             `).join('')}
           </div>
         </article>
-        <article class="drawer-card">
-          <h3>Interpretation</h3>
-          <p>${latest.primary_aqi ? `${App.escapeHtml(latest.primary_aqi.category)}. ${App.escapeHtml(latest.primary_aqi.health_message)}` : 'AQI-style interpretation is not available for the current primary live metric.'}</p>
-        </article>
       `;
     }
 
     detailsEl.innerHTML = `
       <article class="drawer-card">
         <h3>Station details</h3>
-        <div class="drawer-kv">
+        <div class="drawer-kv compact">
+          <div><span>Device</span><strong>${App.escapeHtml(summary.device_label)}</strong></div>
+          <div><span>Status</span><strong>${App.escapeHtml(summary.status)}</strong></div>
+          <div><span>Privacy</span><strong>${App.escapeHtml(summary.privacy)}</strong></div>
+          <div><span>Latitude</span><strong>${summary.lat?.toFixed?.(4) ?? '—'}</strong></div>
+          <div><span>Longitude</span><strong>${summary.lon?.toFixed?.(4) ?? '—'}</strong></div>
           <div><span>Earliest data</span><strong>${App.escapeHtml(metadata.summary?.earliest_data || 'N/A')}</strong></div>
           <div><span>Latest data</span><strong>${App.escapeHtml(metadata.summary?.latest_data || 'N/A')}</strong></div>
           <div><span>Measurement frequency</span><strong>${App.escapeHtml(metadata.summary?.measurement_frequency || 'N/A')}</strong></div>
-          <div><span>Metadata tabs</span><strong>${metadata.tabs?.length ?? 0}</strong></div>
         </div>
-      </article>
-      <article class="drawer-card">
-        <h3>Available instruments</h3>
-        <ul class="drawer-list">
-          ${(metadata.tabs || []).map((tab) => `<li>${App.escapeHtml(tab.label)}</li>`).join('') || '<li>No metadata tabs available.</li>'}
-        </ul>
       </article>
     `;
   }
