@@ -9,5 +9,4 @@ pandas
 numpy
 orjson
 cachetools
-psycopg[binary]
 pymongo

@@ -4,7 +4,6 @@ A production-oriented environmental monitoring dashboard built with:
 - **Frontend:** HTML, CSS, and vanilla JavaScript
 - **Backend:** FastAPI
 - **Current data source:** existing MongoDB
-- **Future data source:** PostgreSQL + PostGIS + TimescaleDB schema included
 
 This package ships a complete redesigned application with:
 - discovery hub map
@@ -13,8 +12,6 @@ This package ships a complete redesigned application with:
 - glossary and alerts pages
 - CSV and JSON export endpoints
 - MongoDB performance index script
-- PostgreSQL replacement schema
-- Mongo-to-Postgres migration utility
 
 ---
 
@@ -44,9 +41,6 @@ maccess-dashboard-redesign/
     templates/
   database/
     mongodb_indexes.js
-    postgresql_postgis_timescaledb.sql
-  scripts/
-    migrate_mongo_to_postgres.py
   docs/
     ARCHITECTURE.md
   .env.example
@@ -114,7 +108,6 @@ It also supports the legacy special-station mapping:
 ### Prerequisites
 - Python 3.11 or 3.12
 - access to the existing MongoDB instance
-- optional: PostgreSQL 16 + PostGIS + TimescaleDB for migration work
 
 ### Step 1: create environment file
 
@@ -192,7 +185,6 @@ docker compose up --build
 
 The included compose file starts:
 - `web` FastAPI app
-- `postgres` PostGIS container for the future relational migration path
 
 The app still reads MongoDB in the current adapter, so your `.env` must point to a reachable Mongo instance.
 
@@ -213,64 +205,7 @@ What it does:
 
 ---
 
-## 7. PostgreSQL replacement database
-
-The long-term replacement schema is in:
-
-```text
-database/postgresql_postgis_timescaledb.sql
-```
-
-### What it gives you
-- normalized station catalog
-- metric catalog
-- station metric definitions
-- hypertables for observations
-- dedicated buoy profile storage
-- health snapshots and event storage
-- materialized views for fast dashboard reads
-- geospatial support through PostGIS
-
-### Load the schema
-
-```bash
-psql "postgresql://postgres:postgres@localhost:5432/ecomonitor" -f database/postgresql_postgis_timescaledb.sql
-```
-
----
-
-## 8. Migrate MongoDB data into PostgreSQL
-
-The migration utility is:
-
-```text
-scripts/migrate_mongo_to_postgres.py
-```
-
-### Environment variables needed
-
-```env
-MONGO_URI=mongodb://YOUR_HOST:27017/
-MONGO_DB_NAME=all_stations_db
-POSTGRES_DSN=postgresql://postgres:postgres@localhost:5432/ecomonitor
-```
-
-### Run the migration
-
-```bash
-python scripts/migrate_mongo_to_postgres.py
-```
-
-The migration script:
-- upserts stations from `stations_info`
-- migrates IoT station observations
-- migrates special collections for meteo, Fidas, and buoy
-- stores buoy profiles in a dedicated table
-- refreshes materialized views after load
-
----
-
-## 9. API endpoints
+## 7. API endpoints
 
 ### Page routes
 - `GET /`
@@ -310,7 +245,7 @@ curl -OJ "http://localhost:8000/api/stations/100/export.csv?period=30D&aggregati
 
 ---
 
-## 10. Configuration reference
+## 8. Configuration reference
 
 ### Core application
 - `APP_NAME`
@@ -343,7 +278,7 @@ curl -OJ "http://localhost:8000/api/stations/100/export.csv?period=30D&aggregati
 
 ---
 
-## 11. Frontend customization
+## 9. Frontend customization
 
 ### Branding
 Update:
@@ -365,7 +300,7 @@ Update the JSON files under:
 
 ---
 
-## 12. Production recommendations
+## 10. Production recommendations
 
 ### App serving
 - run behind Nginx or a cloud load balancer
@@ -374,9 +309,9 @@ Update the JSON files under:
 - scale horizontally only after moving sessionless caching to Redis if needed
 
 ### Database
-- keep Mongo indexes current until the relational migration is complete
-- move long-term analytics reads to PostgreSQL/TimescaleDB
-- refresh materialized views on a schedule once PostgreSQL becomes primary
+- keep Mongo indexes current
+- monitor slow Mongo queries and add collection-specific indexes as new workflows appear
+- review retention and backup policies for station observations
 
 ### Monitoring
 - track `/health`
@@ -385,7 +320,7 @@ Update the JSON files under:
 
 ---
 
-## 13. Validation checklist
+## 11. Validation checklist
 
 After deployment, confirm:
 - homepage loads and map renders
@@ -401,6 +336,6 @@ After deployment, confirm:
 
 ---
 
-## 14. Notes
+## 12. Notes
 
-This package is designed so you can deploy the redesigned product immediately against the current MongoDB, then migrate to PostgreSQL without rebuilding the frontend or the service boundaries.
+This package is designed to deploy the redesigned product against the current MongoDB-backed data source.
