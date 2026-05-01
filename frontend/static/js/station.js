@@ -57,11 +57,31 @@
   }
 
   function setActiveMetricKeys(keys) {
+    const uniqueKeys = Array.from(new Set((keys || []).filter(Boolean)));
     if (isBuoyProfilePanel()) {
-      state.selectedProfileMetrics = keys;
+      state.selectedProfileMetrics = uniqueKeys;
     } else {
-      state.selectedMetrics = keys;
+      state.selectedMetrics = uniqueKeys;
     }
+  }
+
+  function checkedMetricKeys(root) {
+    return Array.from(root.querySelectorAll('input:checked')).map((item) => item.value);
+  }
+
+  function syncClickedMetricOrder(root, clickedKey, isChecked) {
+    const checked = new Set(checkedMetricKeys(root));
+    const previous = activeMetricKeys();
+    if (isChecked) {
+      const next = [
+        clickedKey,
+        ...previous.filter((key) => key !== clickedKey && checked.has(key)),
+        ...Array.from(checked).filter((key) => key !== clickedKey && !previous.includes(key)),
+      ];
+      setActiveMetricKeys(next);
+      return;
+    }
+    setActiveMetricKeys(previous.filter((key) => key !== clickedKey && checked.has(key)));
   }
 
   function metricsForActivePanel(metrics) {
@@ -300,7 +320,7 @@
     const root = document.getElementById('metric-selector');
     root.innerHTML = '';
     const visibleMetrics = metricsForActivePanel(metrics);
-    const selectedKeys = activeMetricKeys();
+    const selectedKeys = [...activeMetricKeys()];
     const hadSelection = selectedKeys.length > 0;
     const activeKeys = new Set(activeMetrics.map((metric) => metric.key));
     visibleMetrics.forEach((metric, index) => {
@@ -318,9 +338,10 @@
       `;
       root.appendChild(label);
     });
+    setActiveMetricKeys(selectedKeys);
     root.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
       checkbox.addEventListener('change', () => {
-        setActiveMetricKeys(Array.from(root.querySelectorAll('input:checked')).map((item) => item.value));
+        syncClickedMetricOrder(root, checkbox.value, checkbox.checked);
         if (isBuoyProfilePanel()) {
           loadBuoyProfiles();
         } else {
