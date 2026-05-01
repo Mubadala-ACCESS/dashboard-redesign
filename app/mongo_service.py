@@ -40,6 +40,8 @@ class MongoDashboardRepository:
         '24H': timedelta(hours=24),
         '7D': timedelta(days=7),
         '30D': timedelta(days=30),
+        '3M': timedelta(days=90),
+        '6M': timedelta(days=180),
         '1Y': timedelta(days=365),
         'ALL': None,
     }
@@ -66,6 +68,8 @@ class MongoDashboardRepository:
     FIDAS_CALCULATED_KEYS = {'dewT', 'feelLike', 'hIdx_nws', 'wbgt', 'pT'}
     BUOY_SCALAR_PARAMS = ['wind_speed', 'wind_direction', 'air_temp', 'barometric_pressure', 'albedo']
     BUOY_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2', 'chlorophyll', 'salinity_practical', 'density']
+    BUOY_DEFAULT_SCALAR_PARAMS = ['wind_speed', 'air_temp', 'barometric_pressure']
+    BUOY_DEFAULT_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2']
     METEO_LABEL_OVERRIDES = {
         'I3_VPOWER': 'Voltage Power (V)',
         'I4_VOUT': 'Voltage Output (V)',
@@ -682,18 +686,29 @@ class MongoDashboardRepository:
             return 'Wind Speed'
         return label
 
-    def _default_metrics(self, available_map: Dict[str, str]) -> List[str]:
+    def _default_metrics(self, available_map: Dict[str, str], limit: int = 6) -> List[str]:
         preferred: List[str] = []
         for desired in self.DEFAULT_METRIC_PRIORITY:
             for key, label in available_map.items():
                 if self._label_to_canonical(label) == desired and key not in preferred:
                     preferred.append(key)
-        if len(preferred) >= 6:
-            return preferred[:6]
+                    break
+        if len(preferred) >= limit:
+            return preferred[:limit]
+        seen_canonical = {self._label_to_canonical(available_map[key]) for key in preferred}
+        for key in available_map.keys():
+            canonical = self._label_to_canonical(available_map[key])
+            if key not in preferred and canonical not in seen_canonical:
+                preferred.append(key)
+                seen_canonical.add(canonical)
+            if len(preferred) >= limit:
+                return preferred[:limit]
         for key in available_map.keys():
             if key not in preferred:
                 preferred.append(key)
-        return preferred[:6]
+            if len(preferred) >= limit:
+                return preferred[:limit]
+        return preferred[:limit]
 
     def _quick_metrics_for_station(self, station: Dict[str, Any]) -> List[str]:
         available = self._available_metric_map(station)
@@ -707,7 +722,7 @@ class MongoDashboardRepository:
             return selected or self._default_metrics(available)
         if station['device_type'] == 'Buoy':
             return [key for key in self.BUOY_SCALAR_PARAMS if key in available]
-        return []
+        return self._default_metrics(available, limit=6)
 
     # ------------------------------------------------------------------
     # Timeseries extraction
@@ -722,10 +737,16 @@ class MongoDashboardRepository:
         delta = self.PERIOD_MAP.get(period.upper())
         if delta is None:
             return {}
-        now = self._now()
-        if station.get('device_type') == 'Fidas_Palas':
-            now = now + self._local_tz_offset()
-        return {time_field: {'$gte': now - delta}}
+        collection_name, _ = self._collection_for_station(station)
+        anchor = None
+        if collection_name and collection_name in self.db.list_collection_names():
+            latest = self._latest_document(station, projection={time_field: 1})
+            anchor = latest.get(time_field) if latest else None
+        if anchor is None:
+            anchor = self._now()
+            if station.get('device_type') == 'Fidas_Palas':
+                anchor = anchor + self._local_tz_offset()
+        return {time_field: {'$gte': anchor - delta, '$lte': anchor}}
 
     def _aggregate_df(self, df: pd.DataFrame, freq: str | None) -> pd.DataFrame:
         if df.empty or not freq:
@@ -733,13 +754,15 @@ class MongoDashboardRepository:
         df = df.copy()
         df = df.set_index('timestamp')
         numeric_cols = df.select_dtypes(include=['number']).columns
-        grouped = df[numeric_cols].resample(freq).mean().ffill().reset_index()
+        if numeric_cols.empty:
+            return pd.DataFrame(columns=['timestamp'])
+        grouped = df[numeric_cols].resample(freq).mean().dropna(how='all').reset_index()
         return grouped
 
     def _iot_dataframe(self, station: Dict[str, Any], metrics: List[str], split_sensors: bool, period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
         labels, full_params = self._iot_discover(int(station['station_num']))
         if not metrics:
-            metrics = self._default_metrics(labels)
+            metrics = self._default_metrics(labels, limit=3)
         selected_full = {metric: full_params[metric] for metric in metrics if metric in full_params}
         plot_labels = dict(labels)
         for sensor_list in selected_full.values():
@@ -751,7 +774,7 @@ class MongoDashboardRepository:
             for full_key, _ in sensor_list:
                 projection[full_key.split('.', 1)[0]] = 1
 
-        query = self._base_query_for_period(period, 'datetime')
+        query = self._base_query_for_station_period(station, period, 'datetime')
         cursor = self.db[f'station{station["station_num"]}'].find(query, projection).sort('datetime', ASCENDING)
         data: List[Dict[str, Any]] = []
         for record in cursor:
@@ -826,10 +849,7 @@ class MongoDashboardRepository:
     ) -> Tuple[pd.DataFrame, Dict[str, str]]:
         label_map = self._available_metric_map(station)
         if not metrics:
-            if station['device_type'] in {'Meteorological', 'Fidas_Palas'}:
-                metrics = list(label_map.keys())
-            else:
-                metrics = self._default_metrics(label_map)
+            metrics = self._default_metrics(label_map, limit=3)
         metrics = [metric for metric in metrics if metric in label_map]
         if not metrics:
             return pd.DataFrame(), label_map
@@ -937,8 +957,8 @@ class MongoDashboardRepository:
         profile_params = self.BUOY_PROFILE_PARAMS
         label_map = {metric: self._metric_key_to_label(station, metric) for metric in scalar_params + profile_params}
         if not metrics:
-            metrics = scalar_params
-        query = self._base_query_for_period(period, 'datetime')
+            metrics = [metric for metric in self.BUOY_DEFAULT_SCALAR_PARAMS if metric in scalar_params]
+        query = self._base_query_for_station_period(station, period, 'datetime')
         projection = {'_id': 0, 'datetime': 1, 'depth': 1}
         for metric in metrics:
             projection[metric] = 1
@@ -981,13 +1001,20 @@ class MongoDashboardRepository:
             }
 
         label_map = {metric: self._metric_key_to_label(station, metric) for metric in self.BUOY_PROFILE_PARAMS}
-        selected = [metric for metric in (metrics or self.BUOY_PROFILE_PARAMS) if metric in label_map]
-        query = self._base_query_for_period(period, 'datetime')
+        default_profile_metrics = [metric for metric in self.BUOY_DEFAULT_PROFILE_PARAMS if metric in label_map]
+        selected = [metric for metric in (metrics or default_profile_metrics) if metric in label_map]
+        query = self._base_query_for_station_period(station, period, 'datetime')
+        query['depth'] = {'$elemMatch': {'$gt': 0}}
         projection = {'_id': 0, 'datetime': 1, 'depth': 1}
         for metric in selected:
             projection[metric] = 1
 
         docs = list(self.db[self.settings.mongo_buoy_collection].find(query, projection).sort('datetime', DESCENDING).limit(120))
+        effective_period = period
+        if not docs:
+            fallback_query = {'depth': {'$elemMatch': {'$gt': 0}}}
+            docs = list(self.db[self.settings.mongo_buoy_collection].find(fallback_query, projection).sort('datetime', DESCENDING).limit(120))
+            effective_period = 'Latest valid profiles'
         docs = list(reversed(docs))
         if len(docs) > 12:
             indexes = np.linspace(0, len(docs) - 1, 12).round().astype(int)
@@ -1002,7 +1029,7 @@ class MongoDashboardRepository:
                 pairs = [
                     (depth, value)
                     for depth, value in zip(depths, values)
-                    if depth is not None and value is not None
+                    if depth is not None and depth > 0 and value is not None
                 ]
                 if not pairs:
                     continue
@@ -1026,6 +1053,7 @@ class MongoDashboardRepository:
         return {
             'station': station,
             'period': period,
+            'effective_period': effective_period,
             'metrics': [{'key': key, 'label': label_map[key]} for key in selected],
             'available_metrics': [{'key': key, 'label': label} for key, label in label_map.items()],
             'charts': charts,
@@ -1141,15 +1169,6 @@ class MongoDashboardRepository:
             if series.empty:
                 continue
             high = float(series[metric].quantile(0.95))
-            if 'PM' in label and high > 0:
-                point = series.loc[series[metric].idxmax()]
-                events.append({
-                    'type': 'Dust storm event',
-                    'metric': metric,
-                    'label': label,
-                    'timestamp': self._dt_string(point['timestamp']),
-                    'value': round(float(point[metric]), 2),
-                })
             if 'Temperature' in label and high >= 35:
                 point = series.loc[series[metric].idxmax()]
                 events.append({
@@ -1185,6 +1204,8 @@ class MongoDashboardRepository:
             '24H': '15m',
             '7D': '1h',
             '30D': '6h',
+            '3M': '1d',
+            '6M': '1d',
             '1Y': '1d',
             'ALL': '1d',
         }.get(period.upper(), '15m')
@@ -1206,7 +1227,7 @@ class MongoDashboardRepository:
         sensor_trends_by_label: Dict[str, List[Dict[str, Any]]] = {}
         primary_aqi = None
         if include_trends and include_sensor_trends and station['device_type'] == 'IoTBox':
-            sensor_timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=[], split_sensors=True)
+            sensor_timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=quick_metrics, split_sensors=True)
             for sensor_chart in sensor_timeseries.get('charts', []):
                 sensor_trends_by_label.setdefault(sensor_chart['canonical_label'], []).append({
                     'metric': sensor_chart['metric'],

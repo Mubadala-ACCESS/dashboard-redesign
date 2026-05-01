@@ -21,6 +21,7 @@
   };
 
   const emptyValue = '&mdash;';
+  const defaultSelectedMetricLimit = 3;
   const trendColors = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#be185d', '#64748b'];
   const sensorTrendColors = ['#0f766e', '#2563eb', '#d97706', '#be185d'];
 
@@ -304,7 +305,7 @@
     const activeKeys = new Set(activeMetrics.map((metric) => metric.key));
     visibleMetrics.forEach((metric, index) => {
       const id = `metric-${metric.key}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-      const checked = selectedKeys.includes(metric.key) || (!hadSelection && (activeKeys.has(metric.key) || (!activeKeys.size && index < 6)));
+      const checked = selectedKeys.includes(metric.key) || (!hadSelection && (activeKeys.has(metric.key) || (!activeKeys.size && index < defaultSelectedMetricLimit)));
       if (checked && !selectedKeys.includes(metric.key)) selectedKeys.push(metric.key);
       const label = document.createElement('label');
       label.className = 'metric-option';
@@ -343,6 +344,16 @@
       <div class="chart-host"></div>
     `;
     const host = card.querySelector('.chart-host');
+    window.requestAnimationFrame(() => plotAdvancedChart(host, chart, events));
+    return card;
+  }
+
+  function plotAdvancedChart(host, chart, events) {
+    if (!host || !window.Plotly) return;
+    if (!host.isConnected) {
+      window.requestAnimationFrame(() => plotAdvancedChart(host, chart, events));
+      return;
+    }
     const x = chart.series.map((point) => point.x);
     const y = chart.series.map((point) => point.y);
     const shapes = [];
@@ -366,6 +377,7 @@
       });
       annotations.push({ x: event.timestamp, y: chart.summary.max ?? 0, text: event.type, showarrow: true, arrowhead: 2, ax: 0, ay: -30, font: { size: 11 } });
     });
+    const hostWidth = Math.max(320, Math.floor(host.getBoundingClientRect().width || host.clientWidth || 0));
     Plotly.newPlot(host, [
       {
         x,
@@ -380,13 +392,14 @@
       margin: { t: 18, r: 18, b: 42, l: 54 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
+      autosize: true,
+      width: hostWidth,
       xaxis: { title: 'GST', gridcolor: 'rgba(91,101,118,.12)' },
       yaxis: { title: chart.label, gridcolor: 'rgba(91,101,118,.12)' },
       shapes,
       annotations,
       showlegend: false,
-    }, { displaylogo: false, responsive: true });
-    return card;
+    }, { displaylogo: false, responsive: true }).then(() => Plotly.Plots.resize(host));
   }
 
   function updateTable(payload) {
@@ -455,7 +468,7 @@
         <header>
           <div>
             <h3>${App.escapeHtml(chart.label)}</h3>
-            <p>Latest profile ${App.escapeHtml(chart.latest_label || '')}</p>
+            <p>${App.escapeHtml(payload.effective_period || payload.period || state.period)} heatmap · Latest profile ${App.escapeHtml(chart.latest_label || '')}</p>
           </div>
         </header>
         <div class="chart-host profile-chart-host"></div>
@@ -467,24 +480,63 @@
 
   function renderBuoyProfileChart(host, chart, chartIndex) {
     if (!host || !window.Plotly) return;
-    const traces = (chart.profiles || []).map((profile, index) => ({
-      x: profile.values || [],
-      y: profile.depth || [],
-      type: 'scatter',
-      mode: 'lines+markers',
-      name: profile.label || `Profile ${index + 1}`,
-      line: { width: index === (chart.profiles.length - 1) ? 3 : 1.6, color: trendColors[(chartIndex + index) % trendColors.length] },
-      marker: { size: index === (chart.profiles.length - 1) ? 5 : 3 },
-      hovertemplate: `%{fullData.name}<br>${App.escapeHtml(chart.label)} %{x:.2f}<br>Depth %{y:.2f} m<extra></extra>`,
-    }));
-    Plotly.newPlot(host, traces, {
-      margin: { t: 14, r: 22, b: 48, l: 66 },
+    const profiles = chart.profiles || [];
+    const depthSource = profiles.find((profile) => Array.isArray(profile.depth) && profile.depth.length);
+    const depths = (depthSource?.depth || [])
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value));
+    const times = profiles.map((profile, index) => profile.label || profile.timestamp || `Profile ${index + 1}`);
+    const heatmapValues = depths.map((_, depthIndex) => (
+      profiles.map((profile) => {
+        const numeric = Number(profile.values?.[depthIndex]);
+        return Number.isFinite(numeric) && numeric !== 0 ? numeric : null;
+      })
+    ));
+    const finiteValues = heatmapValues.flat().filter((value) => Number.isFinite(value));
+
+    if (!depths.length || !times.length || !finiteValues.length) {
+      host.innerHTML = '<div class="empty-trend">No depth profile values for this selection.</div>';
+      return;
+    }
+
+    host.innerHTML = '';
+    const trace = {
+      x: times,
+      y: depths,
+      z: heatmapValues,
+      type: 'heatmap',
+      colorscale: 'Viridis',
+      zmin: Math.min(...finiteValues),
+      zmax: Math.max(...finiteValues),
+      xgap: 1,
+      ygap: 1,
+      hoverongaps: false,
+      colorbar: {
+        title: { text: chart.unit || chart.label || '' },
+        thickness: 12,
+        len: 0.82,
+        outlinewidth: 0,
+      },
+      hovertemplate: `Time (GST): %{x}<br>Depth: %{y:.2f} m<br>${App.escapeHtml(chart.label)}: %{z:.2f}${chart.unit ? ` ${App.escapeHtml(chart.unit)}` : ''}<extra></extra>`,
+    };
+
+    Plotly.newPlot(host, [trace], {
+      margin: { t: 14, r: 72, b: 68, l: 72 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
-      xaxis: { title: chart.label, gridcolor: 'rgba(91,101,118,.12)' },
-      yaxis: { title: 'Depth (m)', autorange: 'reversed', gridcolor: 'rgba(91,101,118,.12)' },
-      legend: { orientation: 'h', y: 1.12, x: 0, font: { size: 10 } },
-      showlegend: traces.length > 1,
+      xaxis: {
+        title: 'Time (GST)',
+        gridcolor: 'rgba(91,101,118,.12)',
+        tickangle: -35,
+        automargin: true,
+      },
+      yaxis: {
+        title: 'Depth (m)',
+        autorange: 'reversed',
+        gridcolor: 'rgba(91,101,118,.12)',
+        automargin: true,
+      },
+      showlegend: false,
     }, { displaylogo: false, responsive: true });
   }
 
@@ -616,6 +668,7 @@
     });
     updateTable(payload);
     updateBuoyProfiles(payload);
+    scheduleActiveChartResize();
   }
 
   function wireControls() {
@@ -652,7 +705,7 @@
       button.addEventListener('click', () => {
         document.querySelectorAll('#view-tabs button').forEach((item) => item.classList.toggle('is-active', item === button));
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `${button.dataset.tab}-view`));
-        window.requestAnimationFrame(resizeActiveCharts);
+        scheduleActiveChartResize();
       });
     });
 
@@ -709,19 +762,26 @@
       renderMetricSelector(state.availableMetrics, []);
     }
     if (panelName === 'spectra') {
-      loadFidasSpectra().then(() => window.requestAnimationFrame(resizeActiveCharts));
+      loadFidasSpectra().then(scheduleActiveChartResize);
     } else if (panelName === 'profiles') {
-      loadBuoyProfiles().then(() => window.requestAnimationFrame(resizeActiveCharts));
+      loadBuoyProfiles().then(scheduleActiveChartResize);
     } else {
       if (panelName === 'atmospheric') loadTimeseries();
-      window.requestAnimationFrame(resizeActiveCharts);
+      scheduleActiveChartResize();
     }
+  }
+
+  function scheduleActiveChartResize() {
+    window.requestAnimationFrame(() => {
+      resizeActiveCharts();
+      [120, 320, 720].forEach((delay) => window.setTimeout(resizeActiveCharts, delay));
+    });
   }
 
   function resizeActiveCharts() {
     if (!window.Plotly) return;
     document.querySelectorAll('.tab-panel.is-active .chart-host').forEach((host) => {
-      if (host.data) Plotly.Plots.resize(host);
+      if (host.data || host._fullLayout) Plotly.Plots.resize(host);
     });
   }
 
