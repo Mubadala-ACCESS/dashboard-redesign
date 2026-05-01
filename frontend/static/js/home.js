@@ -2,7 +2,13 @@
   const page = document.querySelector('.home-page');
   if (!page) return;
 
-  const map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView([24.4539, 54.3773], 9);
+  const DEFAULT_MAP_CENTER = [24.4539, 54.3773];
+  const DEFAULT_MAP_ZOOM = 10;
+  const SINGLE_STATION_ZOOM = 14;
+  const MAX_FIT_ZOOM = 14;
+  const FIT_PADDING = [14, 14];
+
+  const map = L.map('map', { zoomControl: true, scrollWheelZoom: true }).setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
 
   const state = {
@@ -14,6 +20,8 @@
     markers: null,
     stations: [],
     selectedStationId: null,
+    loadRequestId: 0,
+    fitToken: 0,
   };
 
   const STATION_TYPE_STYLES = {
@@ -168,14 +176,40 @@
     return output;
   }
 
+  function fitMapToStations(stations) {
+    const fitToken = ++state.fitToken;
+    const points = stations
+      .filter((station) => station.display_lat != null && station.display_lon != null)
+      .map((station) => [station.display_lat, station.display_lon]);
+
+    requestAnimationFrame(() => {
+      if (fitToken !== state.fitToken) return;
+      map.stop();
+      map.invalidateSize();
+      if (!points.length) {
+        map.setView(DEFAULT_MAP_CENTER, DEFAULT_MAP_ZOOM);
+        return;
+      }
+
+      if (points.length === 1) {
+        map.setView(points[0], SINGLE_STATION_ZOOM, { animate: true });
+        return;
+      }
+
+      map.fitBounds(points, {
+        animate: true,
+        maxZoom: MAX_FIT_ZOOM,
+        padding: FIT_PADDING,
+      });
+    });
+  }
+
   function renderMarkers(stations) {
     if (state.markers) state.markers.remove();
     state.markers = L.layerGroup();
     const plotted = jitterStations(stations);
-    const bounds = [];
     plotted.forEach((station) => {
       if (station.display_lat == null || station.display_lon == null) return;
-      bounds.push([station.display_lat, station.display_lon]);
       const marker = L.marker([station.display_lat, station.display_lon], {
         icon: markerIcon(station),
         keyboard: true,
@@ -186,9 +220,7 @@
       marker.addTo(state.markers);
     });
     state.markers.addTo(map);
-    if (bounds.length) {
-      map.fitBounds(bounds, { padding: [28, 28] });
-    }
+    fitMapToStations(plotted);
   }
 
   function resetDrawerTabs() {
@@ -272,12 +304,14 @@
   }
 
   async function loadStations() {
+    const requestId = ++state.loadRequestId;
     const url = new URL('/api/map/stations', window.location.origin);
     url.searchParams.set('privacy', state.privacy);
     url.searchParams.set('device_type', state.device_type);
     url.searchParams.set('status', state.status);
     url.searchParams.set('search', state.search);
     const payload = await App.fetchJSON(url.toString());
+    if (requestId !== state.loadRequestId) return;
     state.stations = payload.stations || [];
     renderMarkers(state.stations);
     renderLegend();

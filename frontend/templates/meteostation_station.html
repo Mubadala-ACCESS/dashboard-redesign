@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% set station_template = 'meteostation' %}
+{% set advanced_sensor_controls = false %}
+{% set advanced_parameter_note = 'Meteorological parameters include radiation, precipitation, wind, pressure, humidity, and temperature.' %}
+{% block content %}
+{% include '_station_layout.html' %}
+{% endblock %}
+{% block scripts %}
+<script src="/static/js/station.js?v=station-templates-1"></script>
+{% endblock %}

@@ -267,12 +267,13 @@
     }, { displaylogo: false, responsive: true });
   }
 
-  function renderMetricSelector(metrics) {
+  function renderMetricSelector(metrics, activeMetrics = []) {
     const root = document.getElementById('metric-selector');
     root.innerHTML = '';
+    const activeKeys = new Set(activeMetrics.map((metric) => metric.key));
     metrics.forEach((metric, index) => {
       const id = `metric-${metric.key}`.replace(/[^a-zA-Z0-9_-]/g, '-');
-      const checked = state.selectedMetrics.includes(metric.key) || (state.selectedMetrics.length === 0 && index < 6);
+      const checked = state.selectedMetrics.includes(metric.key) || (state.selectedMetrics.length === 0 && (activeKeys.has(metric.key) || (!activeKeys.size && index < 6)));
       if (checked && !state.selectedMetrics.includes(metric.key)) state.selectedMetrics.push(metric.key);
       const label = document.createElement('label');
       label.className = 'metric-option';
@@ -402,9 +403,10 @@
     url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
     if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
     const payload = await App.fetchJSON(url.toString());
-    if (payload.metrics?.length && state.availableMetrics.length === 0) {
-      state.availableMetrics = payload.metrics;
-      renderMetricSelector(payload.metrics);
+    const selectorMetrics = payload.available_metrics?.length ? payload.available_metrics : payload.metrics;
+    if (selectorMetrics?.length && state.availableMetrics.length === 0) {
+      state.availableMetrics = selectorMetrics;
+      renderMetricSelector(selectorMetrics, payload.metrics || []);
     }
     const grid = document.getElementById('chart-grid');
     grid.innerHTML = '';
@@ -449,10 +451,12 @@
       button.addEventListener('click', () => {
         document.querySelectorAll('#view-tabs button').forEach((item) => item.classList.toggle('is-active', item === button));
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `${button.dataset.tab}-view`));
+        window.requestAnimationFrame(resizeActiveCharts);
       });
     });
 
     document.getElementById('open-station-metadata')?.addEventListener('click', () => App.showMetadata(state.stationId));
+    document.getElementById('open-station-metadata-advanced')?.addEventListener('click', () => App.showMetadata(state.stationId));
     document.getElementById('open-station-metadata-inline')?.addEventListener('click', () => App.showMetadata(state.stationId));
 
     document.getElementById('download-csv')?.addEventListener('click', () => {
@@ -470,6 +474,13 @@
       url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
       if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
       window.open(url.toString(), '_blank');
+    });
+  }
+
+  function resizeActiveCharts() {
+    if (!window.Plotly) return;
+    document.querySelectorAll('.tab-panel.is-active .chart-host').forEach((host) => {
+      if (host.data) Plotly.Plots.resize(host);
     });
   }
 

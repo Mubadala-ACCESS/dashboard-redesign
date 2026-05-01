@@ -389,9 +389,13 @@ img { max-width: 100%; }
 .metric-stat-grid div { padding: 10px; border-radius: 12px; background: rgba(91, 33, 182, 0.06); min-width: 0; }
 .metric-stat-grid small { display: block; margin-bottom: 3px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
 .metric-stat-grid b { display: block; overflow-wrap: anywhere; font-size: 0.96rem; }
+.advanced-layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 20px; align-items: start; }
+.advanced-left-rail { align-self: start; }
+.advanced-left-rail .control-card { display: grid; gap: 18px; }
+.advanced-main { display: grid; gap: 20px; min-width: 0; }
 .advanced-controls__grid { display: grid; grid-template-columns: minmax(220px, 0.7fr) minmax(340px, 1.35fr) minmax(240px, 0.75fr); gap: 18px; align-items: start; }
 .advanced-control-group { display: grid; gap: 10px; align-content: start; }
-.advanced-controls .metric-selector { max-height: 220px; }
+.advanced-controls .metric-selector { max-height: 360px; }
 .event-panel { display: grid; gap: 18px; grid-template-columns: 1.1fr 0.9fr; }
 .event-panel h3, .table-card h3, .section-head h3, .glossary-card h2, .alert-card h2, .support-card h2, .page-hero h1, .page-section-head h2 { margin: 0 0 8px; letter-spacing: -0.02em; }
 .page-hero h1, .page-section-head h2 { font-size: clamp(2rem, 3vw, 2.8rem); }
@@ -490,6 +494,8 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   }
   .station-page .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .station-toolbar { justify-content: flex-start; }
+  .advanced-layout { grid-template-columns: 1fr; }
+  .advanced-left-rail { position: static; }
   .advanced-controls__grid { grid-template-columns: 1fr; }
   .sensor-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summary-grid, .status-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

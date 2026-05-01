@@ -92,7 +92,12 @@ def create_app() -> FastAPI:
             summary = repo.get_station_summary(station_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return templates.TemplateResponse(request, 'station.html', {
+        station_templates = {
+            'Fidas_Palas': 'fidas_station.html',
+            'Meteorological': 'meteostation_station.html',
+        }
+        template_name = station_templates.get(summary.get('device_type'), 'station.html')
+        return templates.TemplateResponse(request, template_name, {
             'app_name': settings.app_name,
             'page_title': summary['name'],
             'station': summary,

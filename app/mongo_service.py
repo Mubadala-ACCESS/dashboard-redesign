@@ -365,6 +365,70 @@ class MongoDashboardRepository:
             return 'PM10 Mass (µg/m³)'
         return param.replace('_', ' ').title()
 
+    def _meteo_label_map(self) -> Dict[str, str]:
+        return {
+            'S2_TA[C]': 'Temperature (°C)',
+            'S2_RH[%]': 'Relative Humidity (%)',
+            'S2_PA': 'Atmospheric Pressure (hPa)',
+            'S2_WS[M/S]': 'Wind Speed (m/s)',
+            'S2_WD': 'Wind Direction (°)',
+            'S1_RAD': 'Radiation (W/m²)',
+            'S2_PREC[MM]': 'Precipitation (mm)',
+            'S2_DP[C]': 'Dew Point (°C)',
+            'I3_VPOWER': 'Voltage Power (V)',
+            'I4_VOUT': 'Voltage Output (V)',
+        }
+
+    def _fidas_label_map(self) -> Dict[str, str]:
+        return {
+            'PM2.5': 'PM2.5 (µg/m³)',
+            'PM10': 'PM10 (µg/m³)',
+            'PM1': 'PM1 (µg/m³)',
+            'T': 'Temperature (°C)',
+            'rH': 'Relative Humidity (%)',
+            'p': 'Pressure (hPa)',
+            'PM4': 'PM4 (µg/m³)',
+            'PMtot': 'Total PM (µg/m³)',
+            'Cn': 'Count Number (particles/cm³)',
+            'dewT': 'Dew Point (°C)',
+            'Wspeed': 'Wind Speed (km/h)',
+            'Wdir': 'Wind Direction (°)',
+            'feelLike': 'Feels Like (°C)',
+            'wbgt': 'WBGT (°C)',
+        }
+
+    def _buoy_label_map(self, station: Dict[str, Any]) -> Dict[str, str]:
+        params = [
+            'wind_speed',
+            'wind_direction',
+            'air_temp',
+            'barometric_pressure',
+            'albedo',
+            'CTD_tmp',
+            'conductivity',
+            'O2',
+            'chlorophyll',
+            'salinity_practical',
+            'density',
+        ]
+        return {metric: self._metric_key_to_label(station, metric) for metric in params}
+
+    def _available_metric_map(self, station: Dict[str, Any]) -> Dict[str, str]:
+        if station['device_type'] == 'IoTBox':
+            labels, _full_params = self._iot_discover(int(station['station_num']))
+            return labels
+        if station['device_type'] == 'Meteorological':
+            return self._meteo_label_map()
+        if station['device_type'] == 'Fidas_Palas':
+            return self._fidas_label_map()
+        if station['device_type'] == 'Buoy':
+            return self._buoy_label_map(station)
+        return {}
+
+    def _metric_options(self, station: Dict[str, Any], label_map: Dict[str, str]) -> List[Dict[str, str]]:
+        available = self._available_metric_map(station) or label_map
+        return [{'key': key, 'label': available.get(key, key)} for key in available.keys()]
+
     def _iot_discover(self, station_num: int) -> Tuple[Dict[str, str], Dict[str, List[Tuple[str, str]]]]:
         station_info = self.db[self.settings.mongo_stations_info_collection].find_one({'station_num': station_num}, {'sensors': 1})
         if not station_info or 'sensors' not in station_info:
@@ -594,6 +658,9 @@ class MongoDashboardRepository:
             return df, label_map
         df = df.rename(columns={'Timestamp': 'timestamp'})
         df['timestamp'] = pd.to_datetime(df['timestamp']).apply(self._localize)
+        for metric in metrics:
+            if metric in df.columns:
+                df[metric] = pd.to_numeric(df[metric], errors='coerce')
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, label_map
 
@@ -705,6 +772,7 @@ class MongoDashboardRepository:
                 'period': period,
                 'aggregation': aggregation,
                 'metrics': [],
+                'available_metrics': self._metric_options(station, {}),
                 'charts': [],
                 'table': [],
                 'events': [],
@@ -717,6 +785,7 @@ class MongoDashboardRepository:
                 'period': period,
                 'aggregation': aggregation,
                 'metrics': [],
+                'available_metrics': self._metric_options(station, label_map),
                 'charts': [],
                 'table': [],
                 'events': [],
@@ -769,6 +838,7 @@ class MongoDashboardRepository:
             'period': period,
             'aggregation': aggregation,
             'metrics': [{'key': key, 'label': label_map.get(key, key)} for key in metric_keys],
+            'available_metrics': self._metric_options(station, label_map),
             'charts': charts,
             'table': table_rows,
             'events': events,
