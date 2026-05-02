@@ -172,8 +172,8 @@ class StatusService:
             if station.get('status') == 'Decommissioned':
                 summary['decommissioned'] += 1
                 rows.append({
-                    'station_id': station['station_id'],
-                    'station_num': station['station_num'],
+                    'station_id': station['public_id'],
+                    'public_id': station['public_id'],
                     'name': station['name'],
                     'device_label': station['device_label'],
                     'status': 'Decommissioned',
@@ -193,8 +193,8 @@ class StatusService:
             else:
                 summary['maintenance'] += 1
             rows.append({
-                'station_id': station['station_id'],
-                'station_num': station['station_num'],
+                'station_id': station['public_id'],
+                'public_id': station['public_id'],
                 'name': station['name'],
                 'device_label': station['device_label'],
                 'status': computed_status,

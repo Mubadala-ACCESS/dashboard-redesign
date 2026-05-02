@@ -491,6 +491,9 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
 .tab-row button { padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-weight: 700; color: var(--muted); }
 .tab-row button.is-active { background: var(--primary); color: #fff; }
 .metadata-table { border: 1px solid var(--line); border-radius: 18px; overflow: auto; }
+.raw-data-modal .metadata-table { max-height: min(62vh, 620px); }
+.raw-data-summary { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: .86rem; font-weight: 700; }
+.raw-data-table td, .raw-data-table th { white-space: nowrap; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 @media (max-width: 1320px) {

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import re
+import hashlib
+import hmac
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -185,14 +187,53 @@ class MongoDashboardRepository:
     def _station_cache_key(self, station_id: str) -> str:
         return f'station:{station_id}'
 
+    def _slugify(self, value: str | None) -> str:
+        text = (value or 'station').strip().lower()
+        text = re.sub(r'[^a-z0-9]+', '-', text)
+        return text.strip('-') or 'station'
+
+    def _public_station_id(self, raw_station_id: str, name: str | None) -> str:
+        key = self.settings.app_secret_key.encode('utf-8')
+        digest = hmac.new(key, raw_station_id.encode('utf-8'), hashlib.sha256).hexdigest()[:8]
+        return f'{self._slugify(name)}-{digest}'
+
+    def _public_station_payload(self, station: Dict[str, Any]) -> Dict[str, Any]:
+        payload = dict(station)
+        public_id = payload.get('public_id') or self._public_station_id(str(payload.get('station_id', 'station')), payload.get('name'))
+        payload['station_id'] = public_id
+        payload['public_id'] = public_id
+        for key in ('mongo_id', 'collection_name', 'sensors', 'station_num'):
+            payload.pop(key, None)
+        return payload
+
+    def public_payload(self, value: Any) -> Any:
+        if isinstance(value, list):
+            return [self.public_payload(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+
+        if 'station_id' in value and 'public_id' in value:
+            value = self._public_station_payload(value)
+        output: Dict[str, Any] = {}
+        for key, item in value.items():
+            if key in {'mongo_id', 'collection_name', 'sensors', 'station_num'}:
+                continue
+            if key == 'station_id' and value.get('public_id'):
+                output[key] = value['public_id']
+                continue
+            output[key] = self.public_payload(item)
+        return output
+
     def _normalize_station(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         station_id = str(doc.get('id') or doc.get('_id'))
         device_type = doc.get('type', 'Unknown')
+        name = doc.get('name') or 'Monitoring station'
         return {
             'station_id': station_id,
+            'public_id': self._public_station_id(station_id, name),
             'mongo_id': str(doc.get('_id')) if doc.get('_id') else None,
             'station_num': doc.get('station_num'),
-            'name': doc.get('name') or f'Station {doc.get("station_num", "Unknown")}',
+            'name': name,
             'lat': float(doc.get('lat')) if doc.get('lat') is not None else None,
             'lon': float(doc.get('long')) if doc.get('long') is not None else None,
             'device_type': device_type,
@@ -214,16 +255,34 @@ class MongoDashboardRepository:
             queries.append({'_id': ObjectId(station_id)})
         return {'$or': queries}
 
+    def _find_station_by_public_id(self, public_id: str) -> Optional[Dict[str, Any]]:
+        cache_key = f'public_station_doc:{public_id}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        cursor = self.db[self.settings.mongo_stations_info_collection].find({}, self.station_projection)
+        for doc in cursor:
+            raw_id = str(doc.get('id') or doc.get('_id'))
+            name = doc.get('name') or 'Monitoring station'
+            if self._public_station_id(raw_id, name) == public_id:
+                self.cache.set(cache_key, doc, ttl_seconds=300)
+                return doc
+        self.cache.set(cache_key, None, ttl_seconds=60)
+        return None
+
     def resolve_station(self, station_id: str) -> Dict[str, Any]:
         cached = self.cache.get(self._station_cache_key(station_id))
         if cached:
             return cached
         doc = self.db[self.settings.mongo_stations_info_collection].find_one(self._station_query(station_id), self.station_projection)
         if not doc:
+            doc = self._find_station_by_public_id(station_id)
+        if not doc:
             raise KeyError(f'Station not found: {station_id}')
         station = self._normalize_station(doc)
         self.cache.set(self._station_cache_key(station_id), station, ttl_seconds=300)
         self.cache.set(self._station_cache_key(station['station_id']), station, ttl_seconds=300)
+        self.cache.set(self._station_cache_key(station['public_id']), station, ttl_seconds=300)
         return station
 
     def get_filters(self) -> Dict[str, Any]:
@@ -266,10 +325,7 @@ class MongoDashboardRepository:
             query['status'] = status
         if search:
             regex = {'$regex': re.escape(search), '$options': 'i'}
-            search_clauses: List[Dict[str, Any]] = [{'name': regex}, {'id': regex}]
-            if search.isdigit():
-                search_clauses.append({'station_num': int(search)})
-            query['$or'] = search_clauses
+            query['$or'] = [{'name': regex}]
 
         docs = list(self.db[self.settings.mongo_stations_info_collection].find(query, self.station_projection))
         stations = [self._normalize_station(doc) for doc in docs]
@@ -289,7 +345,7 @@ class MongoDashboardRepository:
         network = self.get_network_summary()
         summary['regional_aqi'] = network.get('regional_aqi')
         summary['elevated_station_count'] = network.get('elevated_station_count', 0)
-        return {'summary': summary, 'stations': stations, 'filters': self.get_filters()}
+        return {'summary': summary, 'stations': [self._public_station_payload(station) for station in stations], 'filters': self.get_filters()}
 
     def _collection_for_station(self, station: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
         station_num = station.get('station_num')
@@ -1129,6 +1185,20 @@ class MongoDashboardRepository:
             }
 
         metric_keys = [column for column in df.columns if column != 'timestamp' and not column.startswith('Lat') and not column.startswith('Long')]
+        if not metric_keys:
+            return {
+                'station': station,
+                'period': period,
+                'aggregation': aggregation,
+                'clean': clean and station['device_type'] == 'Fidas_Palas',
+                'metrics': [],
+                'available_metrics': self._metric_options(station, label_map),
+                'charts': [],
+                'table': [],
+                'events': [],
+                'message': 'No parameters are selected.',
+                **extra,
+            }
         charts = []
         events = self._detect_events(df, station, metric_keys)
         for metric in metric_keys:
@@ -1183,6 +1253,8 @@ class MongoDashboardRepository:
 
     def _detect_events(self, df: pd.DataFrame, station: Dict[str, Any], metric_keys: List[str]) -> List[Dict[str, Any]]:
         events: List[Dict[str, Any]] = []
+        if station.get('device_type') == 'IoTBox':
+            return events
         if 'timestamp' not in df.columns:
             return events
         for metric in metric_keys:
@@ -1435,7 +1507,8 @@ class MongoDashboardRepository:
                         elevated += 1
                         latest_alerts.append(
                             {
-                                'station_id': station['station_id'],
+                                'station_id': station['public_id'],
+                                'public_id': station['public_id'],
                                 'station_name': station['name'],
                                 'aqi': aqi,
                             }
@@ -1458,6 +1531,7 @@ class MongoDashboardRepository:
             alerts.append(
                 {
                     'station_id': item['station_id'],
+                    'public_id': item.get('public_id') or item['station_id'],
                     'station_name': item['station_name'],
                     'headline': f"{item['aqi']['category']} particulate levels detected",
                     'message': item['aqi']['health_message'],

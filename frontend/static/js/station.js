@@ -11,14 +11,21 @@
     aggregation: 'raw',
     selectedMetrics: [],
     selectedProfileMetrics: [],
+    metricsTouched: false,
+    profileMetricsTouched: false,
     splitSensors: false,
     quickSplitSensors: false,
     availableMetrics: [],
     latestPayload: null,
+    timeseriesPayload: null,
+    profilePayload: null,
     spectraPayload: null,
     spectraIndex: 0,
     advancedPanel: 'timeseries',
     fidasClean: false,
+    latestRequestId: 0,
+    timeseriesRequestId: 0,
+    profileRequestId: 0,
   };
 
   const emptyValue = '&mdash;';
@@ -226,6 +233,124 @@
     return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : value;
   }
 
+  function metricQueryValue(keys) {
+    const selected = (keys || []).filter(Boolean);
+    return selected.length ? selected.join('|') : '__none__';
+  }
+
+  function activeMetricsTouched() {
+    return isBuoyProfilePanel() ? state.profileMetricsTouched : state.metricsTouched;
+  }
+
+  function setActiveMetricsTouched(value) {
+    if (isBuoyProfilePanel()) {
+      state.profileMetricsTouched = value;
+    } else {
+      state.metricsTouched = value;
+    }
+  }
+
+  function splitSensorLabel(label = '') {
+    const parts = String(label).split(' - ');
+    if (parts.length < 2) {
+      return { baseLabel: label, sensorLabel: '' };
+    }
+    return {
+      baseLabel: parts.slice(0, -1).join(' - '),
+      sensorLabel: parts[parts.length - 1],
+    };
+  }
+
+  function lastNumericValue(series = []) {
+    for (let index = series.length - 1; index >= 0; index -= 1) {
+      const value = Number(series[index]?.y);
+      if (Number.isFinite(value)) return value;
+    }
+    return null;
+  }
+
+  function roundStat(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? Number(numeric.toFixed(2)) : null;
+  }
+
+  function groupedSensorSummary(sensorCharts) {
+    const values = [];
+    const latestValues = [];
+    sensorCharts.forEach((chart) => {
+      (chart.series || []).forEach((point) => {
+        const value = Number(point.y);
+        if (Number.isFinite(value)) values.push(value);
+      });
+      const latest = lastNumericValue(chart.series || []);
+      if (latest !== null) latestValues.push(latest);
+    });
+    const mean = values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
+    const latest = latestValues.length ? latestValues.reduce((sum, value) => sum + value, 0) / latestValues.length : null;
+    return {
+      min: values.length ? roundStat(Math.min(...values)) : null,
+      max: values.length ? roundStat(Math.max(...values)) : null,
+      mean: roundStat(mean),
+      latest: roundStat(latest),
+    };
+  }
+
+  function groupAdvancedSensorCharts(charts, payload) {
+    if (!state.splitSensors || payload.station?.device_type !== 'IoTBox') return charts;
+    const groups = [];
+    const byKey = new Map();
+    (charts || []).forEach((chart) => {
+      const labels = splitSensorLabel(chart.label);
+      const groupKey = `${chart.canonical_label || labels.baseLabel}:${labels.baseLabel}`;
+      if (!byKey.has(groupKey)) {
+        const group = {
+          ...chart,
+          label: labels.baseLabel,
+          summary: {},
+          sensorCharts: [],
+        };
+        byKey.set(groupKey, group);
+        groups.push(group);
+      }
+      const group = byKey.get(groupKey);
+      group.sensorCharts.push({
+        ...chart,
+        sensorLabel: labels.sensorLabel || `Sensor ${group.sensorCharts.length + 1}`,
+      });
+    });
+    groups.forEach((group) => {
+      group.summary = groupedSensorSummary(group.sensorCharts);
+      group.series = group.sensorCharts[0]?.series || [];
+      group.metric = group.sensorCharts[0]?.metric || group.metric;
+    });
+    return groups;
+  }
+
+  function chartMetaHtml(chart) {
+    if (!chart.sensorCharts?.length) {
+      return `
+        <span>Current ${displayValue(chart.summary.latest)}</span>
+        <span>Mean ${displayValue(chart.summary.mean)}</span>
+        <span>Min ${displayValue(chart.summary.min)}</span>
+        <span>Max ${displayValue(chart.summary.max)}</span>
+      `;
+    }
+
+    const latest = chart.sensorCharts
+      .map((sensorChart) => ({
+        label: sensorChart.sensorLabel,
+        value: roundStat(lastNumericValue(sensorChart.series || [])),
+      }))
+      .filter((item) => item.value !== null);
+    const gap = latest.length >= 2 ? roundStat(Math.abs(latest[0].value - latest[1].value)) : null;
+    return `
+      <span>Current mean ${displayValue(chart.summary.latest)}</span>
+      <span>Mean ${displayValue(chart.summary.mean)}</span>
+      ${latest.map((item) => `<span>${App.escapeHtml(item.label)} ${displayValue(item.value)}</span>`).join('')}
+      ${gap !== null ? `<span>Gap ${displayValue(gap)}</span>` : ''}
+    `;
+  }
+
   function renderSensorComparison(trends, payload) {
     const comparison = document.getElementById('quick-sensor-comparison');
     if (!comparison) return;
@@ -326,7 +451,7 @@
     root.innerHTML = '';
     const visibleMetrics = metricsForActivePanel(metrics);
     const selectedKeys = [...activeMetricKeys()];
-    const hadSelection = selectedKeys.length > 0;
+    const hadSelection = selectedKeys.length > 0 || activeMetricsTouched();
     const activeKeys = new Set(activeMetrics.map((metric) => metric.key));
     visibleMetrics.forEach((metric, index) => {
       const id = `metric-${metric.key}`.replace(/[^a-zA-Z0-9_-]/g, '-');
@@ -346,6 +471,7 @@
     setActiveMetricKeys(selectedKeys);
     root.querySelectorAll('input[type="checkbox"]').forEach((checkbox) => {
       checkbox.addEventListener('change', () => {
+        setActiveMetricsTouched(true);
         syncClickedMetricOrder(root, checkbox.value, checkbox.checked);
         if (isBuoyProfilePanel()) {
           loadBuoyProfiles();
@@ -362,10 +488,7 @@
     card.innerHTML = `
       <h3>${App.escapeHtml(chart.label)}</h3>
       <div class="chart-meta">
-        <span>Current ${displayValue(chart.summary.latest)}</span>
-        <span>Mean ${displayValue(chart.summary.mean)}</span>
-        <span>Min ${displayValue(chart.summary.min)}</span>
-        <span>Max ${displayValue(chart.summary.max)}</span>
+        ${chartMetaHtml(chart)}
       </div>
       <div class="chart-host"></div>
     `;
@@ -380,8 +503,6 @@
       window.requestAnimationFrame(() => plotAdvancedChart(host, chart, events));
       return;
     }
-    const x = chart.series.map((point) => point.x);
-    const y = chart.series.map((point) => point.y);
     const shapes = [];
     const annotations = [];
     if (chart.thresholds?.bands) {
@@ -396,7 +517,8 @@
         });
       });
     }
-    events.filter((event) => event.metric === chart.metric).forEach((event) => {
+    const eventMetrics = new Set(chart.sensorCharts?.map((sensorChart) => sensorChart.metric) || [chart.metric]);
+    events.filter((event) => eventMetrics.has(event.metric)).forEach((event) => {
       shapes.push({
         type: 'line', xref: 'x', x0: event.timestamp, x1: event.timestamp, yref: 'paper', y0: 0, y1: 1,
         line: { color: '#7c3aed', width: 1, dash: 'dot' }
@@ -404,17 +526,25 @@
       annotations.push({ x: event.timestamp, y: chart.summary.max ?? 0, text: event.type, showarrow: true, arrowhead: 2, ax: 0, ay: -30, font: { size: 11 } });
     });
     const hostWidth = Math.max(320, Math.floor(host.getBoundingClientRect().width || host.clientWidth || 0));
-    Plotly.newPlot(host, [
-      {
-        x,
-        y,
-        type: 'scatter',
-        mode: 'lines+markers',
-        line: { width: 2.2, color: '#4c1d95' },
-        marker: { size: 4, color: '#4c1d95' },
-        hovertemplate: '%{x}<br>%{y}<extra></extra>'
-      }
-    ], {
+    const traceSource = chart.sensorCharts?.length ? chart.sensorCharts : [chart];
+    const traces = traceSource.map((sourceChart, index) => ({
+      x: (sourceChart.series || []).map((point) => point.x),
+      y: (sourceChart.series || []).map((point) => point.y),
+      type: 'scatter',
+      mode: 'lines+markers',
+      name: sourceChart.sensorLabel || sourceChart.label || chart.label,
+      line: {
+        width: chart.sensorCharts?.length ? 2 : 2.2,
+        color: chart.sensorCharts?.length ? sensorTrendColors[index % sensorTrendColors.length] : '#4c1d95',
+        dash: index % 2 ? 'dot' : 'solid',
+      },
+      marker: {
+        size: 4,
+        color: chart.sensorCharts?.length ? sensorTrendColors[index % sensorTrendColors.length] : '#4c1d95',
+      },
+      hovertemplate: '%{fullData.name}<br>%{x}<br>%{y}<extra></extra>',
+    }));
+    Plotly.newPlot(host, traces, {
       margin: { t: 18, r: 18, b: 42, l: 54 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
@@ -424,7 +554,8 @@
       yaxis: { title: chart.label, gridcolor: 'rgba(91,101,118,.12)' },
       shapes,
       annotations,
-      showlegend: false,
+      legend: { orientation: 'h', y: 1.12, x: 0, font: { size: 11 } },
+      showlegend: traces.length > 1,
     }, { displaylogo: false, responsive: true }).then(() => Plotly.Plots.resize(host));
   }
 
@@ -444,6 +575,121 @@
         ${headers.map((metric) => `<td>${row[metric.key] ?? emptyValue}</td>`).join('')}
       </tr>
     `).join('');
+  }
+
+  function rawDataCell(value) {
+    if (value === null || value === undefined || value === '') return emptyValue;
+    if (typeof value === 'number') return App.escapeHtml(String(roundStat(value) ?? value));
+    return App.escapeHtml(String(value));
+  }
+
+  function rowsFromTimeseries(payload) {
+    const charts = payload?.charts || [];
+    const columns = [
+      { key: 'timestamp', label: 'Timestamp' },
+      ...charts.map((chart) => ({ key: chart.metric, label: chart.label })),
+    ];
+    const byTime = new Map();
+    charts.forEach((chart) => {
+      (chart.series || []).forEach((point) => {
+        if (!byTime.has(point.x)) byTime.set(point.x, { timestamp: point.x });
+        byTime.get(point.x)[chart.metric] = point.y;
+      });
+    });
+    const rows = Array.from(byTime.values())
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 250);
+    return { columns, rows, count: byTime.size };
+  }
+
+  function rowsFromProfiles(payload) {
+    const columns = [
+      { key: 'metric', label: 'Metric' },
+      { key: 'timestamp', label: 'Timestamp' },
+      { key: 'depth', label: 'Depth (m)' },
+      { key: 'value', label: 'Value' },
+    ];
+    const rows = [];
+    (payload?.charts || []).forEach((chart) => {
+      (chart.profiles || []).forEach((profile) => {
+        (profile.depth || []).forEach((depth, index) => {
+          rows.push({
+            metric: chart.label,
+            timestamp: profile.timestamp || profile.label,
+            depth,
+            value: profile.values?.[index],
+          });
+        });
+      });
+    });
+    return { columns, rows: rows.slice(0, 300), count: rows.length };
+  }
+
+  function rowsFromSpectra(payload) {
+    const frame = activeSpectraFrame();
+    const columns = [
+      { key: 'size', label: `Size (${payload?.size_unit || 'bin'})` },
+      { key: 'count', label: payload?.spectra_unit || 'Particle count' },
+    ];
+    const rows = (payload?.sizes || []).map((size, index) => ({
+      size,
+      count: frame?.values?.[index],
+    })).filter((row) => row.count !== undefined);
+    return { columns, rows, count: rows.length };
+  }
+
+  function buildRawDataModal(title, context, tableData) {
+    const rows = tableData.rows || [];
+    const columns = tableData.columns || [];
+    const body = rows.length ? rows.map((row) => `
+      <tr>
+        ${columns.map((column) => `<td>${rawDataCell(row[column.key])}</td>`).join('')}
+      </tr>
+    `).join('') : `
+      <tr><td colspan="${Math.max(1, columns.length)}">${emptyValue}</td></tr>
+    `;
+    return `
+      <article class="modal-panel raw-data-modal">
+        <header class="modal-head">
+          <div>
+            <span class="eyebrow">Raw data</span>
+            <h2>${App.escapeHtml(title)}</h2>
+            <p>${App.escapeHtml(context)}</p>
+          </div>
+          <button class="ghost-button" data-close-modal>Close</button>
+        </header>
+        <div class="raw-data-summary">
+          <span>Showing ${App.escapeHtml(String(rows.length))} of ${App.escapeHtml(String(tableData.count || rows.length))} rows</span>
+          <span>${App.escapeHtml(state.period)} - ${App.escapeHtml(aggregationLabel(state.aggregation))}</span>
+        </div>
+        <div class="metadata-table raw-data-table">
+          <table>
+            <thead>
+              <tr>${columns.map((column) => `<th>${App.escapeHtml(column.label)}</th>`).join('')}</tr>
+            </thead>
+            <tbody>${body}</tbody>
+          </table>
+        </div>
+        <footer class="modal-actions">
+          <button class="ghost-button" data-close-modal>Done</button>
+        </footer>
+      </article>
+    `;
+  }
+
+  async function showRawData() {
+    if (state.advancedPanel === 'profiles') {
+      if (!state.profilePayload) await loadBuoyProfiles();
+      App.openModal(buildRawDataModal('Buoy profiles', 'Depth-profile values for the current display period.', rowsFromProfiles(state.profilePayload)));
+      return;
+    }
+    if (state.advancedPanel === 'spectra') {
+      if (!state.spectraPayload) await loadFidasSpectra();
+      App.openModal(buildRawDataModal('Fidas spectra', 'Particle-size bins for the selected spectra sample.', rowsFromSpectra(state.spectraPayload)));
+      return;
+    }
+    if (!state.timeseriesPayload) await loadTimeseries();
+    App.openModal(buildRawDataModal('Advanced time series', 'Chart values for the current advanced selection.', rowsFromTimeseries(state.timeseriesPayload)));
   }
 
   function updateBuoyProfiles(payload) {
@@ -467,11 +713,14 @@
     const panel = document.getElementById('buoy-profiles-panel');
     const grid = document.getElementById('buoy-profile-grid');
     if (!panel || !grid) return;
+    const requestId = ++state.profileRequestId;
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/profiles`, window.location.origin);
     url.searchParams.set('period', state.period);
-    if (state.selectedProfileMetrics.length) url.searchParams.set('metrics', state.selectedProfileMetrics.join(','));
+    if (state.selectedProfileMetrics.length || state.profileMetricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedProfileMetrics));
     grid.innerHTML = '<article class="empty-state"><h2>Loading profiles</h2><p>Reading the selected depth profiles.</p></article>';
     const payload = await App.fetchJSON(url.toString());
+    if (requestId !== state.profileRequestId) return;
+    state.profilePayload = payload;
     if (payload.available_metrics?.length && state.availableMetrics.length) {
       renderMetricSelector(state.availableMetrics, payload.metrics || []);
     }
@@ -671,29 +920,37 @@
   }
 
   async function loadLatest() {
+    const requestId = ++state.latestRequestId;
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/latest`, window.location.origin);
     url.searchParams.set('period', state.period);
     url.searchParams.set('include_trends', 'true');
     if (state.quickSplitSensors) url.searchParams.set('include_sensor_trends', 'true');
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     const payload = await App.fetchJSON(url.toString());
+    if (requestId !== state.latestRequestId) return;
     updateLatestCards(payload);
   }
 
   async function loadTimeseries() {
+    const requestId = ++state.timeseriesRequestId;
+    const grid = document.getElementById('chart-grid');
+    if (grid) {
+      grid.innerHTML = '<article class="empty-state"><h2>Loading charts</h2><p>Updating the selected parameters.</p></article>';
+    }
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/timeseries`, window.location.origin);
     url.searchParams.set('period', state.period);
     url.searchParams.set('aggregation', state.aggregation);
     url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
-    if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
+    if (state.selectedMetrics.length || state.metricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedMetrics));
     const payload = await App.fetchJSON(url.toString());
+    if (requestId !== state.timeseriesRequestId) return;
+    state.timeseriesPayload = payload;
     const selectorMetrics = payload.available_metrics?.length ? payload.available_metrics : payload.metrics;
     if (selectorMetrics?.length && state.availableMetrics.length === 0) {
       state.availableMetrics = selectorMetrics;
       renderMetricSelector(selectorMetrics, payload.metrics || []);
     }
-    const grid = document.getElementById('chart-grid');
     grid.innerHTML = '';
     if (!payload.charts?.length) {
       grid.innerHTML = `<article class="empty-state"><h2>No chart data for this view</h2><p>${App.escapeHtml(payload.message || 'No data available for the current selection.')}</p></article>`;
@@ -701,7 +958,7 @@
       updateBuoyProfiles(payload);
       return;
     }
-    payload.charts.forEach((chart) => {
+    groupAdvancedSensorCharts(payload.charts, payload).forEach((chart) => {
       grid.appendChild(renderChart(chart, payload.events || []));
     });
     updateTable(payload);
@@ -784,18 +1041,10 @@
       url.searchParams.set('aggregation', state.aggregation);
       url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
       if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
-      if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
+      if (state.selectedMetrics.length || state.metricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedMetrics));
       window.open(url.toString(), '_blank');
     });
-    document.getElementById('download-json')?.addEventListener('click', () => {
-      const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/export.json`, window.location.origin);
-      url.searchParams.set('period', state.period);
-      url.searchParams.set('aggregation', state.aggregation);
-      url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
-      if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
-      if (state.selectedMetrics.length) url.searchParams.set('metrics', state.selectedMetrics.join(','));
-      window.open(url.toString(), '_blank');
-    });
+    document.getElementById('view-raw-data')?.addEventListener('click', () => showRawData().catch((error) => console.error(error)));
   }
 
   function setAdvancedPanel(panelName) {

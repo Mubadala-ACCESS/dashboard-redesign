@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     app_port: int = Field(default=8000, alias='APP_PORT')
     app_base_url: str = Field(default='http://localhost:8000', alias='APP_BASE_URL')
     app_secret_key: str = Field(default='change-me', alias='APP_SECRET_KEY')
-    cors_origins: str = Field(default='*', alias='CORS_ORIGINS')
+    cors_origins: str = Field(default='', alias='CORS_ORIGINS')
 
     mongo_uri: str = Field(default='mongodb://localhost:27017/', alias='MONGO_URI')
     mongo_db_name: str = Field(default='all_stations_db', alias='MONGO_DB_NAME')
@@ -38,9 +38,12 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> List[str]:
-        if self.cors_origins.strip() == '*':
-            return ['*']
-        return [item.strip() for item in self.cors_origins.split(',') if item.strip()]
+        configured = self.cors_origins.strip()
+        if not configured:
+            return [self.app_base_url.rstrip('/')]
+        if configured == '*' and self.app_env.lower() != 'development':
+            return [self.app_base_url.rstrip('/')]
+        return [item.strip().rstrip('/') for item in configured.split(',') if item.strip()]
 
 
 @lru_cache(maxsize=1)

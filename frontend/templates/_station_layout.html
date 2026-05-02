@@ -5,7 +5,7 @@
   <section class="analysis-column">
     <section class="analysis-header station-analysis-header">
       <div class="station-heading">
-        <span class="eyebrow">Station {{ station.station_num or station.station_id }}</span>
+        <span class="eyebrow">{{ station.device_label }}</span>
         <h1>{{ station.name }}</h1>
         <p>{{ station.location_text }}</p>
 
@@ -127,7 +127,7 @@
 
             <div class="cta-column compact">
               <button class="primary-button" id="download-csv" type="button">Download CSV</button>
-              <button class="ghost-button" id="download-json" type="button">Download JSON</button>
+              <button class="ghost-button" id="view-raw-data" type="button">View raw data</button>
             </div>
           </section>
         </aside>

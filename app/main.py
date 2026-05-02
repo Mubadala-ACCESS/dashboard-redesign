@@ -8,7 +8,7 @@ from typing import Optional
 import orjson
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -27,6 +27,19 @@ APP_DIR = BASE_DIR / 'app'
 def orjson_dumps(value, *, default=None, **kwargs):
     kwargs.pop('sort_keys', None)
     return orjson.dumps(value, default=default).decode()
+
+
+def parse_metric_list(metrics: Optional[str]) -> list[str]:
+    if not metrics:
+        return []
+    delimiter = '|' if '|' in metrics else ','
+    return [item for item in metrics.split(delimiter) if item]
+
+
+def require_public_station_ref(repo: MongoDashboardRepository, station_id: str) -> None:
+    summary = repo.get_station_summary(station_id)
+    if station_id != summary.get('public_id'):
+        raise KeyError('Station not found.')
 
 
 def create_app() -> FastAPI:
@@ -91,7 +104,9 @@ def create_app() -> FastAPI:
         try:
             summary = repo.get_station_summary(station_id)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
+        if station_id != summary.get('public_id'):
+            return RedirectResponse(url=f"/station/{summary['public_id']}", status_code=302)
         station_templates = {
             'Fidas_Palas': 'fidas_station.html',
             'Meteorological': 'meteostation_station.html',
@@ -101,12 +116,16 @@ def create_app() -> FastAPI:
         return templates.TemplateResponse(request, template_name, {
             'app_name': settings.app_name,
             'page_title': summary['name'],
-            'station': summary,
+            'station': repo.public_payload(summary),
         })
 
     @app.get('/station/{station_id}/report')
-    def report_redirect(station_id: str):
-        return RedirectResponse(url=f'/station/{station_id}', status_code=307)
+    def report_redirect(station_id: str, repo: MongoDashboardRepository = Depends(get_repo)):
+        try:
+            summary = repo.get_station_summary(station_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
+        return RedirectResponse(url=f"/station/{summary['public_id']}", status_code=307)
 
     @app.get('/api/map/filters')
     def api_map_filters(repo: MongoDashboardRepository = Depends(get_repo)):
@@ -129,16 +148,18 @@ def create_app() -> FastAPI:
     @app.get('/api/stations/{station_id}')
     def api_station_summary(station_id: str, repo: MongoDashboardRepository = Depends(get_repo)):
         try:
-            return repo.get_station_summary(station_id)
+            require_public_station_ref(repo, station_id)
+            return repo.public_payload(repo.get_station_summary(station_id))
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
 
     @app.get('/api/stations/{station_id}/metadata')
     def api_station_metadata(station_id: str, repo: MongoDashboardRepository = Depends(get_repo)):
         try:
-            return repo.get_metadata_payload(station_id)
+            require_public_station_ref(repo, station_id)
+            return repo.public_payload(repo.get_metadata_payload(station_id))
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
 
     @app.get('/api/stations/{station_id}/latest')
     def api_station_latest(
@@ -150,31 +171,33 @@ def create_app() -> FastAPI:
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            return repo.get_latest_cards(
+            require_public_station_ref(repo, station_id)
+            return repo.public_payload(repo.get_latest_cards(
                 station_id,
                 period=period,
                 include_trends=include_trends,
                 include_sensor_trends=include_sensor_trends,
                 clean=clean,
-            )
+            ))
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
 
     @app.get('/api/stations/{station_id}/timeseries')
     def api_station_timeseries(
         station_id: str,
         period: str = Query(default='24H'),
         aggregation: str = Query(default='raw'),
-        metrics: Optional[str] = Query(default=None, description='Comma-separated metric keys'),
+        metrics: Optional[str] = Query(default=None, description='Pipe- or comma-separated metric keys'),
         split_sensors: bool = Query(default=False),
         clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
-        metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
+        metric_list = parse_metric_list(metrics)
         try:
-            return repo.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
+            require_public_station_ref(repo, station_id)
+            return repo.public_payload(repo.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean))
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
 
     @app.get('/api/stations/{station_id}/spectra')
     def api_station_spectra(
@@ -185,22 +208,24 @@ def create_app() -> FastAPI:
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            return repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames, clean=clean)
+            require_public_station_ref(repo, station_id)
+            return repo.public_payload(repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames, clean=clean))
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
 
     @app.get('/api/stations/{station_id}/profiles')
     def api_station_profiles(
         station_id: str,
         period: str = Query(default='24H'),
-        metrics: Optional[str] = Query(default=None, description='Comma-separated profile metric keys'),
+        metrics: Optional[str] = Query(default=None, description='Pipe- or comma-separated profile metric keys'),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
-        metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
+        metric_list = parse_metric_list(metrics)
         try:
-            return repo.get_buoy_profiles(station_id, period=period, metrics=metric_list)
+            require_public_station_ref(repo, station_id)
+            return repo.public_payload(repo.get_buoy_profiles(station_id, period=period, metrics=metric_list))
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
 
     @app.get('/api/stations/{station_id}/export.csv')
     def api_station_export_csv(
@@ -212,30 +237,18 @@ def create_app() -> FastAPI:
         clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
-        metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
-        frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
+        metric_list = parse_metric_list(metrics)
+        try:
+            require_public_station_ref(repo, station_id)
+            frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
         if frame.empty:
             raise HTTPException(status_code=404, detail='No data available for export.')
         buffer = io.StringIO()
         frame.to_csv(buffer, index=False)
         filename = f'{station_id}_{period}_{aggregation}.csv'
         return StreamingResponse(iter([buffer.getvalue()]), media_type='text/csv', headers={'Content-Disposition': f'attachment; filename={filename}'})
-
-    @app.get('/api/stations/{station_id}/export.json')
-    def api_station_export_json(
-        station_id: str,
-        period: str = Query(default='24H'),
-        aggregation: str = Query(default='raw'),
-        metrics: Optional[str] = Query(default=None),
-        split_sensors: bool = Query(default=False),
-        clean: bool = Query(default=False),
-        repo: MongoDashboardRepository = Depends(get_repo),
-    ):
-        metric_list = [item for item in (metrics.split(',') if metrics else []) if item]
-        frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
-        if frame.empty:
-            raise HTTPException(status_code=404, detail='No data available for export.')
-        return Response(orjson.dumps(frame.to_dict(orient='records')), media_type='application/json')
 
     return app
 

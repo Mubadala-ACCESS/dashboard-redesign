@@ -25,7 +25,7 @@
           <button class="ghost-button" data-close-modal>Close</button>
         </header>
         <div class="drawer-kv">
-          <div><span>Station</span><strong>${App.escapeHtml(row.station_num || row.station_id)}</strong></div>
+          <div><span>Station</span><strong>${App.escapeHtml(row.name)}</strong></div>
           <div><span>Status</span><strong>${App.escapeHtml(row.status)}</strong></div>
           <div><span>Device</span><strong>${App.escapeHtml(row.device_label)}</strong></div>
           <div><span>Issue count</span><strong>${row.issue_count || 0}</strong></div>
@@ -44,7 +44,7 @@
     tbody.innerHTML = rows
       .map((row) => `
         <tr>
-          <td><strong>${App.escapeHtml(row.name)}</strong><br /><span class="table-meta">${App.escapeHtml(row.station_num || row.station_id)}</span></td>
+          <td><strong>${App.escapeHtml(row.name)}</strong><br /><span class="table-meta">${App.escapeHtml(row.device_label)}</span></td>
           <td>${App.escapeHtml(row.device_label)}</td>
           <td><span class="status-pill ${App.escapeHtml(row.status_class || '')}">${App.escapeHtml(row.status)}</span></td>
           <td>${App.escapeHtml(row.last_update)}</td>
