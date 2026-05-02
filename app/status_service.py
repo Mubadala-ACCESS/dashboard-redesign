@@ -8,7 +8,27 @@ from .mongo_service import MongoDashboardRepository
 
 class StatusService:
     TS_CANDIDATES = ['datetime', 'Timestamp', 'ts', 'time', 'created_at']
-    ALLOWED_TYPES = {'IoTBox', 'Meteorological', 'Fidas_Palas', 'Buoy'}
+    TYPE_ORDER = [
+        'IoTBox',
+        'Fidas_Palas',
+        'Meteorological',
+        'Buoy',
+        'SBNTransect',
+        'underwater_probe',
+        'coral_reef',
+        'JWCruise',
+    ]
+    TYPE_LABELS = {
+        'IoTBox': 'IoT Boxes',
+        'Fidas_Palas': 'Fidas Palas 200S',
+        'Meteorological': 'Meteorological Stations',
+        'Buoy': 'Buoys',
+        'SBNTransect': 'Transects',
+        'underwater_probe': 'Underwater Probes',
+        'coral_reef': 'Corals',
+        'JWCruise': 'Jaywun Cruises',
+    }
+    LIVE_TYPES = {'IoTBox', 'Meteorological', 'Fidas_Palas', 'Buoy'}
 
     def __init__(self, repo: MongoDashboardRepository):
         self.repo = repo
@@ -156,55 +176,126 @@ class StatusService:
         self._check_drift(record, station, issues)
         return record_ts, issues
 
+    def _type_rank(self, device_type: str) -> int:
+        try:
+            return self.TYPE_ORDER.index(device_type)
+        except ValueError:
+            return len(self.TYPE_ORDER)
+
+    def _type_label(self, device_type: str) -> str:
+        return self.TYPE_LABELS.get(device_type, self.repo.DEVICE_LABELS.get(device_type, device_type or 'Other Stations'))
+
+    def _status_class(self, status: str) -> str:
+        if status == 'Maintenance':
+            return 'maintenance'
+        if status == 'Decommissioned':
+            return 'subtle'
+        return ''
+
+    def _summary_status(self, row_status: str, issues: List[str]) -> str:
+        if row_status == 'Decommissioned':
+            return 'decommissioned'
+        if row_status == 'Maintenance' or issues:
+            return 'maintenance'
+        return 'healthy'
+
+    def _campaign_row(self, station: Dict[str, Any]) -> Dict[str, Any]:
+        extent = self.repo.get_time_extent(station)
+        status = station.get('status') or 'Available'
+        if status not in {'Active', 'Maintenance', 'Decommissioned'}:
+            status = 'Active'
+        if status == 'Maintenance':
+            issues = ['Marked for maintenance in station metadata']
+        else:
+            issues = []
+        return {
+            'station_id': station['public_id'],
+            'public_id': station['public_id'],
+            'name': station['name'],
+            'device_type': station['device_type'],
+            'device_label': station['device_label'],
+            'group_order': self._type_rank(station['device_type']),
+            'group_label': self._type_label(station['device_type']),
+            'status': status,
+            'status_class': self._status_class(status),
+            'last_update': extent.get('latest') or 'N/A',
+            'issues': issues,
+            'issue_count': len(issues),
+        }
+
+    def _live_row(self, station: Dict[str, Any]) -> Dict[str, Any]:
+        if station.get('status') == 'Decommissioned':
+            return {
+                'station_id': station['public_id'],
+                'public_id': station['public_id'],
+                'name': station['name'],
+                'device_type': station['device_type'],
+                'device_label': station['device_label'],
+                'group_order': self._type_rank(station['device_type']),
+                'group_label': self._type_label(station['device_type']),
+                'status': 'Decommissioned',
+                'status_class': 'subtle',
+                'last_update': 'N/A',
+                'issues': [],
+                'issue_count': 0,
+            }
+
+        collection_name, _ = self.repo._collection_for_station(station)
+        record, _ = self._latest_record(collection_name) if collection_name else (None, None)
+        record_ts, issues = self._issues_for_record(record, station)
+        if station.get('status') == 'Maintenance' and 'Marked for maintenance in station metadata' not in issues:
+            issues.append('Marked for maintenance in station metadata')
+        computed_status = 'Maintenance' if issues else 'Active'
+        return {
+            'station_id': station['public_id'],
+            'public_id': station['public_id'],
+            'name': station['name'],
+            'device_type': station['device_type'],
+            'device_label': station['device_label'],
+            'group_order': self._type_rank(station['device_type']),
+            'group_label': self._type_label(station['device_type']),
+            'status': computed_status,
+            'status_class': self._status_class(computed_status),
+            'last_update': self.repo._human_dt(record_ts),
+            'issues': issues,
+            'issue_count': len(issues),
+        }
+
     def network_status(self) -> Dict[str, Any]:
-        cache_key = 'network_status'
+        cache_key = 'network_status_all_types_v1'
         cached = self.repo.cache.get(cache_key)
         if cached:
             return cached
 
         docs = list(self.db[self.settings.mongo_stations_info_collection].find({}, self.repo.station_projection))
-        stations = [self.repo._normalize_station(doc) for doc in docs if doc.get('type') in self.ALLOWED_TYPES or doc.get('status') == 'Decommissioned']
+        stations = [self.repo._normalize_station(doc) for doc in docs]
         rows: List[Dict[str, Any]] = []
         summary = {'total': 0, 'healthy': 0, 'maintenance': 0, 'decommissioned': 0}
 
         for station in stations:
             summary['total'] += 1
-            if station.get('status') == 'Decommissioned':
-                summary['decommissioned'] += 1
-                rows.append({
-                    'station_id': station['public_id'],
-                    'public_id': station['public_id'],
-                    'name': station['name'],
-                    'device_label': station['device_label'],
-                    'status': 'Decommissioned',
-                    'status_class': 'subtle',
-                    'last_update': 'N/A',
-                    'issues': [],
-                    'issue_count': 0,
-                })
+            row = self._live_row(station) if station['device_type'] in self.LIVE_TYPES else self._campaign_row(station)
+            summary[self._summary_status(row['status'], row['issues'])] += 1
+            rows.append(row)
+
+        rows.sort(key=lambda item: (item['group_order'], item['name']))
+        groups = []
+        for device_type in self.TYPE_ORDER:
+            group_rows = [row for row in rows if row['device_type'] == device_type]
+            if not group_rows:
                 continue
+            groups.append(
+                {
+                    'device_type': device_type,
+                    'label': self._type_label(device_type),
+                    'count': len(group_rows),
+                    'rows': group_rows,
+                }
+            )
+        other_rows = [row for row in rows if row['device_type'] not in self.TYPE_ORDER]
+        if other_rows:
+            groups.append({'device_type': 'Other', 'label': 'Other Stations', 'count': len(other_rows), 'rows': other_rows})
 
-            collection_name, _ = self.repo._collection_for_station(station)
-            record, _ = self._latest_record(collection_name) if collection_name else (None, None)
-            record_ts, issues = self._issues_for_record(record, station)
-            computed_status = 'Maintenance' if issues else 'Active'
-            if computed_status == 'Active':
-                summary['healthy'] += 1
-            else:
-                summary['maintenance'] += 1
-            rows.append({
-                'station_id': station['public_id'],
-                'public_id': station['public_id'],
-                'name': station['name'],
-                'device_label': station['device_label'],
-                'status': computed_status,
-                'status_class': 'maintenance' if computed_status == 'Maintenance' else '',
-                'last_update': self.repo._human_dt(record_ts),
-                'issues': issues,
-                'issue_count': len(issues),
-            })
-
-        rows.sort(key=lambda item: (item['status'] != 'Maintenance', item['name']))
-        payload = {'summary': summary, 'rows': rows}
+        payload = {'summary': summary, 'rows': rows, 'groups': groups}
         self.repo.cache.set(cache_key, payload, ttl_seconds=120)
         return payload

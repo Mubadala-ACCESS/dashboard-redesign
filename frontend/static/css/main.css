@@ -469,6 +469,90 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
 .profile-item strong { display: block; margin-bottom: 6px; }
 .profile-item code { display: block; white-space: pre-wrap; color: var(--muted); }
 .simple-page { display: grid; gap: 22px; }
+.guide-page { display: grid; gap: 22px; }
+.guide-steps, .guide-family-grid, .heat-index-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.guide-step, .guide-family-card, .heat-index-section, .glossary-explorer, .metadata-explorer, .guide-split-section {
+  background: var(--panel-soft);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(14px);
+}
+.guide-step, .guide-family-card { padding: 20px; }
+.guide-step span, .guide-family-card span, .heat-index-grid span {
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+}
+.guide-step h2, .heat-index-grid h3 { margin: 10px 0 8px; }
+.guide-step p, .guide-family-card p, .heat-index-grid p, .glossary-explorer p, .metadata-explorer p, .guide-split-section p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+.guide-split-section, .heat-index-section, .glossary-explorer, .metadata-explorer { padding: 24px; display: grid; gap: 18px; }
+.guide-family-card strong { display: block; margin: 10px 0 6px; font-size: 2rem; letter-spacing: -0.04em; }
+.heat-index-section {
+  background:
+    linear-gradient(135deg, rgba(91, 33, 182, 0.08), rgba(15, 118, 110, 0.08)),
+    var(--panel-soft);
+}
+.heat-index-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.heat-index-grid article { padding: 18px; border-radius: 18px; background: rgba(255, 255, 255, 0.76); border: 1px solid rgba(255, 255, 255, 0.78); }
+.guide-search input {
+  width: min(420px, 100%);
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--text);
+  border-radius: 14px;
+  padding: 13px 15px;
+  outline: none;
+}
+.guide-search input:focus { border-color: rgba(91, 33, 182, 0.35); box-shadow: 0 0 0 4px rgba(91, 33, 182, 0.08); }
+.guide-filter-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.guide-filter-row button {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 9px 13px;
+  color: var(--muted);
+  background: #fff;
+  font-weight: 800;
+}
+.guide-filter-row button.is-active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.guide-glossary-grid article[hidden] { display: none; }
+.metadata-family { border: 1px solid var(--line); border-radius: 18px; overflow: hidden; background: rgba(255, 255, 255, 0.82); }
+.metadata-family + .metadata-family { margin-top: 12px; }
+.metadata-family summary { display: flex; justify-content: space-between; gap: 12px; padding: 16px 18px; cursor: pointer; font-weight: 800; }
+.metadata-family summary span { color: var(--muted); font-size: 0.9rem; }
+.metadata-term-grid { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 0 18px 18px; }
+.metadata-term-grid article { padding: 14px; border-radius: 14px; background: rgba(91, 33, 182, 0.045); }
+.metadata-term-grid span { color: var(--muted); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 800; }
+.metadata-term-grid h3 { margin: 6px 0; font-size: 1rem; }
+.metadata-term-grid p { margin: 0 0 8px; color: var(--muted); line-height: 1.5; }
+.metadata-term-grid small { font-weight: 800; color: var(--primary-strong); }
+.status-group-row th {
+  padding-top: 22px;
+  background: linear-gradient(90deg, rgba(91, 33, 182, 0.08), rgba(15, 118, 110, 0.05));
+  border-bottom: 1px solid rgba(91, 33, 182, 0.12);
+}
+.status-group-row span {
+  color: var(--text);
+  font-size: 0.9rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.status-group-row strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  margin-left: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--primary-strong);
+}
 .glossary-grid, .support-grid { display: grid; gap: 18px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .glossary-card, .support-card { padding: 24px; }
 .glossary-meta { display: flex; justify-content: space-between; gap: 12px; align-items: center; color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.12em; }
@@ -524,6 +608,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .summary-grid, .status-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .event-panel, .page-hero.compact-hero { grid-template-columns: 1fr; }
   .glossary-grid, .support-grid { grid-template-columns: 1fr; }
+  .guide-steps, .guide-family-grid, .heat-index-grid, .metadata-term-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 900px) {
@@ -545,6 +630,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .sensor-comparison-grid, .sensor-readout-row, .sensor-comparison-card__stats { grid-template-columns: 1fr; }
   .spectra-controls { grid-template-columns: 1fr; }
   .analysis-header, .section-head, .map-footer, .page-hero.compact-hero { flex-direction: column; align-items: stretch; }
+  .guide-steps, .guide-family-grid, .heat-index-grid, .metadata-term-grid { grid-template-columns: 1fr; }
   .quick-trend-actions { justify-content: stretch; }
   .station-toolbar { flex-direction: column; align-items: stretch; }
   .station-marker { width: 11px; height: 11px; }

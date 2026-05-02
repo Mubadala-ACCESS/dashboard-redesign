@@ -15,7 +15,6 @@ import pandas as pd
 from bson import ObjectId
 from pymongo import ASCENDING, DESCENDING, MongoClient
 
-from .air_quality import calculate_aqi
 from .cache import TTLCache
 from .metadata_service import MetadataService
 from .settings import Settings
@@ -1517,43 +1516,7 @@ class MongoDashboardRepository:
         return payload
 
     def _detect_events(self, df: pd.DataFrame, station: Dict[str, Any], metric_keys: List[str]) -> List[Dict[str, Any]]:
-        events: List[Dict[str, Any]] = []
-        if station.get('device_type') == 'IoTBox':
-            return events
-        if 'timestamp' not in df.columns:
-            return events
-        for metric in metric_keys:
-            label = self._metric_key_to_label(station, metric)
-            series = df[['timestamp', metric]].dropna()
-            if series.empty:
-                continue
-            high = float(series[metric].quantile(0.95))
-            if 'Temperature' in label and high >= 35:
-                point = series.loc[series[metric].idxmax()]
-                events.append({
-                    'type': 'Heatwave peak',
-                    'metric': metric,
-                    'label': label,
-                    'timestamp': self._dt_string(point['timestamp']),
-                    'value': round(float(point[metric]), 2),
-                })
-            if 'Precipitation' in label and series[metric].max() > 0:
-                point = series.loc[series[metric].idxmax()]
-                events.append({
-                    'type': 'Rain event',
-                    'metric': metric,
-                    'label': label,
-                    'timestamp': self._dt_string(point['timestamp']),
-                    'value': round(float(point[metric]), 2),
-                })
-        deduped = []
-        seen = set()
-        for event in events:
-            key = (event['type'], event['timestamp'])
-            if key not in seen:
-                deduped.append(event)
-                seen.add(key)
-        return deduped[:12]
+        return []
 
     # ------------------------------------------------------------------
     # Latest cards and alerts
@@ -1600,7 +1563,6 @@ class MongoDashboardRepository:
         cards = []
         trends = []
         sensor_trends_by_label: Dict[str, List[Dict[str, Any]]] = {}
-        primary_aqi = None
         if include_trends and include_sensor_trends and station['device_type'] == 'IoTBox':
             sensor_timeseries = self.get_timeseries(
                 station_id,
@@ -1634,9 +1596,6 @@ class MongoDashboardRepository:
                 'min': chart['summary'].get('min'),
                 'unit': self._extract_unit(label),
             }
-            if chart['canonical_label'] in {'PM2.5', 'PM10'} and latest is not None and primary_aqi is None:
-                primary_aqi = calculate_aqi(latest, chart['canonical_label'])
-                card['aqi'] = primary_aqi
             cards.append(card)
             if include_trends:
                 trends.append({
@@ -1656,7 +1615,6 @@ class MongoDashboardRepository:
             'supports_sensor_trends': station['device_type'] == 'IoTBox',
             'cards': cards,
             'trends': trends,
-            'primary_aqi': primary_aqi,
             'events': timeseries.get('events', []),
             'latest_table': [],
         }
@@ -1808,53 +1766,15 @@ class MongoDashboardRepository:
             return cached
         docs = list(self.db[self.settings.mongo_stations_info_collection].find({'lat': {'$ne': None}, 'long': {'$ne': None}}, self.station_projection))
         stations = [self._normalize_station(doc) for doc in docs]
-        aqi_values = []
-        elevated = 0
-        latest_alerts = []
-        for station in stations:
-            if station['device_type'] not in self.SPECIAL_REALTIME_TYPES:
-                continue
-            try:
-                cards = self.get_latest_cards(station['station_id'])
-                aqi = cards.get('primary_aqi')
-                if aqi:
-                    aqi_values.append(aqi['aqi'])
-                    if aqi['aqi'] >= 101:
-                        elevated += 1
-                        latest_alerts.append(
-                            {
-                                'station_id': station['public_id'],
-                                'public_id': station['public_id'],
-                                'station_name': station['name'],
-                                'aqi': aqi,
-                            }
-                        )
-            except Exception:
-                continue
-        regional_aqi = round(float(np.mean(aqi_values)), 0) if aqi_values else None
         payload = {
-            'regional_aqi': regional_aqi,
-            'elevated_station_count': elevated,
-            'alerts': latest_alerts[:8],
+            'station_count': len(stations),
+            'alerts': [],
         }
         self.cache.set(cache_key, payload, ttl_seconds=max(60, self.settings.cache_ttl_seconds))
         return payload
 
     def get_alerts(self) -> List[Dict[str, Any]]:
-        network = self.get_network_summary()
-        alerts = []
-        for item in network.get('alerts', []):
-            alerts.append(
-                {
-                    'station_id': item['station_id'],
-                    'public_id': item.get('public_id') or item['station_id'],
-                    'station_name': item['station_name'],
-                    'headline': f"{item['aqi']['category']} particulate levels detected",
-                    'message': item['aqi']['health_message'],
-                    'aqi': item['aqi'],
-                }
-            )
-        return alerts
+        return []
 
     # ------------------------------------------------------------------
     # Raw export helpers

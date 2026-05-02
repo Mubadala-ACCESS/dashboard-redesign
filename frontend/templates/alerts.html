@@ -13,12 +13,12 @@
       {% for alert in alerts %}
       <article class="alert-card">
         <div>
-          <span class="status-pill warning">{{ alert.aqi.category }}</span>
+          <span class="status-pill warning">{{ alert.category }}</span>
           <h2>{{ alert.station_name }}</h2>
           <p>{{ alert.headline }}</p>
         </div>
         <div>
-          <strong>AQI {{ alert.aqi.aqi }}</strong>
+          <strong>{{ alert.value }}</strong>
           <p>{{ alert.message }}</p>
           <a href="/station/{{ alert.station_id }}">Open station</a>
         </div>
@@ -27,7 +27,7 @@
     {% else %}
       <article class="empty-state">
         <h2>No elevated network alerts right now</h2>
-        <p>The latest cached readings did not produce AQI-sensitive particulate alerts.</p>
+        <p>The latest cached readings did not produce station-level alerts.</p>
       </article>
     {% endif %}
   </section>

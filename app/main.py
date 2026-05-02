@@ -94,6 +94,7 @@ def create_app() -> FastAPI:
             'app_name': settings.app_name,
             'page_title': 'Get Started',
             'glossary': repo.metadata_service.glossary(),
+            'metadata_catalog': repo.metadata_service.metadata_catalog(),
         })
 
     @app.get('/glossary')
@@ -112,6 +113,7 @@ def create_app() -> FastAPI:
             'page_title': 'Status',
             'status_summary': status['summary'],
             'status_rows': status['rows'],
+            'status_groups': status['groups'],
         })
 
     @app.get('/alerts')

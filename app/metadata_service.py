@@ -36,7 +36,13 @@ class MetadataService:
         path = self.metadata_dir / filename
         if not path.exists():
             return []
-        return json.loads(path.read_text(encoding='utf-8'))
+        content = path.read_text(encoding='utf-8').strip()
+        if not content:
+            return []
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            return []
 
     def metadata_tabs_for_device(self, device_type: str) -> List[Dict[str, Any]]:
         tabs: List[Dict[str, Any]] = []
@@ -57,6 +63,24 @@ class MetadataService:
 
     def glossary(self) -> List[Dict[str, Any]]:
         return json.loads(self._glossary_file.read_text(encoding='utf-8'))
+
+    def metadata_catalog(self) -> List[Dict[str, Any]]:
+        catalog: List[Dict[str, Any]] = []
+        seen_files: set[str] = set()
+        for filenames in self._metadata_index.values():
+            for filename in filenames:
+                if filename in seen_files:
+                    continue
+                seen_files.add(filename)
+                items = self.read_json(filename)
+                catalog.append(
+                    {
+                        'file': filename,
+                        'label': self._display_names.get(filename, filename.replace('_metadata.json', '').replace('_', ' ').title()),
+                        'items': items,
+                    }
+                )
+        return catalog
 
     def thresholds(self) -> Dict[str, Any]:
         return json.loads(self._thresholds_file.read_text(encoding='utf-8'))

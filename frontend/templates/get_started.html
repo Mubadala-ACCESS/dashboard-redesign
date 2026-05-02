@@ -1,61 +1,140 @@
 {% extends 'base.html' %}
 {% block content %}
-<main class="page simple-page">
-  <section class="page-hero">
+<main class="page guide-page" data-guide-page>
+  <section class="guide-steps" aria-label="Quick start">
+    <article class="guide-step">
+      <span>01</span>
+      <h2>Find the station</h2>
+      <p>Start on the map. Filter by station type, status, privacy, or search text. The map recentres on the selected station set so every visible result stays in view.</p>
+    </article>
+    <article class="guide-step">
+      <span>02</span>
+      <h2>Read Quick View</h2>
+      <p>Quick View gives the latest values, statistics for the chosen display period, and compact trend charts. IoT boxes can split paired sensors to reveal deviation.</p>
+    </article>
+    <article class="guide-step">
+      <span>03</span>
+      <h2>Open Advanced</h2>
+      <p>Advanced restores the full analysis workspace: parameter selection, aggregation, raw data review, Fidas spectra, and buoy depth-profile heatmaps.</p>
+    </article>
+    <article class="guide-step">
+      <span>04</span>
+      <h2>Use Metadata</h2>
+      <p>Metadata explains the exact instrument fields, units, and definitions behind each station family so non-specialists and technical users share the same vocabulary.</p>
+    </article>
+  </section>
+
+  <section class="guide-split-section">
     <div>
-      <span class="eyebrow">Get Started</span>
-      <h1>Use the dashboard in two steps</h1>
-      <p class="lead">Start on the map to find a station, then open Quick View or Advanced analysis for station-level detail. This page also keeps the key glossary notes close at hand.</p>
+      <span class="eyebrow">What We Measure</span>
+      <h2>From air particles to marine profiles</h2>
+      <p class="lead">The dashboard brings together fixed IoT air stations, reference-grade Fidas particle instruments, meteorological stations, buoys, and marine survey sensors.</p>
+    </div>
+    <div class="guide-family-grid" id="instrument-families"></div>
+  </section>
+
+  <section class="heat-index-section" aria-labelledby="heat-title">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Heat Indices</span>
+        <h2 id="heat-title">Heat stress is more than air temperature</h2>
+        <p>The Fidas metadata includes calculated thermal-comfort fields. These are displayed as first-class context because humidity, wind, and radiation can make the same temperature feel very different.</p>
+      </div>
+    </div>
+    <div class="heat-index-grid">
+      <article>
+        <span>Heat Index</span>
+        <h3>Temperature plus humidity</h3>
+        <p>Shows how hot conditions feel when moisture reduces evaporative cooling.</p>
+      </article>
+      <article>
+        <span>Feels Like</span>
+        <h3>Human-experience temperature</h3>
+        <p>Communicates apparent temperature by combining atmospheric factors such as humidity and wind.</p>
+      </article>
+      <article>
+        <span>Perceived Temperature</span>
+        <h3>Operational comfort signal</h3>
+        <p>Turns raw weather variables into a field that is easier to interpret for planning and communication.</p>
+      </article>
+      <article>
+        <span>WBGT</span>
+        <h3>Outdoor heat-stress load</h3>
+        <p>Combines heat, moisture, wind, and radiation for a more conservative outdoor stress signal.</p>
+      </article>
     </div>
   </section>
 
-  <section class="support-grid">
-    <article class="support-card">
-      <h2>1. Use the map</h2>
-      <ol>
-        <li>Search by station name, number, or station ID.</li>
-        <li>Filter by privacy, device type, and status using the left panel.</li>
-        <li>Click a station marker to open the right-side quick view panel.</li>
-      </ol>
-    </article>
-
-    <article class="support-card">
-      <h2>2. Open station views</h2>
-      <ol>
-        <li>Quick View gives the latest interpreted readings.</li>
-        <li>Advanced shows charts, aggregation, exports, and sensor split mode.</li>
-        <li>Metadata explains available parameters and instrument definitions.</li>
-      </ol>
-    </article>
-  </section>
-
-  <section class="page-section-head">
-    <div>
-      <span class="eyebrow">Details</span>
-      <h2>Environmental terms and interpretation</h2>
-      <p class="lead">A concise glossary for the most important dashboard signals.</p>
+  <section class="glossary-explorer" id="glossary">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Glossary</span>
+        <h2>Search every term behind the dashboard</h2>
+        <p>Use this as the plain-language layer for all station users, from visitors scanning the map to researchers checking instrument definitions.</p>
+      </div>
+      <label class="guide-search">
+        <span class="sr-only">Search glossary terms</span>
+        <input id="guide-search" type="search" placeholder="Search particles, heat, buoy profiles, oxygen..." />
+      </label>
+    </div>
+    <div class="guide-filter-row" id="guide-category-filters"></div>
+    <div class="glossary-grid guide-glossary-grid" id="guide-glossary-grid">
+      {% for item in glossary %}
+      <article class="glossary-card" data-guide-term data-title="{{ item.title | lower }}" data-category="{{ item.category | lower }}">
+        <div class="glossary-meta">
+          <span>{{ item.category }}</span>
+          <strong>{{ item.unit }}</strong>
+        </div>
+        <h2>{{ item.title }}</h2>
+        <p>{{ item.summary }}</p>
+        <div class="glossary-block">
+          <h3>Why it matters</h3>
+          <p>{{ item.why_it_matters }}</p>
+        </div>
+        <div class="glossary-block">
+          <h3>How to read it</h3>
+          <p>{{ item.how_to_read }}</p>
+        </div>
+      </article>
+      {% endfor %}
     </div>
   </section>
 
-  <section class="glossary-grid">
-    {% for item in glossary %}
-    <article class="glossary-card">
-      <div class="glossary-meta">
-        <span>{{ item.category }}</span>
-        <strong>{{ item.unit }}</strong>
+  <section class="metadata-explorer">
+    <div class="section-head">
+      <div>
+        <span class="eyebrow">Metadata</span>
+        <h2>Instrument field guide</h2>
+        <p>The entries below come directly from the dashboard metadata files and preserve the vocabulary used inside the station views.</p>
       </div>
-      <h2>{{ item.title }}</h2>
-      <p>{{ item.summary }}</p>
-      <div class="glossary-block">
-        <h3>Why it matters</h3>
-        <p>{{ item.why_it_matters }}</p>
-      </div>
-      <div class="glossary-block">
-        <h3>How to read it</h3>
-        <p>{{ item.how_to_read }}</p>
-      </div>
-    </article>
-    {% endfor %}
+    </div>
+    <div class="metadata-family-list" id="metadata-family-list">
+      {% for group in metadata_catalog %}
+      <details class="metadata-family" {% if loop.first %}open{% endif %}>
+        <summary>
+          <strong>{{ group.label }}</strong>
+          <span>{{ group['items'] | length }} fields</span>
+        </summary>
+        <div class="metadata-term-grid">
+          {% for item in group['items'] %}
+          <article>
+            <span>{{ item.column_name }}</span>
+            <h3>{{ item.full_descriptor }}</h3>
+            <p>{{ item.definition }}</p>
+            <small>{{ item.units }}</small>
+          </article>
+          {% endfor %}
+        </div>
+      </details>
+      {% endfor %}
+    </div>
   </section>
+
+  <script type="application/json" id="guide-glossary-data">{{ glossary | tojson | safe }}</script>
+  <script type="application/json" id="guide-metadata-data">{{ metadata_catalog | tojson | safe }}</script>
 </main>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/get_started.js?v=guide-2"></script>
 {% endblock %}

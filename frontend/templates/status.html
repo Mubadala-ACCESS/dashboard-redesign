@@ -1,6 +1,6 @@
 {% extends 'base.html' %}
 {% block content %}
-<main class="page simple-page status-page" data-status-summary='{{ status_summary | tojson | safe }}' data-status-rows='{{ status_rows | tojson | safe }}'>
+<main class="page simple-page status-page" data-status-summary='{{ status_summary | tojson | safe }}' data-status-rows='{{ status_rows | tojson | safe }}' data-status-groups='{{ status_groups | tojson | safe }}'>
   <section class="page-hero compact-hero">
     <div>
       <span class="eyebrow">Network status</span>
@@ -14,16 +14,16 @@
 
   <section class="status-summary-grid">
     <article class="metric-card"><span>Total stations</span><strong id="status-total">{{ status_summary.total }}</strong><small>Stations in the monitored network.</small></article>
-    <article class="metric-card"><span>Healthy</span><strong id="status-healthy">{{ status_summary.healthy }}</strong><small>Fresh data with no detected problems.</small></article>
+    <article class="metric-card"><span>Healthy</span><strong id="status-healthy">{{ status_summary.healthy }}</strong><small>No active issues in live checks or metadata status.</small></article>
     <article class="metric-card"><span>Maintenance</span><strong id="status-maintenance">{{ status_summary.maintenance }}</strong><small>Stations with stale data or detected issues.</small></article>
-    <article class="metric-card"><span>Decommissioned</span><strong id="status-decommissioned">{{ status_summary.decommissioned }}</strong><small>Excluded from the active monitoring view.</small></article>
+    <article class="metric-card"><span>Decommissioned</span><strong id="status-decommissioned">{{ status_summary.decommissioned }}</strong><small>Shown for completeness and excluded from active operations.</small></article>
   </section>
 
   <section class="table-card status-table-card">
     <div class="section-head">
       <div>
         <h3>Status table</h3>
-        <p>Live station health based on the latest available record and readable issue checks.</p>
+        <p>All station families are grouped by type. Live stations use freshness and issue checks; campaign and metadata-first stations use their station metadata and available data window.</p>
       </div>
     </div>
     <div class="table-scroll">
@@ -45,5 +45,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/status.js?v=secure-stations-1"></script>
+<script src="/static/js/status.js?v=all-types-1"></script>
 {% endblock %}

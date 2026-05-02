@@ -40,21 +40,36 @@
   }
 
   function renderRows(rows) {
+    renderGroups([{ label: 'Stations', count: rows.length, rows }]);
+  }
+
+  function issueCell(row) {
+    return row.issues.length
+      ? `<button class="ghost-button status-issues-button" type="button" data-row="${encodeURIComponent(JSON.stringify(row))}">View ${row.issue_count} issue${row.issue_count === 1 ? '' : 's'}</button>`
+      : '<span class="table-meta">No issues</span>';
+  }
+
+  function renderGroups(groups) {
     const tbody = document.querySelector('#status-table tbody');
-    tbody.innerHTML = rows
-      .map((row) => `
+    const safeGroups = (groups || []).filter((group) => Array.isArray(group.rows) && group.rows.length);
+    tbody.innerHTML = safeGroups
+      .map((group) => `
+        <tr class="status-group-row">
+          <th colspan="6">
+            <span>${App.escapeHtml(group.label)}</span>
+            <strong>${App.escapeHtml(String(group.count ?? group.rows.length))}</strong>
+          </th>
+        </tr>
+        ${group.rows.map((row) => `
         <tr>
           <td><strong>${App.escapeHtml(row.name)}</strong><br /><span class="table-meta">${App.escapeHtml(row.device_label)}</span></td>
           <td>${App.escapeHtml(row.device_label)}</td>
           <td><span class="status-pill ${App.escapeHtml(row.status_class || '')}">${App.escapeHtml(row.status)}</span></td>
           <td>${App.escapeHtml(row.last_update)}</td>
-          <td>
-            ${row.issues.length
-              ? `<button class="ghost-button status-issues-button" type="button" data-row="${encodeURIComponent(JSON.stringify(row))}">View ${row.issue_count} issue${row.issue_count === 1 ? '' : 's'}</button>`
-              : '<span class="table-meta">No issues</span>'}
-          </td>
+          <td>${issueCell(row)}</td>
           <td><a class="ghost-button status-open-link" href="/station/${encodeURIComponent(row.station_id)}">Open</a></td>
         </tr>
+      `).join('')}
       `)
       .join('');
   }
@@ -69,7 +84,7 @@
   async function refreshStatus() {
     const payload = await App.fetchJSON('/api/status');
     updateSummary(payload.summary);
-    renderRows(payload.rows);
+    renderGroups(payload.groups || [{ label: 'Stations', rows: payload.rows || [] }]);
   }
 
   document.addEventListener('click', (event) => {
@@ -84,8 +99,13 @@
   try {
     const initialSummary = JSON.parse(page.dataset.statusSummary || '{}');
     const initialRows = JSON.parse(page.dataset.statusRows || '[]');
+    const initialGroups = JSON.parse(page.dataset.statusGroups || '[]');
     if (initialSummary && typeof initialSummary === 'object') updateSummary(initialSummary);
-    if (Array.isArray(initialRows)) renderRows(initialRows);
+    if (Array.isArray(initialGroups) && initialGroups.length) {
+      renderGroups(initialGroups);
+    } else if (Array.isArray(initialRows)) {
+      renderRows(initialRows);
+    }
   } catch (error) {
     console.error(error);
   }
