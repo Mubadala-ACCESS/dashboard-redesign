@@ -81,18 +81,102 @@
     return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
   }
 
-  function pointAreaTrace(x, y, color, name) {
-    return {
-      x,
-      y,
-      type: 'scatter',
-      mode: 'none',
-      name: `${name} area`,
-      fill: 'tozeroy',
-      fillcolor: hexToRgba(color, 0.12),
-      hoverinfo: 'skip',
-      showlegend: false,
-    };
+  function isPresentChartValue(value) {
+    if (value === null || value === undefined || value === '') return false;
+    return Number.isFinite(Number(value));
+  }
+
+  function chartTimestampMs(value) {
+    if (value === null || value === undefined || value === '') return null;
+    if (typeof value === 'number') return null;
+    if (value instanceof Date) {
+      const ms = value.getTime();
+      return Number.isFinite(ms) ? ms : null;
+    }
+    const text = String(value).trim();
+    if (!/[12]\d{3}/.test(text) && !/\d{1,2}:\d{2}/.test(text)) return null;
+    const parsed = Date.parse(text);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  function median(values) {
+    if (!values.length) return null;
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function inferredGapThreshold(series) {
+    const deltas = [];
+    let previousMs = null;
+    (series || []).forEach((point) => {
+      const ms = chartTimestampMs(point?.x);
+      if (ms === null) return;
+      if (previousMs !== null) {
+        const delta = ms - previousMs;
+        if (Number.isFinite(delta) && delta > 0) deltas.push(delta);
+      }
+      previousMs = ms;
+    });
+    const medianDelta = median(deltas);
+    return medianDelta ? medianDelta * 2.75 : null;
+  }
+
+  function contiguousChartSegments(series) {
+    const segments = [];
+    const threshold = inferredGapThreshold(series);
+    let segment = [];
+    let previousMs = null;
+
+    (series || []).forEach((point) => {
+      const ms = chartTimestampMs(point?.x);
+      if (!isPresentChartValue(point?.y)) {
+        if (segment.length) segments.push(segment);
+        segment = [];
+        previousMs = ms;
+        return;
+      }
+
+      if (
+        segment.length &&
+        threshold &&
+        previousMs !== null &&
+        ms !== null &&
+        ms - previousMs > threshold
+      ) {
+        segments.push(segment);
+        segment = [];
+      }
+
+      segment.push({ x: point.x, y: Number(point.y) });
+      if (ms !== null) previousMs = ms;
+    });
+
+    if (segment.length) segments.push(segment);
+    return segments;
+  }
+
+  function validChartPoints(series) {
+    return (series || [])
+      .filter((point) => isPresentChartValue(point?.y))
+      .map((point) => ({ x: point.x, y: Number(point.y) }));
+  }
+
+  function pointAreaTraces(series, color, name) {
+    return contiguousChartSegments(series)
+      .filter((segment) => segment.length > 1)
+      .map((segment, index) => ({
+        x: segment.map((point) => point.x),
+        y: segment.map((point) => point.y),
+        type: 'scatter',
+        mode: 'none',
+        name: `${name} area ${index + 1}`,
+        fill: 'tozeroy',
+        fillcolor: hexToRgba(color, 0.12),
+        hoverinfo: 'skip',
+        showlegend: false,
+        legendgroup: name,
+      }));
   }
 
   function trendHostId(metric, index) {
@@ -458,7 +542,7 @@
   function renderQuickTrendChart(hostId, trend, color, unit, showSensorTrends = false) {
     const host = document.getElementById(hostId);
     if (!host || !window.Plotly) return;
-    const points = (trend.series || []).filter((point) => point.y !== null && point.y !== undefined);
+    const points = validChartPoints(trend.series);
     if (!points.length) {
       host.innerHTML = '<div class="empty-trend">No trend data for this display period.</div>';
       return;
@@ -470,20 +554,25 @@
       name: 'Station mean',
       hovertemplate: `%{x}<br>%{y:.2f}${unit}<extra></extra>`,
     };
-    const traces = [isQuickBarMode() ? {
-      ...baseTrace,
-      type: 'bar',
-      marker: { color, opacity: 0.68 },
-    } : pointAreaTrace(baseTrace.x, baseTrace.y, color, baseTrace.name), ...(!isQuickBarMode() ? [{
-      ...baseTrace,
-      type: 'scatter',
-      mode: 'markers',
-      marker: { size: pointMarkerSize(points.length), color, opacity: 0.9, line: { color: '#ffffff', width: 0.7 } },
-    }] : [])];
+    const traces = isQuickBarMode()
+      ? [{
+        ...baseTrace,
+        type: 'bar',
+        marker: { color, opacity: 0.68 },
+      }]
+      : [
+        ...pointAreaTraces(trend.series, color, baseTrace.name),
+        {
+          ...baseTrace,
+          type: 'scatter',
+          mode: 'markers',
+          marker: { size: pointMarkerSize(points.length), color, opacity: 0.9, line: { color: '#ffffff', width: 0.7 } },
+        },
+      ];
 
     if (showSensorTrends) {
       (trend.sensor_trends || []).forEach((sensorTrend, index) => {
-        const sensorPoints = (sensorTrend.series || []).filter((point) => point.y !== null && point.y !== undefined);
+        const sensorPoints = validChartPoints(sensorTrend.series);
         if (!sensorPoints.length) return;
         const sensorColor = sensorTrendColors[index % sensorTrendColors.length];
         const sensorTrace = {
@@ -500,7 +589,7 @@
           });
           return;
         }
-        traces.push(pointAreaTrace(sensorTrace.x, sensorTrace.y, sensorColor, sensorTrace.name));
+        traces.push(...pointAreaTraces(sensorTrend.series, sensorColor, sensorTrace.name));
         traces.push({
           ...sensorTrace,
           type: 'scatter',
@@ -626,11 +715,12 @@
     const traceSource = chart.sensorCharts?.length ? chart.sensorCharts : [chart];
     const traces = [];
     traceSource.forEach((sourceChart, index) => {
-      const sourceX = (sourceChart.series || []).map((point) => point.x);
-      const sourceY = (sourceChart.series || []).map((point) => point.y);
+      const sourcePoints = validChartPoints(sourceChart.series || []);
+      const sourceX = sourcePoints.map((point) => point.x);
+      const sourceY = sourcePoints.map((point) => point.y);
       const sourceName = sourceChart.sensorLabel || sourceChart.label || chart.label;
       const sourceColor = chart.sensorCharts?.length ? sensorTrendColors[index % sensorTrendColors.length] : '#4c1d95';
-      traces.push(pointAreaTrace(sourceX, sourceY, sourceColor, sourceName));
+      traces.push(...pointAreaTraces(sourceChart.series || [], sourceColor, sourceName));
       traces.push({
         x: sourceX,
         y: sourceY,
@@ -1017,7 +1107,7 @@
     host.innerHTML = '';
 
     Plotly.newPlot(host, [
-    pointAreaTrace(x, y, '#5b21b6', 'Particle count'),
+    ...pointAreaTraces(x.map((value, index) => ({ x: value, y: y[index] })), '#5b21b6', 'Particle count'),
     {
       x,
       y,
