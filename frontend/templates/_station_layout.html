@@ -59,10 +59,16 @@
             <h3>Trends</h3>
             <p id="quick-trend-context">Selected display period trends.</p>
           </div>
-          <label class="toggle-row quick-sensor-toggle" id="quick-sensor-toggle" hidden>
-            <input type="checkbox" id="quick-split-sensors-toggle" />
-            <span>Individual sensor readings</span>
-          </label>
+          <div class="quick-trend-actions">
+            <div class="inline-toggle quick-chart-mode" id="quick-chart-mode-buttons" aria-label="Quick view chart type">
+              <button type="button" data-quick-chart-mode="points">Points</button>
+              <button type="button" data-quick-chart-mode="bars" class="is-active">Bars</button>
+            </div>
+            <label class="toggle-row quick-sensor-toggle" id="quick-sensor-toggle" hidden>
+              <input type="checkbox" id="quick-split-sensors-toggle" />
+              <span>Individual sensor readings</span>
+            </label>
+          </div>
         </div>
         <div class="sensor-comparison-grid" id="quick-sensor-comparison" hidden></div>
         <div class="quick-trend-grid" id="quick-trends"></div>

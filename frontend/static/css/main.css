@@ -422,6 +422,9 @@ img { max-width: 100%; }
 #advanced-view .chart-host { min-height: 420px; }
 .quick-trend-panel { display: grid; gap: 16px; overflow: hidden; }
 .quick-trend-panel .section-head { margin-bottom: 0; }
+.quick-trend-actions { display: inline-flex; align-items: center; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.quick-chart-mode { margin-bottom: 0; }
+.quick-chart-mode button { min-width: 72px; }
 .quick-sensor-toggle[hidden] { display: none !important; }
 .quick-sensor-toggle { margin-top: 0; }
 .sensor-comparison-grid[hidden] { display: none !important; }
@@ -542,6 +545,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .sensor-comparison-grid, .sensor-readout-row, .sensor-comparison-card__stats { grid-template-columns: 1fr; }
   .spectra-controls { grid-template-columns: 1fr; }
   .analysis-header, .section-head, .map-footer, .page-hero.compact-hero { flex-direction: column; align-items: stretch; }
+  .quick-trend-actions { justify-content: stretch; }
   .station-toolbar { flex-direction: column; align-items: stretch; }
   .station-marker { width: 11px; height: 11px; }
   .station-marker__status { width: 8px; height: 8px; }

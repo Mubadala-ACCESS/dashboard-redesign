@@ -15,6 +15,7 @@
     profileMetricsTouched: false,
     splitSensors: false,
     quickSplitSensors: false,
+    quickChartMode: 'bars',
     availableMetrics: [],
     latestPayload: null,
     timeseriesPayload: null,
@@ -58,6 +59,40 @@
   function metricValue(value, unit = '') {
     if (value === null || value === undefined || value === '') return emptyValue;
     return `${displayValue(value)}${unit ? ` ${App.escapeHtml(unit)}` : ''}`;
+  }
+
+  function pointMarkerSize(count = 0) {
+    if (count > 650) return 3.2;
+    if (count > 260) return 4;
+    return 5.2;
+  }
+
+  function isQuickBarMode() {
+    return state.quickChartMode === 'bars';
+  }
+
+  function hexToRgba(hex, alpha) {
+    const normalized = String(hex || '').replace('#', '');
+    if (!/^[0-9a-f]{6}$/i.test(normalized)) return `rgba(91, 33, 182, ${alpha})`;
+    const value = parseInt(normalized, 16);
+    const red = (value >> 16) & 255;
+    const green = (value >> 8) & 255;
+    const blue = value & 255;
+    return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
+  }
+
+  function pointAreaTrace(x, y, color, name) {
+    return {
+      x,
+      y,
+      type: 'scatter',
+      mode: 'none',
+      name: `${name} area`,
+      fill: 'tozeroy',
+      fillcolor: hexToRgba(color, 0.12),
+      hoverinfo: 'skip',
+      showlegend: false,
+    };
   }
 
   function trendHostId(metric, index) {
@@ -185,6 +220,9 @@
     }
 
     panel.hidden = false;
+    document.querySelectorAll('#quick-chart-mode-buttons button').forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.quickChartMode === state.quickChartMode);
+    });
     if (toggle) {
       toggle.hidden = !payload.supports_sensor_trends;
       const input = document.getElementById('quick-split-sensors-toggle');
@@ -192,7 +230,8 @@
     }
     if (context) {
       const sensorText = state.quickSplitSensors && payload.supports_sensor_trends ? ' with individual IoT sensor overlays' : '';
-      context.textContent = `${payload.period || state.period} trends using ${aggregationLabel(payload.trend_aggregation)} values${sensorText}.`;
+      const chartText = isQuickBarMode() ? 'bar charts' : 'point charts';
+      context.textContent = `${payload.period || state.period} ${chartText} using ${aggregationLabel(payload.trend_aggregation)} values${sensorText}.`;
     }
 
     renderSensorComparison(trends, payload);
@@ -425,35 +464,53 @@
       return;
     }
 
-    const traces = [{
+    const baseTrace = {
       x: points.map((point) => point.x),
       y: points.map((point) => point.y),
-      type: 'scatter',
-      mode: 'lines',
       name: 'Station mean',
-      line: { color, width: 2.4, shape: 'spline' },
-      fill: 'tozeroy',
-      fillcolor: 'rgba(91, 33, 182, 0.06)',
       hovertemplate: `%{x}<br>%{y:.2f}${unit}<extra></extra>`,
-    }];
+    };
+    const traces = [isQuickBarMode() ? {
+      ...baseTrace,
+      type: 'bar',
+      marker: { color, opacity: 0.68 },
+    } : pointAreaTrace(baseTrace.x, baseTrace.y, color, baseTrace.name), ...(!isQuickBarMode() ? [{
+      ...baseTrace,
+      type: 'scatter',
+      mode: 'markers',
+      marker: { size: pointMarkerSize(points.length), color, opacity: 0.9, line: { color: '#ffffff', width: 0.7 } },
+    }] : [])];
 
     if (showSensorTrends) {
       (trend.sensor_trends || []).forEach((sensorTrend, index) => {
         const sensorPoints = (sensorTrend.series || []).filter((point) => point.y !== null && point.y !== undefined);
         if (!sensorPoints.length) return;
-        traces.push({
+        const sensorColor = sensorTrendColors[index % sensorTrendColors.length];
+        const sensorTrace = {
           x: sensorPoints.map((point) => point.x),
           y: sensorPoints.map((point) => point.y),
-          type: 'scatter',
-          mode: 'lines',
           name: sensorTrend.label.split(' - ').pop() || `Sensor ${index + 1}`,
-          line: { color: sensorTrendColors[index % sensorTrendColors.length], width: 1.9, dash: index % 2 ? 'dot' : 'solid', shape: 'spline' },
           hovertemplate: `%{fullData.name}<br>%{x}<br>%{y:.2f}${unit}<extra></extra>`,
+        };
+        if (isQuickBarMode()) {
+          traces.push({
+            ...sensorTrace,
+            type: 'bar',
+            marker: { color: sensorColor, opacity: 0.58 },
+          });
+          return;
+        }
+        traces.push(pointAreaTrace(sensorTrace.x, sensorTrace.y, sensorColor, sensorTrace.name));
+        traces.push({
+          ...sensorTrace,
+          type: 'scatter',
+          mode: 'markers',
+          marker: { size: pointMarkerSize(sensorPoints.length), color: sensorColor, opacity: 0.9, line: { color: '#ffffff', width: 0.7 } },
         });
       });
     }
 
-    Plotly.newPlot(host, traces, {
+    const layout = {
       margin: { t: 10, r: 18, b: 38, l: 54 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
@@ -461,7 +518,12 @@
       yaxis: { title: unit.trim(), gridcolor: 'rgba(91,101,118,.12)', zerolinecolor: 'rgba(91,101,118,.16)' },
       legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 11 } },
       showlegend: traces.length > 1,
-    }, { displaylogo: false, responsive: true });
+    };
+    if (isQuickBarMode()) {
+      layout.barmode = traces.length > 1 ? 'group' : 'relative';
+      layout.bargap = 0.18;
+    }
+    Plotly.newPlot(host, traces, layout, { displaylogo: false, responsive: true });
   }
 
   function renderMetricSelector(metrics, activeMetrics = []) {
@@ -562,23 +624,28 @@
     });
     const hostWidth = Math.max(320, Math.floor(host.getBoundingClientRect().width || host.clientWidth || 0));
     const traceSource = chart.sensorCharts?.length ? chart.sensorCharts : [chart];
-    const traces = traceSource.map((sourceChart, index) => ({
-      x: (sourceChart.series || []).map((point) => point.x),
-      y: (sourceChart.series || []).map((point) => point.y),
-      type: 'scatter',
-      mode: (sourceChart.series || []).length > 220 ? 'lines' : 'lines+markers',
-      name: sourceChart.sensorLabel || sourceChart.label || chart.label,
-      line: {
-        width: chart.sensorCharts?.length ? 2 : 2.2,
-        color: chart.sensorCharts?.length ? sensorTrendColors[index % sensorTrendColors.length] : '#4c1d95',
-        dash: index % 2 ? 'dot' : 'solid',
-      },
-      marker: {
-        size: 4,
-        color: chart.sensorCharts?.length ? sensorTrendColors[index % sensorTrendColors.length] : '#4c1d95',
-      },
-      hovertemplate: '%{fullData.name}<br>%{x}<br>%{y}<extra></extra>',
-    }));
+    const traces = [];
+    traceSource.forEach((sourceChart, index) => {
+      const sourceX = (sourceChart.series || []).map((point) => point.x);
+      const sourceY = (sourceChart.series || []).map((point) => point.y);
+      const sourceName = sourceChart.sensorLabel || sourceChart.label || chart.label;
+      const sourceColor = chart.sensorCharts?.length ? sensorTrendColors[index % sensorTrendColors.length] : '#4c1d95';
+      traces.push(pointAreaTrace(sourceX, sourceY, sourceColor, sourceName));
+      traces.push({
+        x: sourceX,
+        y: sourceY,
+        type: 'scatter',
+        mode: 'markers',
+        name: sourceName,
+        marker: {
+          size: pointMarkerSize((sourceChart.series || []).length),
+          color: sourceColor,
+          opacity: 0.9,
+          line: { color: '#ffffff', width: 0.7 },
+        },
+        hovertemplate: '%{fullData.name}<br>%{x}<br>%{y}<extra></extra>',
+      });
+    });
     Plotly.newPlot(host, traces, {
       margin: { t: 18, r: 18, b: 42, l: 54 },
       paper_bgcolor: 'rgba(0,0,0,0)',
@@ -949,13 +1016,15 @@
     if (label) label.textContent = frame.label || frame.timestamp || 'Selected sample';
     host.innerHTML = '';
 
-    Plotly.newPlot(host, [{
+    Plotly.newPlot(host, [
+    pointAreaTrace(x, y, '#5b21b6', 'Particle count'),
+    {
       x,
       y,
       type: 'scatter',
-      mode: 'lines',
+      mode: 'markers',
       name: 'Particle count',
-      line: { color: '#5b21b6', width: 2.6, shape: 'hv' },
+      marker: { color: '#5b21b6', size: pointMarkerSize(x.length), opacity: 0.9, line: { color: '#ffffff', width: 0.7 } },
       hovertemplate: `Size %{x:.4f} ${App.escapeHtml(state.spectraPayload?.size_unit || '')}<br>Count %{y:.4f}<extra></extra>`,
     }], {
       margin: { t: 14, r: 24, b: 52, l: 68 },
@@ -1084,6 +1153,13 @@
     document.getElementById('quick-split-sensors-toggle')?.addEventListener('change', (event) => {
       state.quickSplitSensors = event.target.checked;
       loadLatest();
+    });
+    document.querySelectorAll('#quick-chart-mode-buttons button').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.quickChartMode = button.dataset.quickChartMode || 'points';
+        document.querySelectorAll('#quick-chart-mode-buttons button').forEach((item) => item.classList.toggle('is-active', item === button));
+        if (state.latestPayload) renderQuickTrends(state.latestPayload);
+      });
     });
     document.getElementById('fidas-clean-data-toggle')?.addEventListener('change', (event) => {
       state.fidasClean = event.target.checked;
