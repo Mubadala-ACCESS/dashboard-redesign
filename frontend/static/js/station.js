@@ -231,7 +231,7 @@
   }
 
   function visibleTabContext() {
-    return document.getElementById('advanced-view')?.classList.contains('is-active') ? 'advanced' : 'quick';
+    return state.activeTab === 'advanced' ? 'advanced' : 'quick';
   }
 
   function activeRange() {
@@ -244,6 +244,24 @@
 
   function compareDateStrings(a, b) {
     return String(a || '').localeCompare(String(b || ''));
+  }
+
+  function shiftDateString(value, days) {
+    if (!value) return '';
+    const [year, month, day] = String(value).split('-').map(Number);
+    if (!year || !month || !day) return value;
+    const shifted = new Date(Date.UTC(year, month - 1, day + days));
+    return shifted.toISOString().slice(0, 10);
+  }
+
+  function dateAxisRangeForContext(context) {
+    if (!state.dateRangeMode) return null;
+    const range = rangeForContext(context);
+    if (!range?.start && !range?.end) return null;
+    const start = range.start || state.earliestDate || state.availableDates[0];
+    const end = range.end || state.latestDate || state.availableDates[state.availableDates.length - 1];
+    if (!start || !end) return null;
+    return [start, shiftDateString(end, 1)];
   }
 
   function formatDateLabel(value) {
@@ -284,6 +302,60 @@
     return new Date(Date.UTC(year, month, 0)).getUTCDate();
   }
 
+  function availableMonthKeys() {
+    return [...new Set(state.availableDates.map(monthKey).filter(Boolean))].sort();
+  }
+
+  function clampCalendarMonth(key) {
+    const months = availableMonthKeys();
+    const fallback = String(key || state.latestDate || state.earliestDate || new Date().toISOString().slice(0, 7)).slice(0, 7);
+    if (!months.length) return fallback;
+    if (months.includes(fallback)) return fallback;
+    if (compareDateStrings(fallback, months[0]) < 0) return months[0];
+    if (compareDateStrings(fallback, months[months.length - 1]) > 0) return months[months.length - 1];
+    let closest = months[0];
+    months.forEach((item) => {
+      if (compareDateStrings(item, fallback) <= 0) closest = item;
+    });
+    return closest;
+  }
+
+  function shiftAvailableMonth(key, delta) {
+    const months = availableMonthKeys();
+    if (!months.length) return shiftMonth(key, delta);
+    const current = clampCalendarMonth(key);
+    const index = Math.max(0, months.indexOf(current));
+    const nextIndex = Math.max(0, Math.min(months.length - 1, index + delta));
+    return months[nextIndex];
+  }
+
+  function availableYears() {
+    return [...new Set(availableMonthKeys().map((item) => item.slice(0, 4)))];
+  }
+
+  function availableMonthsForYear(year) {
+    return availableMonthKeys()
+      .filter((item) => item.startsWith(`${year}-`))
+      .map((item) => Number(item.slice(5, 7)));
+  }
+
+  function monthName(month) {
+    return new Date(Date.UTC(2026, month - 1, 1)).toLocaleString(undefined, { month: 'long' });
+  }
+
+  function monthKeyFromParts(year, month) {
+    return `${year}-${String(month).padStart(2, '0')}`;
+  }
+
+  function closestMonthForYear(year, preferredMonth) {
+    const months = availableMonthsForYear(year);
+    if (!months.length) return clampCalendarMonth(monthKeyFromParts(year, preferredMonth || 1));
+    if (months.includes(preferredMonth)) return preferredMonth;
+    return months.reduce((best, item) => (
+      Math.abs(item - preferredMonth) < Math.abs(best - preferredMonth) ? item : best
+    ), months[0]);
+  }
+
   function syncDateRangeControls() {
     const dateControl = document.getElementById('date-range-control');
     const periodControl = document.getElementById('period-control');
@@ -315,11 +387,15 @@
       return;
     }
     const range = activeRange();
-    state.calendarMonth = state.calendarMonth || monthKey(range[state.activeDatePart]) || monthKey(state.latestDate);
+    state.calendarMonth = clampCalendarMonth(state.calendarMonth || monthKey(range[state.activeDatePart]) || monthKey(state.latestDate));
     const [year, month] = state.calendarMonth.split('-').map(Number);
-    const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric' });
     const firstDay = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
     const totalDays = daysInMonth(year, month);
+    const months = availableMonthKeys();
+    const years = availableYears();
+    const monthsForYear = availableMonthsForYear(year);
+    const canGoBack = months.length ? state.calendarMonth !== months[0] : true;
+    const canGoForward = months.length ? state.calendarMonth !== months[months.length - 1] : true;
     const cells = [];
     for (let index = 0; index < firstDay; index += 1) {
       cells.push('<button type="button" class="date-day is-empty" disabled></button>');
@@ -341,21 +417,22 @@
     }
     calendar.innerHTML = `
       <div class="date-calendar-head">
-        <button type="button" data-calendar-nav="-1" aria-label="Previous month">&lt;</button>
-        <strong>${App.escapeHtml(monthName)}</strong>
-        <button type="button" data-calendar-nav="1" aria-label="Next month">&gt;</button>
+        <button type="button" data-calendar-nav="-1" aria-label="Previous month" ${canGoBack ? '' : 'disabled'}>&lt;</button>
+        <div class="date-calendar-selects" aria-label="Calendar month and year">
+          <select data-calendar-select="month" aria-label="Month">
+            ${monthsForYear.map((item) => `<option value="${item}" ${item === month ? 'selected' : ''}>${App.escapeHtml(monthName(item))}</option>`).join('')}
+          </select>
+          <select data-calendar-select="year" aria-label="Year">
+            ${years.map((item) => `<option value="${item}" ${Number(item) === year ? 'selected' : ''}>${App.escapeHtml(item)}</option>`).join('')}
+          </select>
+        </div>
+        <button type="button" data-calendar-nav="1" aria-label="Next month" ${canGoForward ? '' : 'disabled'}>&gt;</button>
       </div>
       <div class="date-calendar-grid">
         ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}
         ${cells.join('')}
       </div>
     `;
-    calendar.querySelectorAll('[data-calendar-nav]').forEach((button) => {
-      button.addEventListener('click', () => {
-        state.calendarMonth = shiftMonth(state.calendarMonth, Number(button.dataset.calendarNav || 0));
-        renderDateCalendar();
-      });
-    });
   }
 
   function setActiveRangeDate(part, value) {
@@ -897,6 +974,11 @@
       legend: { orientation: 'h', y: 1.14, x: 0, font: { size: 11 } },
       showlegend: traces.length > 1,
     };
+    const quickDateRange = dateAxisRangeForContext('quick');
+    if (quickDateRange) {
+      layout.xaxis.range = quickDateRange;
+      layout.xaxis.autorange = false;
+    }
     if (isQuickBarMode()) {
       layout.barmode = traces.length > 1 ? 'group' : 'relative';
       layout.bargap = 0.18;
@@ -1025,13 +1107,19 @@
         hovertemplate: '%{fullData.name}<br>%{x}<br>%{y}<extra></extra>',
       });
     });
+    const xaxis = { title: 'GST', gridcolor: 'rgba(91,101,118,.12)' };
+    const advancedDateRange = dateAxisRangeForContext('advanced');
+    if (advancedDateRange) {
+      xaxis.range = advancedDateRange;
+      xaxis.autorange = false;
+    }
     Plotly.newPlot(host, traces, {
       margin: { t: 18, r: 18, b: 42, l: 54 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
       autosize: true,
       width: hostWidth,
-      xaxis: { title: 'GST', gridcolor: 'rgba(91,101,118,.12)' },
+      xaxis,
       yaxis: { title: chart.label, gridcolor: 'rgba(91,101,118,.12)' },
       shapes,
       annotations,
@@ -1556,27 +1644,39 @@
         syncDateRangeControls();
       });
     });
-    document.getElementById('date-range-control')?.addEventListener('click', (event) => {
-      const target = event.target.closest?.('[data-date-value]');
-      if (!target || target.disabled) return;
-      event.preventDefault();
-      event.stopPropagation();
-      setActiveRangeDate(state.activeDatePart, target.dataset.dateValue);
-      const calendar = document.getElementById('date-calendar-popover');
-      if (calendar) calendar.hidden = true;
-    }, true);
     document.addEventListener('click', (event) => {
       const dateControl = document.getElementById('date-range-control');
       const calendar = document.getElementById('date-calendar-popover');
       if (!dateControl || !calendar || calendar.hidden) return;
       if (!dateControl.contains(event.target)) calendar.hidden = true;
     });
-    document.getElementById('date-calendar-popover')?.addEventListener('click', (event) => {
+    const calendar = document.getElementById('date-calendar-popover');
+    calendar?.addEventListener('click', (event) => {
+      event.stopPropagation();
+      const nav = event.target.closest?.('[data-calendar-nav]');
+      if (nav) {
+        if (nav.disabled) return;
+        event.preventDefault();
+        state.calendarMonth = shiftAvailableMonth(state.calendarMonth, Number(nav.dataset.calendarNav || 0));
+        renderDateCalendar();
+        return;
+      }
       const target = event.target.closest?.('[data-date-value]');
       if (!target || target.disabled) return;
-      event.stopPropagation();
+      event.preventDefault();
       setActiveRangeDate(state.activeDatePart, target.dataset.dateValue);
-      event.currentTarget.hidden = true;
+      calendar.hidden = true;
+    });
+    calendar?.addEventListener('change', (event) => {
+      const selector = event.target.closest?.('[data-calendar-select]');
+      if (!selector) return;
+      const [currentYear, currentMonth] = clampCalendarMonth(state.calendarMonth).split('-').map(Number);
+      const nextYear = selector.dataset.calendarSelect === 'year' ? Number(selector.value) : currentYear;
+      const nextMonth = selector.dataset.calendarSelect === 'month'
+        ? Number(selector.value)
+        : closestMonthForYear(nextYear, currentMonth);
+      state.calendarMonth = clampCalendarMonth(monthKeyFromParts(nextYear, nextMonth));
+      renderDateCalendar();
     });
     document.querySelectorAll('#period-buttons button').forEach((button) => {
       button.addEventListener('click', () => {

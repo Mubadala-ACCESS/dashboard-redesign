@@ -166,6 +166,17 @@ class MongoDashboardRepository:
         'tal_pe_ug_per_l_field': 'Phycoerythrin (\u00b5g/L)',
         'temp_c': 'Temperature (\u00b0C)',
     })
+    UNDERWATER_ALIAS_GROUPS = {
+        'temp_c': ['temp_c', 'c_field'],
+        'salinity_psu': ['salinity_psu', 'sal_psu_field'],
+        'do_mg_l': ['do_mg_l', 'do_mg_per_l_field'],
+        'do_pct_sat': ['do_pct_sat', 'do_pct_field'],
+        'turbidity_fnu': ['turbidity_fnu', 'fnu_field'],
+        'fdom_qsu': ['fdom_qsu', 'fdom_qsu_field'],
+        'depth_m': ['depth_m', 'dep_m_field'],
+        'tds_mg_l': ['tds_mg_l', 'tds_mg_per_l_field'],
+        'battery_power_volt': ['battery_power_volt', 'batt_v_field'],
+    }
 
     def __init__(self, settings: Settings, metadata_service: MetadataService):
         self.settings = settings
@@ -749,6 +760,24 @@ class MongoDashboardRepository:
         params = self.BUOY_SCALAR_PARAMS + self.BUOY_PROFILE_PARAMS
         return {metric: self._metric_key_to_label(station, metric) for metric in params}
 
+    def _underwater_canonical_metric(self, metric: str) -> str:
+        for canonical, aliases in self.UNDERWATER_ALIAS_GROUPS.items():
+            if metric == canonical or metric in aliases:
+                return canonical
+        return metric
+
+    def _underwater_metric_aliases(self, metric: str) -> List[str]:
+        canonical = self._underwater_canonical_metric(metric)
+        return self.UNDERWATER_ALIAS_GROUPS.get(canonical, [canonical])
+
+    def _canonicalize_underwater_metrics(self, metrics: Iterable[str]) -> List[str]:
+        selected: List[str] = []
+        for metric in metrics:
+            canonical = self._underwater_canonical_metric(metric)
+            if canonical not in selected:
+                selected.append(canonical)
+        return selected
+
     def _available_metric_map(self, station: Dict[str, Any]) -> Dict[str, str]:
         if station['device_type'] == 'IoTBox':
             labels, _full_params = self._iot_discover(int(station['station_num']))
@@ -761,7 +790,14 @@ class MongoDashboardRepository:
             return self._buoy_label_map(station)
         if station['device_type'] == 'underwater_probe':
             collection_name, time_field = self._collection_for_station(station)
-            return self._document_metric_map(station, collection_name or '', time_field or 'ts')
+            raw_map = self._document_metric_map(station, collection_name or '', time_field or 'ts')
+            collapsed: Dict[str, str] = {}
+            for key, label in raw_map.items():
+                canonical = self._underwater_canonical_metric(key)
+                if canonical not in collapsed:
+                    collapsed[canonical] = self._document_metric_label(station, canonical) if canonical != key else label
+            ordered = self._ordered_document_metrics(station, collapsed.keys())
+            return {key: collapsed[key] for key in ordered}
         return {}
 
     def _metric_options(self, station: Dict[str, Any], label_map: Dict[str, str]) -> List[Dict[str, str]]:
@@ -1267,6 +1303,13 @@ class MongoDashboardRepository:
             return None
         return float(value)
 
+    def _first_document_metric_number(self, doc: Dict[str, Any], metrics: Iterable[str]) -> Optional[float]:
+        for metric in metrics:
+            value = self._coerce_document_number(self._document_metric_value(doc, metric))
+            if value is not None:
+                return value
+        return None
+
     def _document_dataframe(
         self,
         station: Dict[str, Any],
@@ -1283,14 +1326,21 @@ class MongoDashboardRepository:
         label_map = self._available_metric_map(station)
         if not metrics:
             metrics = self._default_metrics(label_map, limit=3)
+        if station['device_type'] == 'underwater_probe':
+            metrics = self._canonicalize_underwater_metrics(metrics)
         metrics = [metric for metric in metrics if metric in label_map]
         if not metrics:
             return pd.DataFrame(), label_map
+        metric_sources = {
+            metric: self._underwater_metric_aliases(metric) if station['device_type'] == 'underwater_probe' else [metric]
+            for metric in metrics
+        }
 
         query = self._base_query_for_station_window(station, period, time_field, start_date, end_date)
         projection = {'_id': 0, time_field: 1}
         for metric in metrics:
-            projection[self._metric_projection_root(metric)] = 1
+            for source_metric in metric_sources[metric]:
+                projection[self._metric_projection_root(source_metric)] = 1
         clean_fidas = clean and station['device_type'] == 'Fidas_Palas'
         if clean_fidas:
             projection['errors'] = 1
@@ -1300,7 +1350,7 @@ class MongoDashboardRepository:
         present_fields: set[str] = set()
         for doc in docs:
             for metric in metrics:
-                if self._coerce_document_number(self._document_metric_value(doc, metric)) is not None:
+                if self._first_document_metric_number(doc, metric_sources[metric]) is not None:
                     present_fields.add(metric)
         missing_fields = [metric for metric in metrics if metric not in present_fields]
         if missing_fields and display_points:
@@ -1309,7 +1359,11 @@ class MongoDashboardRepository:
             collection = self.db[collection_name]
             for metric in missing_fields:
                 metric_query = dict(query)
-                metric_query[metric] = {'$exists': True}
+                aliases = metric_sources[metric]
+                if len(aliases) == 1:
+                    metric_query[aliases[0]] = {'$exists': True}
+                else:
+                    metric_query['$or'] = [{alias: {'$exists': True}} for alias in aliases]
                 cursor = collection.find(metric_query, projection).limit(backfill_limit)
                 hint_name = None
                 if station.get('device_type') == 'Fidas_Palas':
@@ -1337,7 +1391,7 @@ class MongoDashboardRepository:
             if clean_fidas:
                 row['_fidas_errors'] = self._coerce_document_number(doc.get('errors')) or 0.0
             for metric in metrics:
-                value = self._coerce_document_number(self._document_metric_value(doc, metric))
+                value = self._first_document_metric_number(doc, metric_sources[metric])
                 if value is not None:
                     row[metric] = value
             rows.append(row)
@@ -2032,16 +2086,22 @@ class MongoDashboardRepository:
             return None
 
         label_map = self._available_metric_map(station)
-        selected = [metric for metric in (metrics or []) if metric in label_map]
+        requested = self._canonicalize_underwater_metrics(metrics or []) if device_type == 'underwater_probe' else (metrics or [])
+        selected = [metric for metric in requested if metric in label_map]
         if not selected:
             selected = self._default_metrics(label_map, limit=3)
         if not selected:
             return None
+        metric_sources = {
+            metric: self._underwater_metric_aliases(metric) if device_type == 'underwater_probe' else [metric]
+            for metric in selected
+        }
 
         query = self._base_query_for_station_window(station, period, time_field, start_date, end_date)
         projection: Dict[str, int] = {'_id': 0, time_field: 1}
         for metric in selected:
-            projection[self._metric_projection_root(metric)] = 1
+            for source_metric in metric_sources[metric]:
+                projection[self._metric_projection_root(source_metric)] = 1
         if clean and device_type == 'Fidas_Palas':
             projection['errors'] = 1
             query['errors'] = {'$lte': 0}
@@ -2062,7 +2122,7 @@ class MongoDashboardRepository:
             if append_location:
                 row.extend([station.get('name'), station.get('lat'), station.get('lon')])
             for metric in selected:
-                value = self._coerce_document_number(self._document_metric_value(doc, metric))
+                value = self._first_document_metric_number(doc, metric_sources[metric])
                 row.append(value if value is not None else '')
             return row
 
