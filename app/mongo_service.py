@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import math
 import re
 import hashlib
@@ -56,7 +58,8 @@ class MongoDashboardRepository:
         '1d': '1d',
     }
     SPECIAL_REALTIME_TYPES = {'IoTBox', 'Meteorological', 'Buoy', 'Fidas_Palas'}
-    DOCUMENT_METRIC_EXCLUDES = {'_id', 'datetime', 'Timestamp', 'sizes', 'spectra'}
+    TIME_SERIES_TYPES = SPECIAL_REALTIME_TYPES | {'underwater_probe'}
+    DOCUMENT_METRIC_EXCLUDES = {'_id', 'datetime', 'Timestamp', 'ts', 'sizes', 'spectra', 'meta'}
     METEO_METRIC_PRIORITY = [
         'S2_TA[C]', 'S2_RH[%]', 'S2_PA', 'S2_WS[M/S]', 'S2_WD', 'S1_RAD', 'S2_PREC[MM]', 'S2_DP[C]',
     ]
@@ -74,6 +77,21 @@ class MongoDashboardRepository:
     BUOY_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2', 'chlorophyll', 'salinity_practical', 'density']
     BUOY_DEFAULT_SCALAR_PARAMS = ['wind_speed', 'air_temp', 'barometric_pressure']
     BUOY_DEFAULT_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2']
+    UNDERWATER_METRIC_PRIORITY = [
+        'temp_c', 'c_field',
+        'salinity_psu', 'sal_psu_field',
+        'do_mg_l', 'do_mg_per_l_field',
+        'do_pct_sat', 'do_pct_field',
+        'ph',
+        'turbidity_fnu', 'fnu_field',
+        'chlorophyll_rfu', 'chl_ug_per_l_field',
+        'phycoerythrin_rfu', 'tal_pe_ug_per_l_field',
+        'fdom_rfu', 'fdom_qsu', 'fdom_qsu_field',
+        'depth_m', 'dep_m_field',
+        'sp_cond_ms_cm', 'spc_us_per_cm_field',
+        'tds_mg_l', 'tds_mg_per_l_field',
+        'battery_power_volt', 'batt_v_field',
+    ]
     METEO_LABEL_OVERRIDES = {
         'I3_VPOWER': 'Voltage Power (V)',
         'I4_VOUT': 'Voltage Output (V)',
@@ -108,6 +126,46 @@ class MongoDashboardRepository:
         'rH': 'Relative Humidity (%)',
         'wbgt': 'Wet Bulb Globe Temperature (°C)',
     }
+
+    UNDERWATER_LABEL_OVERRIDES = {
+        'battery_power_volt': 'Battery Power (V)',
+        'batt_v_field': 'Battery Power (V)',
+        'c_field': 'Temperature (Â°C)',
+        'chlorophyll_rfu': 'Chlorophyll (RFU)',
+        'chl_ug_per_l_field': 'Chlorophyll (Âµg/L)',
+        'depth_m': 'Depth (m)',
+        'dep_m_field': 'Depth (m)',
+        'dep_bar_a_field': 'Depth Pressure (bar)',
+        'do_mg_l': 'Dissolved Oxygen (mg/L)',
+        'do_mg_per_l_field': 'Dissolved Oxygen (mg/L)',
+        'do_pct_sat': 'Dissolved Oxygen Saturation (%)',
+        'do_pct_field': 'Dissolved Oxygen Saturation (%)',
+        'fdom_qsu': 'fDOM (QSU)',
+        'fdom_qsu_field': 'fDOM (QSU)',
+        'fdom_rfu': 'fDOM (RFU)',
+        'fnu_field': 'Turbidity (FNU)',
+        'ph': 'pH',
+        'phycoerythrin_rfu': 'Phycoerythrin (RFU)',
+        'salinity_psu': 'Salinity (PSU)',
+        'sal_psu_field': 'Salinity (PSU)',
+        'sigma': 'Sigma',
+        'sp_cond_ms_cm': 'Specific Conductivity (mS/cm)',
+        'spc_us_per_cm_field': 'Specific Conductivity (ÂµS/cm)',
+        'tal_pe_ug_per_l_field': 'Phycoerythrin (Âµg/L)',
+        'tds_mg_l': 'Total Dissolved Solids (mg/L)',
+        'tds_mg_per_l_field': 'Total Dissolved Solids (mg/L)',
+        'temp_c': 'Temperature (Â°C)',
+        'tss_mg_per_l_field': 'Total Suspended Solids (mg/L)',
+        'turbidity_fnu': 'Turbidity (FNU)',
+        'vpos_m_field': 'Vertical Position (m)',
+    }
+    UNDERWATER_LABEL_OVERRIDES.update({
+        'c_field': 'Temperature (\u00b0C)',
+        'chl_ug_per_l_field': 'Chlorophyll (\u00b5g/L)',
+        'spc_us_per_cm_field': 'Specific Conductivity (\u00b5S/cm)',
+        'tal_pe_ug_per_l_field': 'Phycoerythrin (\u00b5g/L)',
+        'temp_c': 'Temperature (\u00b0C)',
+    })
 
     def __init__(self, settings: Settings, metadata_service: MetadataService):
         self.settings = settings
@@ -434,6 +492,8 @@ class MongoDashboardRepository:
             return self.settings.mongo_buoy_collection, 'datetime'
         if device_type == 'Fidas_Palas' or station_num == 100:
             return self.settings.mongo_fidas_collection, 'datetime'
+        if device_type == 'underwater_probe':
+            return str(station.get('station_id') or ''), 'ts'
         if station_num is not None:
             return f'station{station_num}', 'datetime'
         return None, None
@@ -514,9 +574,9 @@ class MongoDashboardRepository:
         freshness = self._freshness_payload(station, latest.get(time_field) if latest and time_field in latest else None)
         capabilities = {
             'quick_view': True,
-            'advanced_analysis': station['device_type'] in self.SPECIAL_REALTIME_TYPES,
+            'advanced_analysis': station['device_type'] in self.TIME_SERIES_TYPES,
             'metadata': True,
-            'raw_export': station['device_type'] in self.SPECIAL_REALTIME_TYPES,
+            'raw_export': station['device_type'] in self.TIME_SERIES_TYPES,
         }
         return {
             **station,
@@ -532,6 +592,8 @@ class MongoDashboardRepository:
         measurement_frequency = (
             'Continuous real-time monitoring.'
             if station['device_type'] in self.SPECIAL_REALTIME_TYPES
+            else 'Interval time-series sampling collected during the monitoring program.'
+            if station['device_type'] == 'underwater_probe'
             else 'Campaign or interval sampling based on the monitoring program.'
         )
         return {
@@ -645,6 +707,8 @@ class MongoDashboardRepository:
             if key.startswith('PM') and any(char.isdigit() for char in key):
                 return f'{key} (µg/m³)'
             return self._pretty_metric_label(key)
+        if station['device_type'] == 'underwater_probe':
+            return self.UNDERWATER_LABEL_OVERRIDES.get(key, self._pretty_metric_label(key))
         return self._metric_key_to_label(station, key)
 
     def _ordered_document_metrics(self, station: Dict[str, Any], keys: Iterable[str]) -> List[str]:
@@ -652,6 +716,8 @@ class MongoDashboardRepository:
             priority = self.METEO_METRIC_PRIORITY
         elif station['device_type'] == 'Fidas_Palas':
             priority = self.FIDAS_METRIC_PRIORITY
+        elif station['device_type'] == 'underwater_probe':
+            priority = self.UNDERWATER_METRIC_PRIORITY
         else:
             priority = []
         rank = {key: index for index, key in enumerate(priority)}
@@ -700,6 +766,9 @@ class MongoDashboardRepository:
             return self._document_metric_map(station, self.settings.mongo_fidas_collection, 'datetime')
         if station['device_type'] == 'Buoy':
             return self._buoy_label_map(station)
+        if station['device_type'] == 'underwater_probe':
+            collection_name, time_field = self._collection_for_station(station)
+            return self._document_metric_map(station, collection_name or '', time_field or 'ts')
         return {}
 
     def _metric_options(self, station: Dict[str, Any], label_map: Dict[str, str]) -> List[Dict[str, str]]:
@@ -809,6 +878,8 @@ class MongoDashboardRepository:
                 'density': 'Density (kg/m³)',
             }
             return buoy_map.get(key, key)
+        if station['device_type'] == 'underwater_probe':
+            return self.UNDERWATER_LABEL_OVERRIDES.get(key, self._pretty_metric_label(key))
         return key
 
     def _label_to_canonical(self, label: str) -> str:
@@ -829,6 +900,18 @@ class MongoDashboardRepository:
             return 'Atmospheric Pressure'
         if 'wind speed' in low:
             return 'Wind Speed'
+        if 'dissolved oxygen' in low:
+            return 'Dissolved Oxygen'
+        if 'salinity' in low:
+            return 'Salinity'
+        if 'turbidity' in low:
+            return 'Turbidity'
+        if 'chlorophyll' in low:
+            return 'Chlorophyll'
+        if low == 'ph' or label == 'pH':
+            return 'pH'
+        if 'depth' in low:
+            return 'Depth'
         return label
 
     def _default_metrics(self, available_map: Dict[str, str], limit: int = 6) -> List[str]:
@@ -867,6 +950,17 @@ class MongoDashboardRepository:
             return selected or self._default_metrics(available)
         if station['device_type'] == 'Buoy':
             return [key for key in self.BUOY_SCALAR_PARAMS if key in available]
+        if station['device_type'] == 'underwater_probe':
+            selected: List[str] = []
+            seen_labels: set[str] = set()
+            for key in self.UNDERWATER_METRIC_PRIORITY:
+                label = available.get(key)
+                if label and label not in seen_labels:
+                    selected.append(key)
+                    seen_labels.add(label)
+                if len(selected) >= 6:
+                    break
+            return selected or self._default_metrics(available, limit=6)
         return self._default_metrics(available, limit=6)
 
     # ------------------------------------------------------------------
@@ -1257,6 +1351,12 @@ class MongoDashboardRepository:
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, label_map
 
+    def _underwater_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, display_points: Optional[int] = MAX_CHART_POINTS) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        collection_name, time_field = self._collection_for_station(station)
+        if not collection_name or not time_field:
+            return pd.DataFrame(), {}
+        return self._document_dataframe(station, collection_name, time_field, metrics, period, aggregation, display_points=display_points)
+
     def _buoy_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, display_points: Optional[int] = MAX_CHART_POINTS) -> Tuple[pd.DataFrame, Dict[str, str], List[Dict[str, Any]]]:
         scalar_params = self.BUOY_SCALAR_PARAMS
         profile_params = self.BUOY_PROFILE_PARAMS
@@ -1410,6 +1510,8 @@ class MongoDashboardRepository:
         elif station['device_type'] == 'Buoy':
             df, label_map, profiles = self._buoy_dataframe(station, metrics, period, aggregation, display_points=display_points)
             extra['profiles'] = profiles
+        elif station['device_type'] == 'underwater_probe':
+            df, label_map = self._underwater_dataframe(station, metrics, period, aggregation, display_points=display_points)
         else:
             payload = {
                 'station': station,
@@ -1490,6 +1592,7 @@ class MongoDashboardRepository:
                         'max': None if values.empty else round(float(values.max()), 2),
                         'mean': None if values.empty else round(float(values.mean()), 2),
                         'latest': None if values.empty else round(float(values.iloc[-1]), 2),
+                        'count': int(values.count()),
                     },
                 }
             )
@@ -1595,6 +1698,7 @@ class MongoDashboardRepository:
                 'max': chart['summary'].get('max'),
                 'min': chart['summary'].get('min'),
                 'unit': self._extract_unit(label),
+                'count': chart['summary'].get('count'),
             }
             cards.append(card)
             if include_trends:
@@ -1613,6 +1717,7 @@ class MongoDashboardRepository:
             'clean': clean and station['device_type'] == 'Fidas_Palas',
             'trend_aggregation': aggregation,
             'supports_sensor_trends': station['device_type'] == 'IoTBox',
+            'card_mode': 'statistics' if station['device_type'] == 'underwater_probe' else 'current',
             'cards': cards,
             'trends': trends,
             'events': timeseries.get('events', []),
@@ -1779,6 +1884,113 @@ class MongoDashboardRepository:
     # ------------------------------------------------------------------
     # Raw export helpers
     # ------------------------------------------------------------------
+    def _csv_chunk_writer(self, rows: Iterable[List[Any]]) -> Iterable[str]:
+        buffer = io.StringIO()
+        writer = csv.writer(buffer, lineterminator='\n')
+        for row in rows:
+            writer.writerow(row)
+            if buffer.tell() >= 65536:
+                yield buffer.getvalue()
+                buffer.seek(0)
+                buffer.truncate(0)
+        if buffer.tell():
+            yield buffer.getvalue()
+
+    def _raw_document_csv_iter(
+        self,
+        station: Dict[str, Any],
+        period: str,
+        metrics: Optional[List[str]],
+        clean: bool,
+        append_location: bool,
+    ) -> Optional[Iterable[str]]:
+        device_type = station.get('device_type')
+        if device_type not in {'Fidas_Palas', 'Meteorological', 'underwater_probe'}:
+            return None
+        collection_name, time_field = self._collection_for_station(station)
+        if not collection_name or not time_field or not self._collection_exists(collection_name):
+            return None
+
+        label_map = self._available_metric_map(station)
+        selected = [metric for metric in (metrics or []) if metric in label_map]
+        if not selected:
+            selected = self._default_metrics(label_map, limit=3)
+        if not selected:
+            return None
+
+        query = self._base_query_for_station_period(station, period, time_field)
+        projection: Dict[str, int] = {'_id': 0, time_field: 1}
+        for metric in selected:
+            projection[self._metric_projection_root(metric)] = 1
+        if clean and device_type == 'Fidas_Palas':
+            projection['errors'] = 1
+            query['errors'] = {'$lte': 0}
+
+        collection = self.db[collection_name]
+        cursor = collection.find(query, projection).sort(time_field, ASCENDING).batch_size(5000)
+        first = next(cursor, None)
+        if not first:
+            return None
+
+        header = ['timestamp']
+        if append_location:
+            header.extend(['station_name', 'latitude', 'longitude'])
+        header.extend(label_map[metric] for metric in selected)
+
+        def row_values(doc: Dict[str, Any]) -> List[Any]:
+            row: List[Any] = [self._dt_string_for_station(station, doc.get(time_field))]
+            if append_location:
+                row.extend([station.get('name'), station.get('lat'), station.get('lon')])
+            for metric in selected:
+                value = self._coerce_document_number(self._document_metric_value(doc, metric))
+                row.append(value if value is not None else '')
+            return row
+
+        def rows() -> Iterable[List[Any]]:
+            yield header
+            yield row_values(first)
+            for doc in cursor:
+                yield row_values(doc)
+
+        return self._csv_chunk_writer(rows())
+
+    def export_csv_iter(
+        self,
+        station_id: str,
+        period: str,
+        aggregation: str,
+        metrics: Optional[List[str]],
+        split_sensors: bool,
+        clean: bool = False,
+        append_location: bool = False,
+        station: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Iterable[str]]:
+        station = station or self.get_station_summary(station_id)
+        if aggregation.lower() == 'raw' and not split_sensors:
+            streamed = self._raw_document_csv_iter(station, period, metrics, clean, append_location)
+            if streamed is not None:
+                return streamed
+
+        frame = self.export_frame(
+            station_id,
+            period=period,
+            aggregation=aggregation,
+            metrics=metrics,
+            split_sensors=split_sensors,
+            clean=clean,
+            append_location=append_location,
+            station=station,
+        )
+        if frame.empty:
+            return None
+
+        def rows() -> Iterable[str]:
+            yield frame.head(0).to_csv(index=False)
+            for start in range(0, len(frame), 5000):
+                yield frame.iloc[start:start + 5000].to_csv(index=False, header=False)
+
+        return rows()
+
     def export_frame(
         self,
         station_id: str,
@@ -1787,6 +1999,7 @@ class MongoDashboardRepository:
         metrics: Optional[List[str]],
         split_sensors: bool,
         clean: bool = False,
+        append_location: bool = False,
         station: Optional[Dict[str, Any]] = None,
     ) -> pd.DataFrame:
         payload = self.get_timeseries(
@@ -1803,6 +2016,10 @@ class MongoDashboardRepository:
         if not charts:
             return pd.DataFrame()
         data = {'timestamp': [point['x'] for point in charts[0]['series']]}
+        if append_location:
+            data['station_name'] = [station.get('name')] * len(data['timestamp'])
+            data['latitude'] = [station.get('lat')] * len(data['timestamp'])
+            data['longitude'] = [station.get('lon')] * len(data['timestamp'])
         for chart in charts:
             data[chart['label']] = [point['y'] for point in chart['series']]
         return pd.DataFrame(data)

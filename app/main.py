@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 from functools import lru_cache
 from pathlib import Path
 from typing import Optional
@@ -132,6 +131,7 @@ def create_app() -> FastAPI:
             'Fidas_Palas': 'fidas_station.html',
             'Meteorological': 'meteostation_station.html',
             'Buoy': 'buoy_station.html',
+            'underwater_probe': 'underwater.html',
         }
         template_name = station_templates.get(summary.get('device_type'), 'station.html')
         return templates.TemplateResponse(request, template_name, {
@@ -286,20 +286,19 @@ def create_app() -> FastAPI:
         metrics: Optional[str] = Query(default=None),
         split_sensors: bool = Query(default=False),
         clean: bool = Query(default=False),
+        append_location: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         metric_list = parse_metric_list(metrics)
         try:
             station = require_public_station(repo, station_id)
-            frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean, station=station)
+            csv_iter = repo.export_csv_iter(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean, append_location=append_location, station=station)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
-        if frame.empty:
+        if csv_iter is None:
             raise HTTPException(status_code=404, detail='No data available for export.')
-        buffer = io.StringIO()
-        frame.to_csv(buffer, index=False)
         filename = f'{station_id}_{period}_{aggregation}.csv'
-        return StreamingResponse(iter([buffer.getvalue()]), media_type='text/csv', headers={'Content-Disposition': f'attachment; filename={filename}'})
+        return StreamingResponse(csv_iter, media_type='text/csv', headers={'Content-Disposition': f'attachment; filename={filename}'})
 
     return app
 

@@ -201,6 +201,10 @@
     return state.stationTemplate === 'fidas';
   }
 
+  function isUnderwaterStation() {
+    return state.stationTemplate === 'underwater';
+  }
+
   function activeMetricKeys() {
     return isBuoyProfilePanel() ? state.selectedProfileMetrics : state.selectedMetrics;
   }
@@ -241,6 +245,34 @@
 
   function makeCard(card) {
     const unit = card.unit || '';
+    if (isUnderwaterStation()) {
+      return `
+        <article class="metric-card metric-card--stats">
+          <div class="metric-card__top">
+            <span>${App.escapeHtml(card.label)}</span>
+            <small>${App.escapeHtml(state.period)}</small>
+          </div>
+          <div class="metric-stat-grid underwater-stat-grid">
+            <div>
+              <small>Mean</small>
+              <b>${metricValue(card.mean, unit)}</b>
+            </div>
+            <div>
+              <small>Min</small>
+              <b>${metricValue(card.min, unit)}</b>
+            </div>
+            <div>
+              <small>Max</small>
+              <b>${metricValue(card.max, unit)}</b>
+            </div>
+            <div>
+              <small>Samples</small>
+              <b>${displayValue(card.count)}</b>
+            </div>
+          </div>
+        </article>
+      `;
+    }
     return `
       <article class="metric-card">
         <div class="metric-card__top">
@@ -277,7 +309,8 @@
 
     if (label) label.textContent = period;
     if (!payload.cards?.length) {
-      container.innerHTML = '<article class="empty-state"><h2>No current readings</h2><p>No data was available for the selected display period.</p></article>';
+      const heading = isUnderwaterStation() ? 'No statistics available' : 'No current readings';
+      container.innerHTML = `<article class="empty-state"><h2>${heading}</h2><p>No data was available for the selected display period.</p></article>`;
       renderQuickTrends(payload);
       return;
     }
@@ -315,7 +348,8 @@
     if (context) {
       const sensorText = state.quickSplitSensors && payload.supports_sensor_trends ? ' with individual IoT sensor overlays' : '';
       const chartText = isQuickBarMode() ? 'bar charts' : 'point charts';
-      context.textContent = `${payload.period || state.period} ${chartText} using ${aggregationLabel(payload.trend_aggregation)} values${sensorText}.`;
+      const prefix = isUnderwaterStation() ? 'Interval-sampled EXO' : `${payload.period || state.period}`;
+      context.textContent = `${prefix} ${chartText} using ${aggregationLabel(payload.trend_aggregation)} values${sensorText}.`;
     }
 
     renderSensorComparison(trends, payload);
@@ -751,137 +785,134 @@
     }, { displaylogo: false, responsive: true }).then(() => Plotly.Plots.resize(host));
   }
 
-  function updateTable(payload) {
-    const table = document.getElementById('raw-data-table');
-    if (!table) return;
-    const headers = payload.metrics.slice(0, 6);
-    table.querySelector('thead').innerHTML = `
-      <tr>
-        <th>Timestamp</th>
-        ${headers.map((metric) => `<th>${App.escapeHtml(metric.label)}</th>`).join('')}
-      </tr>
-    `;
-    table.querySelector('tbody').innerHTML = payload.table.map((row) => `
-      <tr>
-        <td>${App.escapeHtml(row.timestamp)}</td>
-        ${headers.map((metric) => `<td>${row[metric.key] ?? emptyValue}</td>`).join('')}
-      </tr>
-    `).join('');
+  function downloadMetricOptions() {
+    const metrics = metricsForActivePanel(state.availableMetrics || []);
+    if (metrics.length) return metrics;
+    return metricsForActivePanel(state.timeseriesPayload?.available_metrics || state.timeseriesPayload?.metrics || []);
   }
 
-  function rawDataCell(value) {
-    if (value === null || value === undefined || value === '') return emptyValue;
-    if (typeof value === 'number') return App.escapeHtml(String(roundStat(value) ?? value));
-    return App.escapeHtml(String(value));
-  }
+  function buildDownloadModal() {
+    const metrics = downloadMetricOptions();
+    const active = new Set(activeMetricKeys());
+    const allSelected = !active.size;
+    const metricRows = metrics.length ? metrics.map((metric, index) => {
+      const checked = allSelected ? index < defaultSelectedMetricLimit : active.has(metric.key);
+      return `
+        <label class="download-option">
+          <input type="checkbox" name="metrics" value="${App.escapeHtml(metric.key)}" ${checked ? 'checked' : ''} />
+          <span>
+            <strong>${App.escapeHtml(metric.label)}</strong>
+            <small>${App.escapeHtml(metric.key)}</small>
+          </span>
+        </label>
+      `;
+    }).join('') : '<p class="small-note">No parameter list is available yet. The export will use the default parameters.</p>';
 
-  function rowsFromTimeseries(payload) {
-    const charts = payload?.charts || [];
-    const columns = [
-      { key: 'timestamp', label: 'Timestamp' },
-      ...charts.map((chart) => ({ key: chart.metric, label: chart.label })),
-    ];
-    const byTime = new Map();
-    charts.forEach((chart) => {
-      (chart.series || []).forEach((point) => {
-        if (!byTime.has(point.x)) byTime.set(point.x, { timestamp: point.x });
-        byTime.get(point.x)[chart.metric] = point.y;
-      });
-    });
-    const rows = Array.from(byTime.values())
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(0, 250);
-    return { columns, rows, count: byTime.size };
-  }
-
-  function rowsFromProfiles(payload) {
-    const columns = [
-      { key: 'metric', label: 'Metric' },
-      { key: 'timestamp', label: 'Timestamp' },
-      { key: 'depth', label: 'Depth (m)' },
-      { key: 'value', label: 'Value' },
-    ];
-    const rows = [];
-    (payload?.charts || []).forEach((chart) => {
-      (chart.profiles || []).forEach((profile) => {
-        (profile.depth || []).forEach((depth, index) => {
-          rows.push({
-            metric: chart.label,
-            timestamp: profile.timestamp || profile.label,
-            depth,
-            value: profile.values?.[index],
-          });
-        });
-      });
-    });
-    return { columns, rows: rows.slice(0, 300), count: rows.length };
-  }
-
-  function rowsFromSpectra(payload) {
-    const frame = activeSpectraFrame();
-    const columns = [
-      { key: 'size', label: `Size (${payload?.size_unit || 'bin'})` },
-      { key: 'count', label: payload?.spectra_unit || 'Particle count' },
-    ];
-    const rows = (payload?.sizes || []).map((size, index) => ({
-      size,
-      count: frame?.values?.[index],
-    })).filter((row) => row.count !== undefined);
-    return { columns, rows, count: rows.length };
-  }
-
-  function buildRawDataModal(title, context, tableData) {
-    const rows = tableData.rows || [];
-    const columns = tableData.columns || [];
-    const body = rows.length ? rows.map((row) => `
-      <tr>
-        ${columns.map((column) => `<td>${rawDataCell(row[column.key])}</td>`).join('')}
-      </tr>
-    `).join('') : `
-      <tr><td colspan="${Math.max(1, columns.length)}">${emptyValue}</td></tr>
-    `;
     return `
-      <article class="modal-panel raw-data-modal">
+      <article class="modal-panel download-modal">
         <header class="modal-head">
           <div>
-            <span class="eyebrow">Raw data</span>
-            <h2>${App.escapeHtml(title)}</h2>
-            <p>${App.escapeHtml(context)}</p>
+            <span class="eyebrow">Download CSV</span>
+            <h2>Choose export options</h2>
+            <p>Select the display period, aggregation, parameters, and whether to append public location columns.</p>
           </div>
-          <button class="ghost-button" data-close-modal>Close</button>
+          <button class="ghost-button" data-close-modal type="button">Close</button>
         </header>
-        <div class="raw-data-summary">
-          <span>Showing ${App.escapeHtml(String(rows.length))} of ${App.escapeHtml(String(tableData.count || rows.length))} rows</span>
-          <span>${App.escapeHtml(state.period)} - ${App.escapeHtml(aggregationLabel(state.aggregation))}</span>
-        </div>
-        <div class="metadata-table raw-data-table">
-          <table>
-            <thead>
-              <tr>${columns.map((column) => `<th>${App.escapeHtml(column.label)}</th>`).join('')}</tr>
-            </thead>
-            <tbody>${body}</tbody>
-          </table>
-        </div>
-        <footer class="modal-actions">
-          <button class="ghost-button" data-close-modal>Done</button>
-        </footer>
+        <form id="download-options-form" class="download-form">
+          <div class="download-grid">
+            <label>
+              <span class="control-label">Display period</span>
+              <select name="period">
+                ${['24H', '7D', '30D', '3M', '6M', '1Y', 'ALL'].map((period) => `<option value="${period}" ${period === state.period ? 'selected' : ''}>${period === 'ALL' ? 'All data' : period}</option>`).join('')}
+              </select>
+            </label>
+            <label>
+              <span class="control-label">Aggregation</span>
+              <select name="aggregation">
+                ${[
+                  ['raw', 'No aggregation'],
+                  ['15m', '15 minutes'],
+                  ['1h', 'Hourly'],
+                  ['6h', '6 hours'],
+                  ['1d', 'Daily'],
+                ].map(([value, label]) => `<option value="${value}" ${value === state.aggregation ? 'selected' : ''}>${label}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+          <label class="toggle-row download-toggle">
+            <input type="checkbox" name="all_data" />
+            <span>Export all available data</span>
+          </label>
+          <label class="toggle-row download-toggle">
+            <input type="checkbox" name="append_location" />
+            <span>Append station name, latitude, and longitude</span>
+          </label>
+          ${document.getElementById('split-sensors-toggle') ? `
+          <label class="toggle-row download-toggle">
+            <input type="checkbox" name="split_sensors" ${state.splitSensors ? 'checked' : ''} />
+            <span>Export individual IoT sensor readings</span>
+          </label>` : ''}
+          ${isFidasStation() ? `
+          <label class="toggle-row download-toggle">
+            <input type="checkbox" name="clean" ${state.fidasClean ? 'checked' : ''} />
+            <span>Use clean Fidas data</span>
+          </label>` : ''}
+          <div class="download-parameter-head">
+            <span class="control-label">Parameters</span>
+            <label class="toggle-row">
+              <input type="checkbox" id="download-all-parameters" />
+              <span>All parameters</span>
+            </label>
+          </div>
+          <div class="download-metric-grid">${metricRows}</div>
+          <footer class="modal-actions">
+            <button class="ghost-button" data-close-modal type="button">Cancel</button>
+            <button class="primary-button" type="submit">Download CSV</button>
+          </footer>
+        </form>
       </article>
     `;
   }
 
-  async function showRawData() {
-    if (state.advancedPanel === 'profiles') {
-      if (!state.profilePayload) await loadBuoyProfiles();
-      App.openModal(buildRawDataModal('Buoy profiles', 'Depth-profile values for the current display period.', rowsFromProfiles(state.profilePayload)));
-      return;
-    }
-    if (state.advancedPanel === 'spectra') {
-      if (!state.spectraPayload) await loadFidasSpectra();
-      App.openModal(buildRawDataModal('Fidas spectra', 'Particle-size bins for the selected spectra sample.', rowsFromSpectra(state.spectraPayload)));
-      return;
-    }
-    if (!state.timeseriesPayload) await loadTimeseries();
-    App.openModal(buildRawDataModal('Advanced time series', 'Chart values for the current advanced selection.', rowsFromTimeseries(state.timeseriesPayload)));
+  function wireDownloadModal() {
+    const dialog = document.getElementById('global-modal');
+    const form = document.getElementById('download-options-form');
+    if (!dialog || !form) return;
+    const allParameters = document.getElementById('download-all-parameters');
+    const metricInputs = Array.from(form.querySelectorAll('input[name="metrics"]'));
+    allParameters?.addEventListener('change', () => {
+      metricInputs.forEach((input) => {
+        input.checked = allParameters.checked;
+      });
+    });
+    form.querySelector('input[name="all_data"]')?.addEventListener('change', (event) => {
+      const periodSelect = form.querySelector('select[name="period"]');
+      const aggregationSelect = form.querySelector('select[name="aggregation"]');
+      if (!periodSelect || !aggregationSelect) return;
+      if (event.target.checked) {
+        periodSelect.value = 'ALL';
+        aggregationSelect.value = 'raw';
+      }
+    });
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/export.csv`, window.location.origin);
+      url.searchParams.set('period', data.get('all_data') ? 'ALL' : String(data.get('period') || state.period));
+      url.searchParams.set('aggregation', String(data.get('aggregation') || state.aggregation));
+      url.searchParams.set('split_sensors', data.get('split_sensors') ? 'true' : 'false');
+      url.searchParams.set('append_location', data.get('append_location') ? 'true' : 'false');
+      if (isFidasStation()) url.searchParams.set('clean', data.get('clean') ? 'true' : 'false');
+      const selectedMetrics = data.getAll('metrics').map(String).filter(Boolean);
+      if (selectedMetrics.length) url.searchParams.set('metrics', selectedMetrics.join('|'));
+      window.open(url.toString(), '_blank');
+      dialog.close();
+    });
+  }
+
+  function showDownloadOptions() {
+    App.openModal(buildDownloadModal());
+    wireDownloadModal();
   }
 
   function updateBuoyProfiles(payload) {
@@ -1160,14 +1191,12 @@
     clearChartGrid(grid);
     if (!payload.charts?.length) {
       if (grid) grid.innerHTML = `<article class="empty-state"><h2>No chart data for this view</h2><p>${App.escapeHtml(payload.message || 'No data available for the current selection.')}</p></article>`;
-      updateTable({ metrics: [], table: [] });
       updateBuoyProfiles(payload);
       return;
     }
     groupAdvancedSensorCharts(payload.charts, payload).forEach((chart) => {
       if (grid) grid.appendChild(renderChart(chart, payload.events || []));
     });
-    updateTable(payload);
     updateBuoyProfiles(payload);
     scheduleActiveChartResize();
   }
@@ -1291,16 +1320,7 @@
     document.getElementById('open-station-metadata-advanced')?.addEventListener('click', () => App.showMetadata(state.stationId));
     document.getElementById('open-station-metadata-inline')?.addEventListener('click', () => App.showMetadata(state.stationId));
 
-    document.getElementById('download-csv')?.addEventListener('click', () => {
-      const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/export.csv`, window.location.origin);
-      url.searchParams.set('period', state.period);
-      url.searchParams.set('aggregation', state.aggregation);
-      url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
-      if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
-      if (state.selectedMetrics.length || state.metricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedMetrics));
-      window.open(url.toString(), '_blank');
-    });
-    document.getElementById('view-raw-data')?.addEventListener('click', () => showRawData().catch((error) => console.error(error)));
+    document.getElementById('download-csv')?.addEventListener('click', () => showDownloadOptions());
   }
 
   function setAdvancedPanel(panelName) {

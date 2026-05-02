@@ -389,6 +389,7 @@ img { max-width: 100%; }
 .metric-current small { font-size: 0.72rem; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase; }
 .metric-current strong { display: block; }
 .metric-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 4px; }
+.underwater-stat-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .metric-stat-grid div { padding: 10px; border-radius: 12px; background: rgba(91, 33, 182, 0.06); min-width: 0; }
 .metric-stat-grid small { display: block; margin-bottom: 3px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
 .metric-stat-grid b { display: block; overflow-wrap: anywhere; font-size: 0.96rem; }
@@ -578,10 +579,25 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
 .tab-row button { padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line); background: #fff; font-weight: 700; color: var(--muted); }
 .tab-row button.is-active { background: var(--primary); color: #fff; }
 .metadata-table { border: 1px solid var(--line); border-radius: 18px; overflow: auto; }
-.raw-data-modal .metadata-table { max-height: min(62vh, 620px); }
-.raw-data-summary { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: .86rem; font-weight: 700; }
-.raw-data-table td, .raw-data-table th { white-space: nowrap; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.download-form { display: grid; gap: 16px; }
+.download-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.download-grid label { display: grid; gap: 7px; }
+.download-grid select {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--text);
+  padding: 12px 14px;
+}
+.download-toggle { justify-content: flex-start; margin: 0; }
+.download-parameter-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.download-metric-grid { display: grid; gap: 8px; grid-template-columns: repeat(2, minmax(0, 1fr)); max-height: min(42vh, 420px); overflow: auto; padding-right: 4px; }
+.download-option { display: flex; align-items: start; gap: 10px; padding: 11px 12px; border-radius: 14px; border: 1px solid var(--line); background: rgba(91, 33, 182, 0.04); }
+.download-option input { margin-top: 3px; }
+.download-option strong, .download-option small { display: block; }
+.download-option small { color: var(--muted); margin-top: 3px; overflow-wrap: anywhere; }
 
 @media (max-width: 1320px) {
   .home-page, .station-page { grid-template-columns: 1fr; }
@@ -640,6 +656,8 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .legend-group { grid-template-columns: 1fr; row-gap: 5px; }
   .drawer-kv.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .tab-switch, .inline-toggle { width: 100%; justify-content: space-between; }
+  .download-grid, .download-metric-grid { grid-template-columns: 1fr; }
+  .download-parameter-head { align-items: flex-start; flex-direction: column; }
   .station-drawer { right: 10px; width: calc(100vw - 20px); }
   :root { --map-height: 58vh; --map-footer-h: 72px; }
 }
