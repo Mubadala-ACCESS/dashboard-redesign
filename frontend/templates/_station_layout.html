@@ -1,7 +1,14 @@
 {% set station_template = station_template|default('station') %}
 {% set advanced_sensor_controls = advanced_sensor_controls|default(false) %}
 {% set advanced_parameter_note = advanced_parameter_note|default('Select the parameters to plot in Advanced view.') %}
-<main class="page station-page station-template-{{ station_template }}" data-station-id="{{ station.station_id }}" data-station-template="{{ station_template }}">
+<main
+  class="page station-page station-template-{{ station_template }}"
+  data-station-id="{{ station.station_id }}"
+  data-station-template="{{ station_template }}"
+  data-last-update-iso="{{ station.freshness.last_update_iso if station.freshness else '' }}"
+  data-last-update-label="{{ station.freshness.last_update if station.freshness else 'N/A' }}"
+  data-freshness-minutes="{{ station.freshness.freshness_minutes if station.freshness and station.freshness.freshness_minutes is not none else '' }}"
+>
   <section class="analysis-column">
     <section class="analysis-header station-analysis-header">
       <div class="station-heading">

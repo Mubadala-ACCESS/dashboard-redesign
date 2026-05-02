@@ -7,7 +7,9 @@
   const state = {
     stationId,
     stationTemplate,
-    period: '24H',
+    activeTab: 'quick',
+    quickPeriod: '24H',
+    advancedPeriod: stationTemplate === 'underwater' ? '6M' : '24H',
     aggregation: 'raw',
     selectedMetrics: [],
     selectedProfileMetrics: [],
@@ -27,6 +29,8 @@
     latestRequestId: 0,
     timeseriesRequestId: 0,
     profileRequestId: 0,
+    userSelectedAdvancedPeriod: false,
+    staleAdvancedPopupShown: false,
     latestCache: new Map(),
     timeseriesCache: new Map(),
     profileCache: new Map(),
@@ -38,6 +42,7 @@
   const trendColors = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#be185d', '#64748b'];
   const sensorTrendColors = ['#0f766e', '#2563eb', '#d97706', '#be185d'];
   const maxClientCacheEntries = 24;
+  const staleAdvancedThresholdMinutes = 12 * 60;
 
   function rememberPayload(cache, key, payload) {
     if (!cache || !key) return;
@@ -203,6 +208,49 @@
 
   function isUnderwaterStation() {
     return state.stationTemplate === 'underwater';
+  }
+
+  function freshnessMinutes() {
+    const explicit = Number(page.dataset.freshnessMinutes);
+    if (Number.isFinite(explicit)) return explicit;
+    const latestMs = Date.parse(page.dataset.lastUpdateIso || '');
+    if (!Number.isFinite(latestMs)) return null;
+    return Math.max(0, Math.floor((Date.now() - latestMs) / 60000));
+  }
+
+  function isAdvancedDataStale() {
+    const minutes = freshnessMinutes();
+    return minutes === null || minutes > staleAdvancedThresholdMinutes;
+  }
+
+  function staleWindowMessage() {
+    const latest = page.dataset.lastUpdateLabel || 'the latest available sample';
+    return `
+      <article class="modal-panel">
+        <header class="modal-head">
+          <div>
+            <span class="eyebrow">Display period notice</span>
+            <h2>Showing the latest available data window</h2>
+            <p>Latest sample: ${App.escapeHtml(latest)}</p>
+          </div>
+          <button class="ghost-button" data-close-modal type="button">Close</button>
+        </header>
+        <p>
+          This station has not reported within the past 12 hours. In Advanced view, the display periods are calculated
+          backward from the latest available sample, so 24H, 7D, and longer windows still show the most recent usable data
+          instead of an empty window ending now.
+        </p>
+        <footer class="modal-actions">
+          <button class="primary-button" data-close-modal type="button">Got it</button>
+        </footer>
+      </article>
+    `;
+  }
+
+  function maybeShowStaleAdvancedPopup() {
+    if (state.staleAdvancedPopupShown || !isAdvancedDataStale()) return;
+    state.staleAdvancedPopupShown = true;
+    App.openModal(staleWindowMessage());
   }
 
   function activeMetricKeys() {
@@ -1244,21 +1292,35 @@
     return payload;
   }
 
+  function setActivePeriod(period, options = {}) {
+    if (!period) return;
+    state.period = period;
+    if (options.userSelected) state.userSelectedPeriod = true;
+    document.querySelectorAll('#period-buttons button').forEach((item) => {
+      item.classList.toggle('is-active', item.dataset.period === state.period);
+    });
+    const label = document.getElementById('stats-period-label');
+    if (label) label.textContent = state.period;
+    if (options.load === false) return;
+    loadLatest();
+    if (state.advancedPanel === 'spectra') {
+      loadFidasSpectra(true);
+    } else if (isBuoyProfilePanel()) {
+      loadBuoyProfiles();
+    } else {
+      loadTimeseries();
+    }
+  }
+
+  function applyUnderwaterAdvancedDefaultPeriod() {
+    if (!isUnderwaterStation() || state.userSelectedPeriod || state.period === '6M') return;
+    setActivePeriod('6M');
+  }
+
   function wireControls() {
     document.querySelectorAll('#period-buttons button').forEach((button) => {
       button.addEventListener('click', () => {
-        document.querySelectorAll('#period-buttons button').forEach((item) => item.classList.toggle('is-active', item === button));
-        state.period = button.dataset.period;
-        const label = document.getElementById('stats-period-label');
-        if (label) label.textContent = state.period;
-        loadLatest();
-        if (state.advancedPanel === 'spectra') {
-          loadFidasSpectra(true);
-        } else if (isBuoyProfilePanel()) {
-          loadBuoyProfiles();
-        } else {
-          loadTimeseries();
-        }
+        setActivePeriod(button.dataset.period, { userSelected: true });
       });
     });
     document.getElementById('aggregation-select')?.addEventListener('change', (event) => {
@@ -1295,6 +1357,10 @@
       button.addEventListener('click', () => {
         document.querySelectorAll('#view-tabs button').forEach((item) => item.classList.toggle('is-active', item === button));
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `${button.dataset.tab}-view`));
+        if (button.dataset.tab === 'advanced') {
+          applyUnderwaterAdvancedDefaultPeriod();
+          maybeShowStaleAdvancedPopup();
+        }
         scheduleActiveChartResize();
       });
     });
