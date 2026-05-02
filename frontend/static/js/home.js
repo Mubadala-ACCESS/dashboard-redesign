@@ -269,6 +269,20 @@
     });
   }
 
+  const liveDrawerTypes = new Set(['IoTBox', 'Fidas_Palas', 'Meteorological', 'Buoy']);
+
+  function hasCurrentReadings(deviceType) {
+    return liveDrawerTypes.has(deviceType);
+  }
+
+  function setDrawerCurrentVisibility(visible) {
+    const currentButton = document.querySelector('#drawer-tabs button[data-drawer-tab="current"]');
+    const currentPanel = document.querySelector('[data-drawer-panel="current"]');
+    if (currentButton) currentButton.hidden = !visible;
+    if (currentPanel) currentPanel.hidden = !visible;
+    if (!visible) resetDrawerTabs();
+  }
+
   function closeDrawer() {
     drawer.classList.remove('is-open');
     drawer.setAttribute('aria-hidden', 'true');
@@ -276,27 +290,38 @@
 
   async function openDrawer(stationId) {
     state.selectedStationId = stationId;
+    const cachedStation = state.allStations.find((station) => station.station_id === stationId || station.public_id === stationId);
+    const maybeLive = hasCurrentReadings(cachedStation?.device_type);
     resetDrawerTabs();
+    setDrawerCurrentVisibility(maybeLive);
     drawer.classList.add('is-open');
     drawer.setAttribute('aria-hidden', 'false');
+    if (!maybeLive) currentEl.innerHTML = '';
     currentEl.innerHTML = '<article class="drawer-card"><p>Loading current readings…</p></article>';
     detailsEl.innerHTML = '<article class="drawer-card"><p>Loading station details…</p></article>';
+    if (!maybeLive) currentEl.innerHTML = '';
     drawerMetadata.disabled = false;
     drawerOpenStation.href = `/station/${encodeURIComponent(stationId)}`;
     drawerOpenStation.classList.remove('disabled-link');
 
-    const [summary, latest, metadata] = await Promise.all([
+    const [summary, metadata] = await Promise.all([
       App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}`),
-      App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/latest`),
       App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/metadata`),
     ]);
+    if (state.selectedStationId !== stationId) return;
+
+    const liveCurrent = hasCurrentReadings(summary.device_type);
+    setDrawerCurrentVisibility(liveCurrent);
+    if (!liveCurrent) currentEl.innerHTML = '';
+    const latest = liveCurrent ? await App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/latest`) : { cards: [] };
+    if (state.selectedStationId !== stationId) return;
 
     drawerTitle.textContent = summary.name;
     drawerSubtitle.textContent = `${summary.device_label} · ${summary.status} · ${summary.location_text}`;
 
-    if (!latest.cards?.length) {
+    if (liveCurrent && !latest.cards?.length) {
       currentEl.innerHTML = '<article class="drawer-card"><h3>Current Readings</h3><p>No live readings are available for this station view.</p></article>';
-    } else {
+    } else if (liveCurrent) {
       currentEl.innerHTML = `
         <article class="drawer-card">
           <h3>Current Readings</h3>

@@ -187,19 +187,23 @@ def create_app() -> FastAPI:
     def api_station_latest(
         station_id: str,
         period: str = Query(default='24H'),
+        start_date: Optional[str] = Query(default=None),
+        end_date: Optional[str] = Query(default=None),
         include_trends: bool = Query(default=False),
         include_sensor_trends: bool = Query(default=False),
         clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            key = f'latest:{station_id}:{period}:{include_trends}:{include_sensor_trends}:{clean}'
+            key = f'latest:{station_id}:{period}:{start_date or ""}:{end_date or ""}:{include_trends}:{include_sensor_trends}:{clean}'
             return cached_json_response(
                 repo,
                 key,
                 lambda: repo.get_latest_cards(
                     station_id,
                     period=period,
+                    start_date=start_date,
+                    end_date=end_date,
                     include_trends=include_trends,
                     include_sensor_trends=include_sensor_trends,
                     clean=clean,
@@ -214,6 +218,8 @@ def create_app() -> FastAPI:
     def api_station_timeseries(
         station_id: str,
         period: str = Query(default='24H'),
+        start_date: Optional[str] = Query(default=None),
+        end_date: Optional[str] = Query(default=None),
         aggregation: str = Query(default='raw'),
         metrics: Optional[str] = Query(default=None, description='Pipe- or comma-separated metric keys'),
         split_sensors: bool = Query(default=False),
@@ -222,13 +228,15 @@ def create_app() -> FastAPI:
     ):
         metric_list = parse_metric_list(metrics)
         try:
-            key = f'timeseries:{station_id}:{period}:{aggregation}:{split_sensors}:{clean}:{metrics or ""}'
+            key = f'timeseries:{station_id}:{period}:{start_date or ""}:{end_date or ""}:{aggregation}:{split_sensors}:{clean}:{metrics or ""}'
             return cached_json_response(
                 repo,
                 key,
                 lambda: repo.get_timeseries(
                     station_id,
                     period=period,
+                    start_date=start_date,
+                    end_date=end_date,
                     aggregation=aggregation,
                     metrics=metric_list,
                     split_sensors=split_sensors,
@@ -244,16 +252,18 @@ def create_app() -> FastAPI:
     def api_station_spectra(
         station_id: str,
         period: str = Query(default='24H'),
+        start_date: Optional[str] = Query(default=None),
+        end_date: Optional[str] = Query(default=None),
         max_frames: int = Query(default=700, ge=24, le=1000),
         clean: bool = Query(default=False),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            key = f'spectra:{station_id}:{period}:{max_frames}:{clean}'
+            key = f'spectra:{station_id}:{period}:{start_date or ""}:{end_date or ""}:{max_frames}:{clean}'
             return cached_json_response(
                 repo,
                 key,
-                lambda: repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames, clean=clean, station=require_public_station(repo, station_id)),
+                lambda: repo.get_fidas_spectra(station_id, period=period, start_date=start_date, end_date=end_date, max_frames=max_frames, clean=clean, station=require_public_station(repo, station_id)),
                 ttl_seconds=60,
             )
         except KeyError as exc:
@@ -263,17 +273,32 @@ def create_app() -> FastAPI:
     def api_station_profiles(
         station_id: str,
         period: str = Query(default='24H'),
+        start_date: Optional[str] = Query(default=None),
+        end_date: Optional[str] = Query(default=None),
         metrics: Optional[str] = Query(default=None, description='Pipe- or comma-separated profile metric keys'),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         metric_list = parse_metric_list(metrics)
         try:
-            key = f'profiles:{station_id}:{period}:{metrics or ""}'
+            key = f'profiles:{station_id}:{period}:{start_date or ""}:{end_date or ""}:{metrics or ""}'
             return cached_json_response(
                 repo,
                 key,
-                lambda: repo.get_buoy_profiles(station_id, period=period, metrics=metric_list, station=require_public_station(repo, station_id)),
+                lambda: repo.get_buoy_profiles(station_id, period=period, start_date=start_date, end_date=end_date, metrics=metric_list, station=require_public_station(repo, station_id)),
                 ttl_seconds=60,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail='Station not found.') from exc
+
+    @app.get('/api/stations/{station_id}/available-dates')
+    def api_station_available_dates(station_id: str, repo: MongoDashboardRepository = Depends(get_repo)):
+        try:
+            station = require_public_station(repo, station_id)
+            return cached_json_response(
+                repo,
+                f'available_dates:{station_id}',
+                lambda: repo.get_available_dates(station_id, station=station),
+                ttl_seconds=300,
             )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
@@ -282,6 +307,8 @@ def create_app() -> FastAPI:
     def api_station_export_csv(
         station_id: str,
         period: str = Query(default='24H'),
+        start_date: Optional[str] = Query(default=None),
+        end_date: Optional[str] = Query(default=None),
         aggregation: str = Query(default='raw'),
         metrics: Optional[str] = Query(default=None),
         split_sensors: bool = Query(default=False),
@@ -292,7 +319,7 @@ def create_app() -> FastAPI:
         metric_list = parse_metric_list(metrics)
         try:
             station = require_public_station(repo, station_id)
-            csv_iter = repo.export_csv_iter(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean, append_location=append_location, station=station)
+            csv_iter = repo.export_csv_iter(station_id, period=period, start_date=start_date, end_date=end_date, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean, append_location=append_location, station=station)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
         if csv_iter is None:

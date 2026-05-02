@@ -4,12 +4,23 @@
 
   const stationId = page.dataset.stationId;
   const stationTemplate = page.dataset.stationTemplate || 'standard';
+  const deviceType = page.dataset.deviceType || '';
   const state = {
     stationId,
     stationTemplate,
+    deviceType,
     activeTab: 'quick',
     quickPeriod: '24H',
     advancedPeriod: stationTemplate === 'underwater' ? '6M' : '24H',
+    dateRangeMode: false,
+    availableDates: [],
+    availableDateSet: new Set(),
+    earliestDate: '',
+    latestDate: '',
+    quickRange: { start: '', end: '' },
+    advancedRange: { start: '', end: '' },
+    activeDatePart: 'start',
+    calendarMonth: '',
     aggregation: 'raw',
     selectedMetrics: [],
     selectedProfileMetrics: [],
@@ -43,6 +54,7 @@
   const sensorTrendColors = ['#0f766e', '#2563eb', '#d97706', '#be185d'];
   const maxClientCacheEntries = 24;
   const staleAdvancedThresholdMinutes = 12 * 60;
+  const liveTelemetryTypes = new Set(['IoTBox', 'Fidas_Palas', 'Meteorological', 'Buoy']);
 
   function rememberPayload(cache, key, payload) {
     if (!cache || !key) return;
@@ -169,7 +181,7 @@
 
   function pointAreaTraces(series, color, name) {
     return contiguousChartSegments(series)
-      .filter((segment) => segment.length > 1)
+      .filter((segment) => segment.length >= 4)
       .map((segment, index) => ({
         x: segment.map((point) => point.x),
         y: segment.map((point) => point.y),
@@ -210,6 +222,202 @@
     return state.stationTemplate === 'underwater';
   }
 
+  function shouldUseDateRangeControls() {
+    return !liveTelemetryTypes.has(state.deviceType);
+  }
+
+  function activePeriod() {
+    return state.activeTab === 'advanced' ? state.advancedPeriod : state.quickPeriod;
+  }
+
+  function visibleTabContext() {
+    return document.getElementById('advanced-view')?.classList.contains('is-active') ? 'advanced' : 'quick';
+  }
+
+  function activeRange() {
+    return rangeForContext(visibleTabContext());
+  }
+
+  function rangeForContext(context) {
+    return context === 'advanced' ? state.advancedRange : state.quickRange;
+  }
+
+  function compareDateStrings(a, b) {
+    return String(a || '').localeCompare(String(b || ''));
+  }
+
+  function formatDateLabel(value) {
+    if (!value) return '--';
+    const parts = String(value).split('-');
+    if (parts.length !== 3) return value;
+    return `${parts[2]} ${new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, 1)).toLocaleString(undefined, { month: 'short' })} ${parts[0]}`;
+  }
+
+  function rangeLabel(range = activeRange()) {
+    if (!state.dateRangeMode) return activePeriod();
+    if (!range?.start && !range?.end) return 'No dated samples';
+    if (range.start && range.end && range.start === range.end) return formatDateLabel(range.start);
+    return `${formatDateLabel(range.start)} to ${formatDateLabel(range.end)}`;
+  }
+
+  function syncPeriodControls() {
+    const period = activePeriod();
+    document.querySelectorAll('#period-buttons button').forEach((item) => {
+      item.classList.toggle('is-active', item.dataset.period === period);
+    });
+    const label = document.getElementById('stats-period-label');
+    if (label && state.activeTab === 'quick') label.textContent = state.dateRangeMode ? rangeLabel(state.quickRange) : state.quickPeriod;
+    syncDateRangeControls();
+  }
+
+  function monthKey(value) {
+    return String(value || '').slice(0, 7);
+  }
+
+  function shiftMonth(key, delta) {
+    const [year, month] = String(key || state.latestDate || state.earliestDate || new Date().toISOString().slice(0, 7)).split('-').map(Number);
+    const shifted = new Date(Date.UTC(year || new Date().getUTCFullYear(), (month || 1) - 1 + delta, 1));
+    return shifted.toISOString().slice(0, 7);
+  }
+
+  function daysInMonth(year, month) {
+    return new Date(Date.UTC(year, month, 0)).getUTCDate();
+  }
+
+  function syncDateRangeControls() {
+    const dateControl = document.getElementById('date-range-control');
+    const periodControl = document.getElementById('period-control');
+    if (periodControl) {
+      periodControl.hidden = state.dateRangeMode;
+      periodControl.style.display = state.dateRangeMode ? 'none' : '';
+    }
+    if (!dateControl) return;
+    dateControl.hidden = !state.dateRangeMode;
+    dateControl.style.display = state.dateRangeMode ? '' : 'none';
+    if (!state.dateRangeMode) return;
+
+    const range = activeRange();
+    const startLabel = document.getElementById('date-start-label');
+    const endLabel = document.getElementById('date-end-label');
+    if (startLabel) startLabel.textContent = formatDateLabel(range.start);
+    if (endLabel) endLabel.textContent = formatDateLabel(range.end);
+    document.querySelectorAll('.date-field-button').forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.datePart === state.activeDatePart);
+    });
+    renderDateCalendar();
+  }
+
+  function renderDateCalendar() {
+    const calendar = document.getElementById('date-calendar-popover');
+    if (!calendar || calendar.hidden || !state.dateRangeMode) return;
+    if (!state.availableDates.length) {
+      calendar.innerHTML = '<p class="date-range-empty">No dated samples are available for this station yet.</p>';
+      return;
+    }
+    const range = activeRange();
+    state.calendarMonth = state.calendarMonth || monthKey(range[state.activeDatePart]) || monthKey(state.latestDate);
+    const [year, month] = state.calendarMonth.split('-').map(Number);
+    const monthName = new Date(Date.UTC(year, month - 1, 1)).toLocaleString(undefined, { month: 'long', year: 'numeric' });
+    const firstDay = new Date(Date.UTC(year, month - 1, 1)).getUTCDay();
+    const totalDays = daysInMonth(year, month);
+    const cells = [];
+    for (let index = 0; index < firstDay; index += 1) {
+      cells.push('<button type="button" class="date-day is-empty" disabled></button>');
+    }
+    for (let day = 1; day <= totalDays; day += 1) {
+      const value = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const hasData = state.availableDateSet.has(value);
+      const isSelected = value === range.start || value === range.end;
+      const isInRange = range.start && range.end && compareDateStrings(value, range.start) >= 0 && compareDateStrings(value, range.end) <= 0;
+      cells.push(`
+        <button
+          type="button"
+          class="date-day ${isSelected ? 'is-selected' : ''} ${isInRange ? 'is-in-range' : ''}"
+          data-date-value="${value}"
+          ${hasData ? '' : 'disabled'}
+          title="${hasData ? 'Data available' : 'No data on this date'}"
+        >${day}</button>
+      `);
+    }
+    calendar.innerHTML = `
+      <div class="date-calendar-head">
+        <button type="button" data-calendar-nav="-1" aria-label="Previous month">&lt;</button>
+        <strong>${App.escapeHtml(monthName)}</strong>
+        <button type="button" data-calendar-nav="1" aria-label="Next month">&gt;</button>
+      </div>
+      <div class="date-calendar-grid">
+        ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => `<span>${day}</span>`).join('')}
+        ${cells.join('')}
+      </div>
+    `;
+    calendar.querySelectorAll('[data-calendar-nav]').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.calendarMonth = shiftMonth(state.calendarMonth, Number(button.dataset.calendarNav || 0));
+        renderDateCalendar();
+      });
+    });
+  }
+
+  function setActiveRangeDate(part, value) {
+    if (!value) return;
+    const context = visibleTabContext();
+    state.activeTab = context;
+    const range = { ...rangeForContext(context) };
+    if (part === 'end') {
+      range.end = value;
+      if (!range.start || compareDateStrings(range.start, range.end) > 0) range.start = value;
+    } else {
+      range.start = value;
+      if (!range.end || compareDateStrings(range.start, range.end) > 0) range.end = value;
+    }
+    if (context === 'advanced') state.advancedRange = range;
+    else state.quickRange = range;
+    syncPeriodControls();
+    if (context === 'advanced') reloadAdvancedWindow();
+    else loadLatest();
+  }
+
+  function windowCacheKey(context) {
+    if (!state.dateRangeMode) return '';
+    const range = rangeForContext(context);
+    return `${range.start || ''}:${range.end || ''}`;
+  }
+
+  function applyWindowParams(url, context) {
+    if (!state.dateRangeMode) {
+      url.searchParams.set('period', context === 'advanced' ? state.advancedPeriod : state.quickPeriod);
+      return;
+    }
+    const range = rangeForContext(context);
+    url.searchParams.set('period', 'ALL');
+    if (range.start) url.searchParams.set('start_date', range.start);
+    if (range.end) url.searchParams.set('end_date', range.end);
+  }
+
+  async function initDateRangeControls() {
+    if (!shouldUseDateRangeControls()) {
+      syncDateRangeControls();
+      return;
+    }
+    state.dateRangeMode = true;
+    syncDateRangeControls();
+    try {
+      const payload = await App.fetchJSON(`/api/stations/${encodeURIComponent(state.stationId)}/available-dates`);
+      const dates = Array.isArray(payload.dates) ? payload.dates.filter(Boolean).sort() : [];
+      state.availableDates = dates;
+      state.availableDateSet = new Set(dates);
+      state.earliestDate = payload.earliest_date || dates[0] || '';
+      state.latestDate = payload.latest_date || dates[dates.length - 1] || '';
+      state.quickRange = { start: state.earliestDate, end: state.latestDate };
+      state.advancedRange = { start: state.earliestDate, end: state.latestDate };
+      state.calendarMonth = monthKey(state.latestDate || state.earliestDate);
+    } catch (error) {
+      console.error(error);
+      state.dateRangeMode = false;
+    }
+    syncPeriodControls();
+  }
+
   function freshnessMinutes() {
     const explicit = Number(page.dataset.freshnessMinutes);
     if (Number.isFinite(explicit)) return explicit;
@@ -225,21 +433,20 @@
 
   function staleWindowMessage() {
     const latest = page.dataset.lastUpdateLabel || 'the latest available sample';
+    const body = liveTelemetryTypes.has(state.deviceType)
+      ? 'This station has not reported within the past 12 hours. In Advanced view, the display periods are calculated backward from the latest available sample, so 24H, 7D, and longer windows still show the most recent usable data instead of an empty window ending now.'
+      : 'This station is not a live telemetry feed. Data is collected in the field and uploaded in batches, so Advanced view is anchored to the latest timestamp available in the database. The display periods show windows backward from that timestamp rather than from the current time.';
     return `
       <article class="modal-panel">
         <header class="modal-head">
           <div>
             <span class="eyebrow">Display period notice</span>
-            <h2>Showing the latest available data window</h2>
+            <h2>Showing The Latest Available Data Window</h2>
             <p>Latest sample: ${App.escapeHtml(latest)}</p>
           </div>
           <button class="ghost-button" data-close-modal type="button">Close</button>
         </header>
-        <p>
-          This station has not reported within the past 12 hours. In Advanced view, the display periods are calculated
-          backward from the latest available sample, so 24H, 7D, and longer windows still show the most recent usable data
-          instead of an empty window ending now.
-        </p>
+        <p>${App.escapeHtml(body)}</p>
         <footer class="modal-actions">
           <button class="primary-button" data-close-modal type="button">Got it</button>
         </footer>
@@ -291,14 +498,14 @@
     return (metrics || []).filter((metric) => isBuoyProfilePanel() ? profileKeys.has(metric.key) : !profileKeys.has(metric.key));
   }
 
-  function makeCard(card) {
+  function makeCard(card, periodLabel = state.quickPeriod) {
     const unit = card.unit || '';
     if (isUnderwaterStation()) {
       return `
         <article class="metric-card metric-card--stats">
           <div class="metric-card__top">
             <span>${App.escapeHtml(card.label)}</span>
-            <small>${App.escapeHtml(state.period)}</small>
+            <small>${App.escapeHtml(periodLabel)}</small>
           </div>
           <div class="metric-stat-grid underwater-stat-grid">
             <div>
@@ -325,7 +532,7 @@
       <article class="metric-card">
         <div class="metric-card__top">
           <span>${App.escapeHtml(card.label)}</span>
-          <small>${App.escapeHtml(state.period)}</small>
+          <small>${App.escapeHtml(periodLabel)}</small>
         </div>
         <div class="metric-current">
           <small>Current</small>
@@ -351,7 +558,7 @@
 
   function updateLatestCards(payload) {
     state.latestPayload = payload;
-    const period = payload.period || state.period;
+    const period = payload.period || state.quickPeriod;
     const label = document.getElementById('stats-period-label');
     const container = document.getElementById('latest-cards');
 
@@ -363,7 +570,7 @@
       return;
     }
 
-    container.innerHTML = payload.cards.map((card) => makeCard(card)).join('');
+    container.innerHTML = payload.cards.map((card) => makeCard(card, period)).join('');
     renderQuickTrends(payload);
   }
 
@@ -396,7 +603,7 @@
     if (context) {
       const sensorText = state.quickSplitSensors && payload.supports_sensor_trends ? ' with individual IoT sensor overlays' : '';
       const chartText = isQuickBarMode() ? 'bar charts' : 'point charts';
-      const prefix = isUnderwaterStation() ? 'Interval-sampled EXO' : `${payload.period || state.period}`;
+      const prefix = state.dateRangeMode ? `${payload.period || rangeLabel(state.quickRange)}` : (isUnderwaterStation() ? 'Interval-sampled EXO' : `${payload.period || state.quickPeriod}`);
       context.textContent = `${prefix} ${chartText} using ${aggregationLabel(payload.trend_aggregation)} values${sensorText}.`;
     }
 
@@ -843,6 +1050,18 @@
     const metrics = downloadMetricOptions();
     const active = new Set(activeMetricKeys());
     const allSelected = !active.size;
+    const dateWindowMarkup = state.dateRangeMode
+      ? `<div class="download-date-summary">
+          <span class="control-label">Date window</span>
+          <strong>${App.escapeHtml(rangeLabel(state.advancedRange))}</strong>
+          <small>Uses the current Advanced view date selection.</small>
+        </div>`
+      : `<label>
+          <span class="control-label">Display period</span>
+          <select name="period">
+            ${['24H', '7D', '30D', '3M', '6M', '1Y', 'ALL'].map((period) => `<option value="${period}" ${period === state.advancedPeriod ? 'selected' : ''}>${period === 'ALL' ? 'All data' : period}</option>`).join('')}
+          </select>
+        </label>`;
     const metricRows = metrics.length ? metrics.map((metric, index) => {
       const checked = allSelected ? index < defaultSelectedMetricLimit : active.has(metric.key);
       return `
@@ -868,12 +1087,7 @@
         </header>
         <form id="download-options-form" class="download-form">
           <div class="download-grid">
-            <label>
-              <span class="control-label">Display period</span>
-              <select name="period">
-                ${['24H', '7D', '30D', '3M', '6M', '1Y', 'ALL'].map((period) => `<option value="${period}" ${period === state.period ? 'selected' : ''}>${period === 'ALL' ? 'All data' : period}</option>`).join('')}
-              </select>
-            </label>
+            ${dateWindowMarkup}
             <label>
               <span class="control-label">Aggregation</span>
               <select name="aggregation">
@@ -936,9 +1150,9 @@
     form.querySelector('input[name="all_data"]')?.addEventListener('change', (event) => {
       const periodSelect = form.querySelector('select[name="period"]');
       const aggregationSelect = form.querySelector('select[name="aggregation"]');
-      if (!periodSelect || !aggregationSelect) return;
+      if (!aggregationSelect) return;
       if (event.target.checked) {
-        periodSelect.value = 'ALL';
+        if (periodSelect) periodSelect.value = 'ALL';
         aggregationSelect.value = 'raw';
       }
     });
@@ -946,7 +1160,11 @@
       event.preventDefault();
       const data = new FormData(form);
       const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/export.csv`, window.location.origin);
-      url.searchParams.set('period', data.get('all_data') ? 'ALL' : String(data.get('period') || state.period));
+      if (state.dateRangeMode && !data.get('all_data')) {
+        applyWindowParams(url, 'advanced');
+      } else {
+        url.searchParams.set('period', data.get('all_data') ? 'ALL' : String(data.get('period') || state.advancedPeriod));
+      }
       url.searchParams.set('aggregation', String(data.get('aggregation') || state.aggregation));
       url.searchParams.set('split_sensors', data.get('split_sensors') ? 'true' : 'false');
       url.searchParams.set('append_location', data.get('append_location') ? 'true' : 'false');
@@ -993,7 +1211,7 @@
     const grid = document.getElementById('buoy-profile-grid');
     if (!panel || !grid) return;
     const requestId = ++state.profileRequestId;
-    const key = [state.period, metricQueryValue(state.selectedProfileMetrics)].join('|');
+    const key = [state.advancedPeriod, windowCacheKey('advanced'), metricQueryValue(state.selectedProfileMetrics)].join('|');
     const cached = cachedPayload(state.profileCache, key);
     if (cached) {
       state.profilePayload = cached;
@@ -1001,7 +1219,7 @@
       return cached;
     }
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/profiles`, window.location.origin);
-    url.searchParams.set('period', state.period);
+    applyWindowParams(url, 'advanced');
     if (state.selectedProfileMetrics.length || state.profileMetricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedProfileMetrics));
     grid.innerHTML = '<article class="empty-state"><h2>Loading profiles</h2><p>Reading the selected depth profiles.</p></article>';
     const payload = await App.fetchJSON(url.toString());
@@ -1031,7 +1249,7 @@
         <header>
           <div>
             <h3>${App.escapeHtml(chart.label)}</h3>
-            <p>${App.escapeHtml(payload.effective_period || payload.period || state.period)} heatmap · Latest profile ${App.escapeHtml(chart.latest_label || '')}</p>
+            <p>${App.escapeHtml(payload.effective_period || payload.period || state.advancedPeriod)} heatmap · Latest profile ${App.escapeHtml(chart.latest_label || '')}</p>
           </div>
         </header>
         <div class="chart-host profile-chart-host"></div>
@@ -1131,7 +1349,7 @@
 
   async function loadFidasSpectra(force = false) {
     if (!hasSpectraPanel()) return;
-    const key = [state.period, state.fidasClean ? 'clean' : 'all'].join('|');
+    const key = [state.advancedPeriod, windowCacheKey('advanced'), state.fidasClean ? 'clean' : 'all'].join('|');
     const cached = cachedPayload(state.spectraCache, key);
     if (!force && cached) {
       state.spectraPayload = cached;
@@ -1141,7 +1359,7 @@
     const host = document.getElementById('fidas-spectra-chart');
     if (host) host.innerHTML = '<div class="empty-trend">Loading spectra...</div>';
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/spectra`, window.location.origin);
-    url.searchParams.set('period', state.period);
+    applyWindowParams(url, 'advanced');
     url.searchParams.set('max_frames', '240');
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     const payload = await App.fetchJSON(url.toString());
@@ -1215,12 +1433,13 @@
   }
 
   function latestCacheKey() {
-    return [state.period, state.quickSplitSensors ? 'split' : 'mean', isFidasStation() ? state.fidasClean : 'any'].join('|');
+    return [state.quickPeriod, windowCacheKey('quick'), state.quickSplitSensors ? 'split' : 'mean', isFidasStation() ? state.fidasClean : 'any'].join('|');
   }
 
   function timeseriesCacheKey() {
     return [
-      state.period,
+      state.advancedPeriod,
+      windowCacheKey('advanced'),
       state.aggregation,
       state.splitSensors ? 'split' : 'mean',
       isFidasStation() ? state.fidasClean : 'any',
@@ -1258,7 +1477,7 @@
       return cached;
     }
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/latest`, window.location.origin);
-    url.searchParams.set('period', state.period);
+    applyWindowParams(url, 'quick');
     url.searchParams.set('include_trends', 'true');
     if (state.quickSplitSensors) url.searchParams.set('include_sensor_trends', 'true');
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
@@ -1280,7 +1499,7 @@
     const grid = document.getElementById('chart-grid');
     clearChartGrid(grid, '<article class="empty-state"><h2>Loading charts</h2><p>Updating the selected parameters.</p></article>');
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/timeseries`, window.location.origin);
-    url.searchParams.set('period', state.period);
+    applyWindowParams(url, 'advanced');
     url.searchParams.set('aggregation', state.aggregation);
     url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
@@ -1292,17 +1511,7 @@
     return payload;
   }
 
-  function setActivePeriod(period, options = {}) {
-    if (!period) return;
-    state.period = period;
-    if (options.userSelected) state.userSelectedPeriod = true;
-    document.querySelectorAll('#period-buttons button').forEach((item) => {
-      item.classList.toggle('is-active', item.dataset.period === state.period);
-    });
-    const label = document.getElementById('stats-period-label');
-    if (label) label.textContent = state.period;
-    if (options.load === false) return;
-    loadLatest();
+  function reloadAdvancedWindow() {
     if (state.advancedPanel === 'spectra') {
       loadFidasSpectra(true);
     } else if (isBuoyProfilePanel()) {
@@ -1312,12 +1521,63 @@
     }
   }
 
+  function setActivePeriod(period, options = {}) {
+    if (!period) return;
+    const targetTab = options.targetTab || state.activeTab || 'quick';
+    if (targetTab === 'advanced') {
+      state.advancedPeriod = period;
+      if (options.userSelected) state.userSelectedAdvancedPeriod = true;
+    } else {
+      state.quickPeriod = period;
+    }
+    syncPeriodControls();
+    if (options.load === false) return;
+    if (targetTab === 'advanced') reloadAdvancedWindow();
+    else loadLatest();
+  }
+
   function applyUnderwaterAdvancedDefaultPeriod() {
-    if (!isUnderwaterStation() || state.userSelectedPeriod || state.period === '6M') return;
-    setActivePeriod('6M');
+    if (state.dateRangeMode) return;
+    if (!isUnderwaterStation() || state.userSelectedAdvancedPeriod || state.advancedPeriod === '6M') return;
+    setActivePeriod('6M', { targetTab: 'advanced', load: false });
   }
 
   function wireControls() {
+    document.querySelectorAll('.date-field-button').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.activeDatePart = button.dataset.datePart || 'start';
+        const range = activeRange();
+        state.calendarMonth = monthKey(range[state.activeDatePart] || state.latestDate || state.earliestDate);
+        const calendar = document.getElementById('date-calendar-popover');
+        if (calendar) {
+          calendar.hidden = false;
+          renderDateCalendar();
+        }
+        syncDateRangeControls();
+      });
+    });
+    document.getElementById('date-range-control')?.addEventListener('click', (event) => {
+      const target = event.target.closest?.('[data-date-value]');
+      if (!target || target.disabled) return;
+      event.preventDefault();
+      event.stopPropagation();
+      setActiveRangeDate(state.activeDatePart, target.dataset.dateValue);
+      const calendar = document.getElementById('date-calendar-popover');
+      if (calendar) calendar.hidden = true;
+    }, true);
+    document.addEventListener('click', (event) => {
+      const dateControl = document.getElementById('date-range-control');
+      const calendar = document.getElementById('date-calendar-popover');
+      if (!dateControl || !calendar || calendar.hidden) return;
+      if (!dateControl.contains(event.target)) calendar.hidden = true;
+    });
+    document.getElementById('date-calendar-popover')?.addEventListener('click', (event) => {
+      const target = event.target.closest?.('[data-date-value]');
+      if (!target || target.disabled) return;
+      event.stopPropagation();
+      setActiveRangeDate(state.activeDatePart, target.dataset.dateValue);
+      event.currentTarget.hidden = true;
+    });
     document.querySelectorAll('#period-buttons button').forEach((button) => {
       button.addEventListener('click', () => {
         setActivePeriod(button.dataset.period, { userSelected: true });
@@ -1355,10 +1615,12 @@
 
     document.querySelectorAll('#view-tabs button').forEach((button) => {
       button.addEventListener('click', () => {
+        state.activeTab = button.dataset.tab || 'quick';
+        if (state.activeTab === 'advanced') applyUnderwaterAdvancedDefaultPeriod();
+        syncPeriodControls();
         document.querySelectorAll('#view-tabs button').forEach((item) => item.classList.toggle('is-active', item === button));
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `${button.dataset.tab}-view`));
-        if (button.dataset.tab === 'advanced') {
-          applyUnderwaterAdvancedDefaultPeriod();
+        if (state.activeTab === 'advanced' && !state.dateRangeMode) {
           maybeShowStaleAdvancedPopup();
         }
         scheduleActiveChartResize();
@@ -1428,6 +1690,8 @@
 
   async function init() {
     wireControls();
+    await initDateRangeControls();
+    syncPeriodControls();
     await loadLatest();
     await loadTimeseries();
   }

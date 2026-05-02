@@ -5,6 +5,7 @@
   class="page station-page station-template-{{ station_template }}"
   data-station-id="{{ station.station_id }}"
   data-station-template="{{ station_template }}"
+  data-device-type="{{ station.device_type }}"
   data-last-update-iso="{{ station.freshness.last_update_iso if station.freshness else '' }}"
   data-last-update-label="{{ station.freshness.last_update if station.freshness else 'N/A' }}"
   data-freshness-minutes="{{ station.freshness.freshness_minutes if station.freshness and station.freshness.freshness_minutes is not none else '' }}"
@@ -23,7 +24,7 @@
       </div>
 
       <div class="station-toolbar">
-        <div class="period-control">
+        <div class="period-control" id="period-control">
           <span class="control-label">Display period</span>
           <div class="inline-toggle" id="period-buttons">
             <button type="button" data-period="24H" class="is-active">24H</button>
@@ -34,6 +35,21 @@
             <button type="button" data-period="1Y">1Y</button>
             <button type="button" data-period="ALL">All</button>
           </div>
+        </div>
+
+        <div class="date-range-control" id="date-range-control" hidden>
+          <span class="control-label">Date window</span>
+          <div class="date-range-fields">
+            <button type="button" class="date-field-button" data-date-part="start">
+              <span>Start</span>
+              <strong id="date-start-label">--</strong>
+            </button>
+            <button type="button" class="date-field-button" data-date-part="end">
+              <span>End</span>
+              <strong id="date-end-label">--</strong>
+            </button>
+          </div>
+          <div class="date-calendar-popover" id="date-calendar-popover" hidden></div>
         </div>
 
         <div class="tab-switch" id="view-tabs">

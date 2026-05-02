@@ -357,13 +357,38 @@ img { max-width: 100%; }
 .analysis-header { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .analysis-header h2 { margin: 4px 0 8px; font-size: 2rem; line-height: 1.06; letter-spacing: -0.03em; }
 .analysis-header p { margin: 0; color: var(--muted); }
-.station-analysis-header { align-items: stretch; }
+.station-analysis-header { align-items: stretch; overflow: visible; position: relative; z-index: 80; }
 .station-heading { display: grid; gap: 8px; align-content: start; min-width: 260px; }
 .station-heading h1 { margin: 0; font-size: clamp(2rem, 3vw, 3rem); line-height: 1.02; letter-spacing: -0.04em; }
 .station-heading p { color: var(--muted); line-height: 1.55; }
-.station-toolbar { display: flex; align-items: flex-end; justify-content: flex-end; gap: 12px; flex-wrap: wrap; }
+.station-toolbar { flex: 1 1 auto; display: flex; align-items: flex-end; justify-content: flex-end; gap: 10px; flex-wrap: nowrap; min-width: 0; }
 .period-control { display: grid; gap: 8px; justify-items: start; margin-left: -25px; }
+.period-control[hidden] { display: none; }
 .period-control .inline-toggle { margin-bottom: 0; }
+.date-range-control { position: relative; z-index: 10000; display: grid; flex: 0 1 clamp(350px, 30vw, 540px); gap: 8px; justify-items: stretch; min-width: 340px; margin-left: auto; }
+.date-range-control[hidden] { display: none; }
+.date-range-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; width: 100%; min-height: 50px; padding: 4px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.86); }
+.date-field-button { display: grid; gap: 2px; min-width: 0; width: 100%; padding: 8px 14px; border-radius: 12px; background: transparent; color: var(--muted); text-align: left; white-space: nowrap; }
+.date-field-button span { font-size: 0.68rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+.date-field-button strong { color: var(--text); font-size: 0.95rem; }
+.date-field-button.is-active { background: var(--primary); color: #fff; box-shadow: 0 10px 18px rgba(91, 33, 182, 0.2); }
+.date-field-button.is-active strong { color: #fff; }
+.date-calendar-popover { position: absolute; z-index: 10001; top: calc(100% + 8px); right: 0; width: 308px; padding: 14px; border: 1px solid var(--line); border-radius: 18px; background: rgba(255, 255, 255, 0.98); box-shadow: var(--shadow-md); }
+.date-calendar-popover[hidden] { display: none; }
+.date-calendar-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; }
+.date-calendar-head strong { font-size: 0.98rem; }
+.date-calendar-head button { min-width: 36px; min-height: 36px; border-radius: 10px; border: 1px solid var(--line); background: rgba(91, 33, 182, 0.06); color: var(--primary-strong); }
+.date-calendar-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; }
+.date-calendar-grid span { padding: 6px 0; color: var(--muted); font-size: 0.68rem; font-weight: 800; text-align: center; text-transform: uppercase; }
+.date-day { min-width: 0; min-height: 34px; padding: 0; border-radius: 10px; background: rgba(91, 33, 182, 0.06); color: var(--text); font-weight: 800; }
+.date-day.is-empty { visibility: hidden; }
+.date-day:disabled { cursor: not-allowed; background: rgba(98, 112, 132, 0.07); color: rgba(98, 112, 132, 0.36); box-shadow: none; }
+.date-day.is-in-range:not(:disabled) { background: rgba(91, 33, 182, 0.12); color: var(--primary-strong); }
+.date-day.is-selected:not(:disabled) { background: var(--primary); color: #fff; box-shadow: 0 8px 16px rgba(91, 33, 182, 0.22); }
+.date-range-empty { color: var(--muted); font-size: 0.85rem; line-height: 1.5; }
+.download-date-summary { display: grid; gap: 6px; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: rgba(91, 33, 182, 0.06); }
+.download-date-summary strong { color: var(--text); }
+.download-date-summary small { color: var(--muted); }
 .tab-switch { display: inline-flex; padding: 4px; border-radius: 16px; background: rgba(255, 255, 255, 0.86); border: 1px solid var(--line); gap: 4px; }
 .station-toolbar .inline-toggle,
 .station-toolbar .tab-switch,
@@ -616,7 +641,8 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
     height: calc(100vh - var(--topbar-h) - 26px);
   }
   .station-page .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .station-toolbar { justify-content: flex-start; }
+  .station-toolbar { justify-content: flex-start; flex-wrap: wrap; }
+  .date-range-control { flex-basis: min(350px, 100%); min-width: min(320px, 100%); margin-left: 0; }
   .advanced-layout { grid-template-columns: 1fr; }
   .advanced-left-rail { position: static; }
   .advanced-controls__grid { grid-template-columns: 1fr; }
@@ -649,6 +675,9 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .guide-steps, .guide-family-grid, .heat-index-grid, .metadata-term-grid { grid-template-columns: 1fr; }
   .quick-trend-actions { justify-content: stretch; }
   .station-toolbar { flex-direction: column; align-items: stretch; }
+  .date-range-control, .date-range-fields { width: 100%; }
+  .date-field-button { min-width: 0; flex: 1; }
+  .date-calendar-popover { left: 0; right: auto; width: min(308px, 100%); }
   .station-marker { width: 11px; height: 11px; }
   .station-marker__status { width: 8px; height: 8px; }
   .station-marker__type { width: 4px; height: 4px; }
