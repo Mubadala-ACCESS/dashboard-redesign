@@ -26,12 +26,30 @@
     latestRequestId: 0,
     timeseriesRequestId: 0,
     profileRequestId: 0,
+    latestCache: new Map(),
+    timeseriesCache: new Map(),
+    profileCache: new Map(),
+    spectraCache: new Map(),
   };
 
   const emptyValue = '&mdash;';
   const defaultSelectedMetricLimit = 3;
   const trendColors = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#be185d', '#64748b'];
   const sensorTrendColors = ['#0f766e', '#2563eb', '#d97706', '#be185d'];
+  const maxClientCacheEntries = 24;
+
+  function rememberPayload(cache, key, payload) {
+    if (!cache || !key) return;
+    if (cache.has(key)) cache.delete(key);
+    cache.set(key, payload);
+    while (cache.size > maxClientCacheEntries) {
+      cache.delete(cache.keys().next().value);
+    }
+  }
+
+  function cachedPayload(cache, key) {
+    return cache?.get(key) || null;
+  }
 
   function displayValue(value) {
     return value === null || value === undefined || value === '' ? emptyValue : App.escapeHtml(String(value));
@@ -482,6 +500,18 @@
     });
   }
 
+  const deferredCharts = new WeakMap();
+  const chartObserver = 'IntersectionObserver' in window ? new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const payload = deferredCharts.get(entry.target);
+      if (!payload) return;
+      chartObserver.unobserve(entry.target);
+      deferredCharts.delete(entry.target);
+      plotAdvancedChart(entry.target, payload.chart, payload.events);
+    });
+  }, { rootMargin: '700px 0px' }) : null;
+
   function renderChart(chart, events) {
     const card = document.createElement('article');
     card.className = 'chart-card';
@@ -493,7 +523,12 @@
       <div class="chart-host"></div>
     `;
     const host = card.querySelector('.chart-host');
-    window.requestAnimationFrame(() => plotAdvancedChart(host, chart, events));
+    if (chartObserver) {
+      deferredCharts.set(host, { chart, events });
+      chartObserver.observe(host);
+    } else {
+      window.requestAnimationFrame(() => plotAdvancedChart(host, chart, events));
+    }
     return card;
   }
 
@@ -531,7 +566,7 @@
       x: (sourceChart.series || []).map((point) => point.x),
       y: (sourceChart.series || []).map((point) => point.y),
       type: 'scatter',
-      mode: 'lines+markers',
+      mode: (sourceChart.series || []).length > 220 ? 'lines' : 'lines+markers',
       name: sourceChart.sensorLabel || sourceChart.label || chart.label,
       line: {
         width: chart.sensorCharts?.length ? 2 : 2.2,
@@ -709,11 +744,26 @@
     `).join('');
   }
 
+  function clearChartGrid(grid, loadingHtml = '') {
+    if (!grid) return;
+    if (chartObserver) {
+      grid.querySelectorAll('.chart-host').forEach((host) => chartObserver.unobserve(host));
+    }
+    grid.innerHTML = loadingHtml;
+  }
+
   async function loadBuoyProfiles() {
     const panel = document.getElementById('buoy-profiles-panel');
     const grid = document.getElementById('buoy-profile-grid');
     if (!panel || !grid) return;
     const requestId = ++state.profileRequestId;
+    const key = [state.period, metricQueryValue(state.selectedProfileMetrics)].join('|');
+    const cached = cachedPayload(state.profileCache, key);
+    if (cached) {
+      state.profilePayload = cached;
+      renderBuoyProfileCharts(cached);
+      return cached;
+    }
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/profiles`, window.location.origin);
     url.searchParams.set('period', state.period);
     if (state.selectedProfileMetrics.length || state.profileMetricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedProfileMetrics));
@@ -721,10 +771,12 @@
     const payload = await App.fetchJSON(url.toString());
     if (requestId !== state.profileRequestId) return;
     state.profilePayload = payload;
+    rememberPayload(state.profileCache, key, payload);
     if (payload.available_metrics?.length && state.availableMetrics.length) {
       renderMetricSelector(state.availableMetrics, payload.metrics || []);
     }
     renderBuoyProfileCharts(payload);
+    return payload;
   }
 
   function renderBuoyProfileCharts(payload) {
@@ -843,9 +895,12 @@
 
   async function loadFidasSpectra(force = false) {
     if (!hasSpectraPanel()) return;
-    if (!force && state.spectraPayload?.period === state.period && state.spectraPayload?.clean === state.fidasClean) {
+    const key = [state.period, state.fidasClean ? 'clean' : 'all'].join('|');
+    const cached = cachedPayload(state.spectraCache, key);
+    if (!force && cached) {
+      state.spectraPayload = cached;
       renderFidasSpectra();
-      return;
+      return cached;
     }
     const host = document.getElementById('fidas-spectra-chart');
     if (host) host.innerHTML = '<div class="empty-trend">Loading spectra...</div>';
@@ -857,8 +912,10 @@
     const latestIndex = Number.isInteger(payload.latest_index) ? payload.latest_index : Math.max(0, (payload.frames || []).length - 1);
     state.spectraPayload = payload;
     state.spectraIndex = latestIndex;
+    rememberPayload(state.spectraCache, key, payload);
     syncSpectraSlider();
     renderFidasSpectra();
+    return payload;
   }
 
   function renderFidasSpectra() {
@@ -919,8 +976,51 @@
     }, { displaylogo: false, responsive: true });
   }
 
+  function latestCacheKey() {
+    return [state.period, state.quickSplitSensors ? 'split' : 'mean', isFidasStation() ? state.fidasClean : 'any'].join('|');
+  }
+
+  function timeseriesCacheKey() {
+    return [
+      state.period,
+      state.aggregation,
+      state.splitSensors ? 'split' : 'mean',
+      isFidasStation() ? state.fidasClean : 'any',
+      metricQueryValue(state.selectedMetrics),
+    ].join('|');
+  }
+
+  function renderTimeseriesPayload(payload) {
+    state.timeseriesPayload = payload;
+    const grid = document.getElementById('chart-grid');
+    const selectorMetrics = payload.available_metrics?.length ? payload.available_metrics : payload.metrics;
+    if (selectorMetrics?.length && state.availableMetrics.length === 0) {
+      state.availableMetrics = selectorMetrics;
+      renderMetricSelector(selectorMetrics, payload.metrics || []);
+    }
+    clearChartGrid(grid);
+    if (!payload.charts?.length) {
+      if (grid) grid.innerHTML = `<article class="empty-state"><h2>No chart data for this view</h2><p>${App.escapeHtml(payload.message || 'No data available for the current selection.')}</p></article>`;
+      updateTable({ metrics: [], table: [] });
+      updateBuoyProfiles(payload);
+      return;
+    }
+    groupAdvancedSensorCharts(payload.charts, payload).forEach((chart) => {
+      if (grid) grid.appendChild(renderChart(chart, payload.events || []));
+    });
+    updateTable(payload);
+    updateBuoyProfiles(payload);
+    scheduleActiveChartResize();
+  }
+
   async function loadLatest() {
     const requestId = ++state.latestRequestId;
+    const key = latestCacheKey();
+    const cached = cachedPayload(state.latestCache, key);
+    if (cached) {
+      updateLatestCards(cached);
+      return cached;
+    }
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/latest`, window.location.origin);
     url.searchParams.set('period', state.period);
     url.searchParams.set('include_trends', 'true');
@@ -928,15 +1028,21 @@
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     const payload = await App.fetchJSON(url.toString());
     if (requestId !== state.latestRequestId) return;
+    rememberPayload(state.latestCache, key, payload);
     updateLatestCards(payload);
+    return payload;
   }
 
   async function loadTimeseries() {
     const requestId = ++state.timeseriesRequestId;
-    const grid = document.getElementById('chart-grid');
-    if (grid) {
-      grid.innerHTML = '<article class="empty-state"><h2>Loading charts</h2><p>Updating the selected parameters.</p></article>';
+    const key = timeseriesCacheKey();
+    const cached = cachedPayload(state.timeseriesCache, key);
+    if (cached) {
+      renderTimeseriesPayload(cached);
+      return cached;
     }
+    const grid = document.getElementById('chart-grid');
+    clearChartGrid(grid, '<article class="empty-state"><h2>Loading charts</h2><p>Updating the selected parameters.</p></article>');
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/timeseries`, window.location.origin);
     url.searchParams.set('period', state.period);
     url.searchParams.set('aggregation', state.aggregation);
@@ -945,25 +1051,9 @@
     if (state.selectedMetrics.length || state.metricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedMetrics));
     const payload = await App.fetchJSON(url.toString());
     if (requestId !== state.timeseriesRequestId) return;
-    state.timeseriesPayload = payload;
-    const selectorMetrics = payload.available_metrics?.length ? payload.available_metrics : payload.metrics;
-    if (selectorMetrics?.length && state.availableMetrics.length === 0) {
-      state.availableMetrics = selectorMetrics;
-      renderMetricSelector(selectorMetrics, payload.metrics || []);
-    }
-    grid.innerHTML = '';
-    if (!payload.charts?.length) {
-      grid.innerHTML = `<article class="empty-state"><h2>No chart data for this view</h2><p>${App.escapeHtml(payload.message || 'No data available for the current selection.')}</p></article>`;
-      updateTable({ metrics: [], table: [] });
-      updateBuoyProfiles(payload);
-      return;
-    }
-    groupAdvancedSensorCharts(payload.charts, payload).forEach((chart) => {
-      grid.appendChild(renderChart(chart, payload.events || []));
-    });
-    updateTable(payload);
-    updateBuoyProfiles(payload);
-    scheduleActiveChartResize();
+    rememberPayload(state.timeseriesCache, key, payload);
+    renderTimeseriesPayload(payload);
+    return payload;
   }
 
   function wireControls() {

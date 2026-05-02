@@ -8,7 +8,7 @@ from typing import Optional
 import orjson
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, ORJSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -36,15 +36,34 @@ def parse_metric_list(metrics: Optional[str]) -> list[str]:
     return [item for item in metrics.split(delimiter) if item]
 
 
-def require_public_station_ref(repo: MongoDashboardRepository, station_id: str) -> None:
+def require_public_station_ref(repo: MongoDashboardRepository, station_id: str) -> dict:
     summary = repo.get_station_summary(station_id)
     if station_id != summary.get('public_id'):
         raise KeyError('Station not found.')
+    return summary
+
+
+def require_public_station(repo: MongoDashboardRepository, station_id: str) -> dict:
+    station = repo.resolve_station(station_id)
+    if station_id != station.get('public_id'):
+        raise KeyError('Station not found.')
+    return station
+
+
+def cached_json_response(repo: MongoDashboardRepository, cache_key: str, producer, ttl_seconds: int = 30) -> Response:
+    full_key = f'api_json:{cache_key}'
+    cached = repo.cache.get(full_key)
+    if cached is not None:
+        return Response(content=cached, media_type='application/json')
+    payload = repo.public_payload(producer())
+    content = orjson.dumps(payload)
+    repo.cache.set(full_key, content, ttl_seconds=ttl_seconds)
+    return Response(content=content, media_type='application/json')
 
 
 def create_app() -> FastAPI:
     settings = get_settings()
-    app = FastAPI(title=settings.app_name, version='2.0.0', default_response_class=JSONResponse)
+    app = FastAPI(title=settings.app_name, version='2.0.0', default_response_class=ORJSONResponse)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins_list,
@@ -62,11 +81,11 @@ def create_app() -> FastAPI:
         return {'service': settings.app_name, **repo.healthcheck()}
 
     @app.get('/', response_class=HTMLResponse)
-    def home(request: Request, repo: MongoDashboardRepository = Depends(get_repo)):
+    def home(request: Request):
         return templates.TemplateResponse(request, 'index.html', {
             'app_name': settings.app_name,
             'page_title': 'Map',
-            'network_summary': repo.get_network_summary(),
+            'network_summary': {},
         })
 
     @app.get('/get-started', response_class=HTMLResponse)
@@ -139,7 +158,8 @@ def create_app() -> FastAPI:
         search: str = Query(default=''),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
-        return repo.list_stations(privacy=privacy, device_type=device_type, status=status, search=search)
+        key = f'map_stations:{privacy}:{device_type}:{status}:{search.strip().lower()}'
+        return cached_json_response(repo, key, lambda: repo.list_stations(privacy=privacy, device_type=device_type, status=status, search=search), ttl_seconds=30)
 
     @app.get('/api/status')
     def api_status(repo: MongoDashboardRepository = Depends(get_repo)):
@@ -148,16 +168,16 @@ def create_app() -> FastAPI:
     @app.get('/api/stations/{station_id}')
     def api_station_summary(station_id: str, repo: MongoDashboardRepository = Depends(get_repo)):
         try:
-            require_public_station_ref(repo, station_id)
-            return repo.public_payload(repo.get_station_summary(station_id))
+            summary = require_public_station_ref(repo, station_id)
+            return cached_json_response(repo, f'summary:{station_id}', lambda: summary, ttl_seconds=30)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
 
     @app.get('/api/stations/{station_id}/metadata')
     def api_station_metadata(station_id: str, repo: MongoDashboardRepository = Depends(get_repo)):
         try:
-            require_public_station_ref(repo, station_id)
-            return repo.public_payload(repo.get_metadata_payload(station_id))
+            summary = require_public_station_ref(repo, station_id)
+            return cached_json_response(repo, f'metadata:{station_id}', lambda: repo.get_metadata_payload(station_id, station=summary), ttl_seconds=60)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
 
@@ -171,14 +191,20 @@ def create_app() -> FastAPI:
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            require_public_station_ref(repo, station_id)
-            return repo.public_payload(repo.get_latest_cards(
-                station_id,
-                period=period,
-                include_trends=include_trends,
-                include_sensor_trends=include_sensor_trends,
-                clean=clean,
-            ))
+            key = f'latest:{station_id}:{period}:{include_trends}:{include_sensor_trends}:{clean}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_latest_cards(
+                    station_id,
+                    period=period,
+                    include_trends=include_trends,
+                    include_sensor_trends=include_sensor_trends,
+                    clean=clean,
+                    station=require_public_station(repo, station_id),
+                ),
+                ttl_seconds=30,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
 
@@ -194,8 +220,21 @@ def create_app() -> FastAPI:
     ):
         metric_list = parse_metric_list(metrics)
         try:
-            require_public_station_ref(repo, station_id)
-            return repo.public_payload(repo.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean))
+            key = f'timeseries:{station_id}:{period}:{aggregation}:{split_sensors}:{clean}:{metrics or ""}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_timeseries(
+                    station_id,
+                    period=period,
+                    aggregation=aggregation,
+                    metrics=metric_list,
+                    split_sensors=split_sensors,
+                    clean=clean,
+                    station=require_public_station(repo, station_id),
+                ),
+                ttl_seconds=30,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
 
@@ -208,8 +247,13 @@ def create_app() -> FastAPI:
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         try:
-            require_public_station_ref(repo, station_id)
-            return repo.public_payload(repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames, clean=clean))
+            key = f'spectra:{station_id}:{period}:{max_frames}:{clean}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_fidas_spectra(station_id, period=period, max_frames=max_frames, clean=clean, station=require_public_station(repo, station_id)),
+                ttl_seconds=60,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
 
@@ -222,8 +266,13 @@ def create_app() -> FastAPI:
     ):
         metric_list = parse_metric_list(metrics)
         try:
-            require_public_station_ref(repo, station_id)
-            return repo.public_payload(repo.get_buoy_profiles(station_id, period=period, metrics=metric_list))
+            key = f'profiles:{station_id}:{period}:{metrics or ""}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_buoy_profiles(station_id, period=period, metrics=metric_list, station=require_public_station(repo, station_id)),
+                ttl_seconds=60,
+            )
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
 
@@ -239,8 +288,8 @@ def create_app() -> FastAPI:
     ):
         metric_list = parse_metric_list(metrics)
         try:
-            require_public_station_ref(repo, station_id)
-            frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean)
+            station = require_public_station(repo, station_id)
+            frame = repo.export_frame(station_id, period=period, aggregation=aggregation, metrics=metric_list, split_sensors=split_sensors, clean=clean, station=station)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail='Station not found.') from exc
         if frame.empty:

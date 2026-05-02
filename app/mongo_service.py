@@ -23,6 +23,8 @@ from .settings import Settings
 
 class MongoDashboardRepository:
     LOOKBACK = 50
+    MAX_CHART_POINTS = 720
+    MAX_TABLE_ROWS = 100
     EXCLUDE_DISCOVERY_KEYS = {'index', 'sensor', 'type', 'sensor_T', 'sensor_RH', 'diagnostics'}
     PM_COUNT_RE = re.compile(r'^pm(?:\d+(?:[.,]\d+)?)?count$', re.IGNORECASE)
     DEFAULT_METRIC_PRIORITY = [
@@ -125,6 +127,7 @@ class MongoDashboardRepository:
         self.cache = TTLCache(settings.cache_ttl_seconds)
         self.thresholds = self.metadata_service.thresholds()
         self.special_availability = self.metadata_service.special_availability()
+        self._ensure_station_indexes()
         self.station_projection = {
             '_id': 1,
             'id': 1,
@@ -146,6 +149,50 @@ class MongoDashboardRepository:
     # ------------------------------------------------------------------
     def _now(self) -> datetime:
         return datetime.now(timezone.utc)
+
+    def _collection_names(self) -> set[str]:
+        cached = self.cache.get('collection_names')
+        if cached is not None:
+            return cached
+        names = set(self.db.list_collection_names())
+        self.cache.set('collection_names', names, ttl_seconds=300)
+        return names
+
+    def _collection_exists(self, collection_name: str | None) -> bool:
+        return bool(collection_name and collection_name in self._collection_names())
+
+    def _ensure_station_indexes(self) -> None:
+        try:
+            collection = self.db[self.settings.mongo_stations_info_collection]
+            collection.create_index([('id', ASCENDING)], background=True)
+            collection.create_index([('station_num', ASCENDING)], background=True)
+            collection.create_index([('type', ASCENDING), ('status', ASCENDING), ('public', ASCENDING)], background=True)
+            collection.create_index([('lat', ASCENDING), ('long', ASCENDING)], background=True)
+            collection.create_index([('name', ASCENDING)], background=True)
+        except Exception:
+            return
+
+    def _ensure_time_index(self, collection_name: str | None, time_field: str | None) -> None:
+        if not collection_name or not time_field:
+            return
+        cache_key = f'index_ready:{collection_name}:{time_field}'
+        if self.cache.get(cache_key) is not None:
+            return
+        if not self._collection_exists(collection_name):
+            self.cache.set(cache_key, False, ttl_seconds=60)
+            return
+        try:
+            self.db[collection_name].create_index([(time_field, ASCENDING)], background=True)
+            if collection_name == self.settings.mongo_fidas_collection:
+                self.db[collection_name].create_index([('errors', ASCENDING), (time_field, ASCENDING)], background=True)
+                self.db[collection_name].create_index([('errors', ASCENDING), ('PM2.5', ASCENDING), (time_field, ASCENDING)], background=True, name='errors_pm25_datetime_1')
+                self.db[collection_name].create_index([('errors', ASCENDING), ('PM10', ASCENDING), (time_field, ASCENDING)], background=True, name='errors_pm10_datetime_1')
+                self.db[collection_name].create_index([('errors', ASCENDING), ('PM1', ASCENDING), (time_field, ASCENDING)], background=True, name='errors_pm1_datetime_1')
+            if collection_name == self.settings.mongo_buoy_collection:
+                self.db[collection_name].create_index([(time_field, ASCENDING), ('depth', ASCENDING)], background=True)
+            self.cache.set(cache_key, True, ttl_seconds=3600)
+        except Exception:
+            self.cache.set(cache_key, False, ttl_seconds=60)
 
     def _localize(self, value: datetime | None) -> datetime | None:
         if value is None:
@@ -207,6 +254,11 @@ class MongoDashboardRepository:
         return payload
 
     def public_payload(self, value: Any) -> Any:
+        passthrough_keys = {
+            'cards', 'charts', 'events', 'metrics', 'available_metrics', 'table', 'latest_table',
+            'trends', 'sensor_trends', 'series', 'profiles', 'frames', 'sizes', 'depth', 'values',
+            'thresholds', 'sampling',
+        }
         if isinstance(value, list):
             return [self.public_payload(item) for item in value]
         if not isinstance(value, dict):
@@ -217,6 +269,12 @@ class MongoDashboardRepository:
         output: Dict[str, Any] = {}
         for key, item in value.items():
             if key in {'mongo_id', 'collection_name', 'sensors', 'station_num'}:
+                continue
+            if key == 'station' and isinstance(item, dict):
+                output[key] = self._public_station_payload(item)
+                continue
+            if key in passthrough_keys:
+                output[key] = item
                 continue
             if key == 'station_id' and value.get('public_id'):
                 output[key] = value['public_id']
@@ -255,18 +313,28 @@ class MongoDashboardRepository:
             queries.append({'_id': ObjectId(station_id)})
         return {'$or': queries}
 
+    def _public_station_lookup(self) -> Dict[str, Dict[str, Any]]:
+        cached = self.cache.get('public_station_lookup')
+        if cached is not None:
+            return cached
+        lookup: Dict[str, Dict[str, Any]] = {}
+        cursor = self.db[self.settings.mongo_stations_info_collection].find({}, self.station_projection)
+        for doc in cursor:
+            raw_id = str(doc.get('id') or doc.get('_id'))
+            public_id = self._public_station_id(raw_id, doc.get('name') or 'Monitoring station')
+            lookup[public_id] = doc
+        self.cache.set('public_station_lookup', lookup, ttl_seconds=300)
+        return lookup
+
     def _find_station_by_public_id(self, public_id: str) -> Optional[Dict[str, Any]]:
         cache_key = f'public_station_doc:{public_id}'
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
-        cursor = self.db[self.settings.mongo_stations_info_collection].find({}, self.station_projection)
-        for doc in cursor:
-            raw_id = str(doc.get('id') or doc.get('_id'))
-            name = doc.get('name') or 'Monitoring station'
-            if self._public_station_id(raw_id, name) == public_id:
-                self.cache.set(cache_key, doc, ttl_seconds=300)
-                return doc
+        doc = self._public_station_lookup().get(public_id)
+        if doc:
+            self.cache.set(cache_key, doc, ttl_seconds=300)
+            return doc
         self.cache.set(cache_key, None, ttl_seconds=60)
         return None
 
@@ -274,8 +342,11 @@ class MongoDashboardRepository:
         cached = self.cache.get(self._station_cache_key(station_id))
         if cached:
             return cached
-        doc = self.db[self.settings.mongo_stations_info_collection].find_one(self._station_query(station_id), self.station_projection)
+        looks_public = '-' in station_id and not station_id.isdigit() and not ObjectId.is_valid(station_id)
+        doc = self._find_station_by_public_id(station_id) if looks_public else None
         if not doc:
+            doc = self.db[self.settings.mongo_stations_info_collection].find_one(self._station_query(station_id), self.station_projection)
+        if not doc and not looks_public:
             doc = self._find_station_by_public_id(station_id)
         if not doc:
             raise KeyError(f'Station not found: {station_id}')
@@ -314,6 +385,12 @@ class MongoDashboardRepository:
         status: str = 'all',
         search: str = '',
     ) -> Dict[str, Any]:
+        normalized_search = (search or '').strip()
+        cache_key = f'list_stations:{privacy}:{device_type}:{status}:{normalized_search.lower()}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         query: Dict[str, Any] = {'lat': {'$ne': None}, 'long': {'$ne': None}}
         if privacy == 'public':
             query['public'] = True
@@ -323,12 +400,15 @@ class MongoDashboardRepository:
             query['type'] = device_type
         if status != 'all':
             query['status'] = status
-        if search:
-            regex = {'$regex': re.escape(search), '$options': 'i'}
+        if normalized_search:
+            regex = {'$regex': re.escape(normalized_search), '$options': 'i'}
             query['$or'] = [{'name': regex}]
 
         docs = list(self.db[self.settings.mongo_stations_info_collection].find(query, self.station_projection))
         stations = [self._normalize_station(doc) for doc in docs]
+        for station in stations:
+            self.cache.set(self._station_cache_key(station['station_id']), station, ttl_seconds=300)
+            self.cache.set(self._station_cache_key(station['public_id']), station, ttl_seconds=300)
         stations.sort(key=lambda item: (item['status'] != 'Active', item['device_label'], item['name']))
 
         type_counter = Counter(item['device_label'] for item in stations)
@@ -342,10 +422,9 @@ class MongoDashboardRepository:
             'device_breakdown': dict(type_counter),
             'status_breakdown': dict(status_counter),
         }
-        network = self.get_network_summary()
-        summary['regional_aqi'] = network.get('regional_aqi')
-        summary['elevated_station_count'] = network.get('elevated_station_count', 0)
-        return {'summary': summary, 'stations': [self._public_station_payload(station) for station in stations], 'filters': self.get_filters()}
+        payload = {'summary': summary, 'stations': [self._public_station_payload(station) for station in stations], 'filters': self.get_filters()}
+        self.cache.set(cache_key, payload, ttl_seconds=30)
+        return payload
 
     def _collection_for_station(self, station: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
         station_num = station.get('station_num')
@@ -362,7 +441,7 @@ class MongoDashboardRepository:
 
     def _station_has_collection(self, station: Dict[str, Any]) -> bool:
         collection_name, _ = self._collection_for_station(station)
-        return bool(collection_name and collection_name in self.db.list_collection_names())
+        return self._collection_exists(collection_name)
 
     def get_time_extent(self, station: Dict[str, Any]) -> Dict[str, Optional[str]]:
         cache_key = f'time_extent:{station["station_id"]}'
@@ -378,11 +457,12 @@ class MongoDashboardRepository:
             return payload
 
         collection_name, time_field = self._collection_for_station(station)
-        if not collection_name or collection_name not in self.db.list_collection_names():
+        if not self._collection_exists(collection_name):
             payload = {'earliest': None, 'latest': None}
             self.cache.set(cache_key, payload, ttl_seconds=60)
             return payload
 
+        self._ensure_time_index(collection_name, time_field)
         collection = self.db[collection_name]
         first = collection.find_one({time_field: {'$exists': True}}, sort=[(time_field, ASCENDING)], projection={time_field: 1})
         last = collection.find_one({time_field: {'$exists': True}}, sort=[(time_field, DESCENDING)], projection={time_field: 1})
@@ -401,9 +481,10 @@ class MongoDashboardRepository:
         if cached is not None:
             return cached
         collection_name, time_field = self._collection_for_station(station)
-        if not collection_name or collection_name not in self.db.list_collection_names():
+        if not self._collection_exists(collection_name):
             self.cache.set(cache_key, None, ttl_seconds=30)
             return None
+        self._ensure_time_index(collection_name, time_field)
         document = self.db[collection_name].find_one({}, projection=projection, sort=[(time_field, DESCENDING)])
         self.cache.set(cache_key, document, ttl_seconds=30)
         return document
@@ -447,8 +528,8 @@ class MongoDashboardRepository:
             'collection_name': collection_name,
         }
 
-    def get_metadata_payload(self, station_id: str) -> Dict[str, Any]:
-        station = self.get_station_summary(station_id)
+    def get_metadata_payload(self, station_id: str, station: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        station = station or self.get_station_summary(station_id)
         measurement_frequency = (
             'Continuous real-time monitoring.'
             if station['device_type'] in self.SPECIAL_REALTIME_TYPES
@@ -589,8 +670,9 @@ class MongoDashboardRepository:
         cached = self.cache.get(cache_key)
         if cached:
             return cached
-        if collection_name not in self.db.list_collection_names():
+        if not self._collection_exists(collection_name):
             return {}
+        self._ensure_time_index(collection_name, time_field)
         collection = self.db[collection_name]
         query = {time_field: {'$exists': True}}
         discovered: List[str] = []
@@ -626,9 +708,14 @@ class MongoDashboardRepository:
         return [{'key': key, 'label': available.get(key, key)} for key in available.keys()]
 
     def _iot_discover(self, station_num: int) -> Tuple[Dict[str, str], Dict[str, List[Tuple[str, str]]]]:
+        cache_key = f'iot_discover:{station_num}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
         station_info = self.db[self.settings.mongo_stations_info_collection].find_one({'station_num': station_num}, {'sensors': 1})
         if not station_info or 'sensors' not in station_info:
             return {}, {}
+        self._ensure_time_index(f'station{station_num}', 'datetime')
         collection = self.db[f'station{station_num}']
         params_set: set[str] = set()
         full_params: Dict[str, List[Tuple[str, str]]] = {}
@@ -669,7 +756,9 @@ class MongoDashboardRepository:
         for key, label in sorted(label_map.items(), key=lambda item: item[1]):
             if key not in ordered:
                 ordered[key] = label
-        return ordered, full_params
+        payload = (ordered, full_params)
+        self.cache.set(cache_key, payload, ttl_seconds=300)
+        return payload
 
     def _metric_key_to_label(self, station: Dict[str, Any], key: str) -> str:
         if station['device_type'] == 'IoTBox':
@@ -796,7 +885,8 @@ class MongoDashboardRepository:
             return {}
         collection_name, _ = self._collection_for_station(station)
         anchor = None
-        if collection_name and collection_name in self.db.list_collection_names():
+        if self._collection_exists(collection_name):
+            self._ensure_time_index(collection_name, time_field)
             latest = self._latest_document(station, projection={time_field: 1})
             anchor = latest.get(time_field) if latest else None
         if anchor is None:
@@ -816,7 +906,119 @@ class MongoDashboardRepository:
         grouped = df[numeric_cols].resample(freq).mean().dropna(how='all').reset_index()
         return grouped
 
-    def _iot_dataframe(self, station: Dict[str, Any], metrics: List[str], split_sensors: bool, period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
+    def _display_point_cap(self, point_cap: Optional[int]) -> Optional[int]:
+        if point_cap is None:
+            return None
+        return max(120, min(int(point_cap), self.MAX_CHART_POINTS))
+
+    def _time_sampled_documents(
+        self,
+        collection_name: str,
+        time_field: str,
+        query: Dict[str, Any],
+        projection: Dict[str, int],
+        point_cap: Optional[int],
+    ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+        self._ensure_time_index(collection_name, time_field)
+        collection = self.db[collection_name]
+        cap = self._display_point_cap(point_cap)
+        meta = {
+            'source_points': None,
+            'sampled': False,
+            'display_cap': cap,
+        }
+        if cap is None:
+            docs = list(collection.find(query, projection).sort(time_field, ASCENDING))
+            meta['source_points'] = len(docs)
+            meta['returned_points'] = len(docs)
+            return docs, meta
+
+        project_stage = dict(projection)
+        project_stage[time_field] = 1
+        if time_field not in query:
+            pipeline = []
+            if query:
+                pipeline.extend([
+                    {'$sample': {'size': min(cap * 6, 5000)}},
+                    {'$match': query},
+                    {'$limit': cap},
+                ])
+            else:
+                pipeline.append({'$sample': {'size': cap}})
+            pipeline.extend([
+                {'$project': project_stage},
+                {'$sort': {time_field: ASCENDING}},
+            ])
+            docs = list(collection.aggregate(pipeline, allowDiskUse=True))
+            meta.update({'source_points': len(docs), 'returned_points': len(docs), 'sampled': True})
+            return docs, meta
+
+        first_page = list(collection.find(query, projection).sort(time_field, ASCENDING).limit(cap + 1))
+        if len(first_page) <= cap:
+            meta.update({'source_points': len(first_page), 'returned_points': len(first_page)})
+            return first_page, meta
+
+        first = first_page[0] if first_page else collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
+        last = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, DESCENDING)])
+        start_dt = first.get(time_field) if first else None
+        end_dt = last.get(time_field) if last else None
+        if not isinstance(start_dt, datetime) or not isinstance(end_dt, datetime) or start_dt >= end_dt:
+            docs = first_page[:cap]
+            meta.update({'returned_points': len(docs), 'sampled': len(first_page) > len(docs)})
+            return docs, meta
+
+        bucket_ms = max(1, int(math.ceil((end_dt - start_dt).total_seconds() * 1000 / cap)))
+        pipeline = [
+            {'$match': query},
+            {'$sort': {time_field: ASCENDING}},
+            {'$project': project_stage},
+            {'$addFields': {
+                '_sample_bucket': {
+                    '$floor': {
+                        '$divide': [
+                            {'$subtract': [f'${time_field}', start_dt]},
+                            bucket_ms,
+                        ]
+                    }
+                }
+            }},
+            {'$group': {'_id': '$_sample_bucket', 'doc': {'$first': '$$ROOT'}}},
+            {'$replaceRoot': {'newRoot': '$doc'}},
+            {'$sort': {time_field: ASCENDING}},
+            {'$limit': cap},
+        ]
+        docs = list(collection.aggregate(pipeline, allowDiskUse=True))
+        meta.update({'returned_points': len(docs), 'sampled': True})
+        return docs, meta
+
+    def _limit_frame_points(self, df: pd.DataFrame, point_cap: Optional[int], meta: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+        if df.empty:
+            return df
+        cap = self._display_point_cap(point_cap)
+        source_value = (meta or {}).get('source_points')
+        source_points = int(source_value) if source_value is not None else len(df)
+        sampled = bool((meta or {}).get('sampled', False))
+        if cap is not None and len(df) > cap:
+            indexes = np.linspace(0, len(df) - 1, cap).round().astype(int)
+            df = df.iloc[sorted(set(indexes.tolist()))].reset_index(drop=True)
+            sampled = True
+        df.attrs.update({
+            'source_points': source_points,
+            'returned_points': int(len(df)),
+            'sampled': sampled,
+            'display_cap': cap,
+        })
+        return df
+
+    def _iot_dataframe(
+        self,
+        station: Dict[str, Any],
+        metrics: List[str],
+        split_sensors: bool,
+        period: str,
+        aggregation: str,
+        display_points: Optional[int] = MAX_CHART_POINTS,
+    ) -> Tuple[pd.DataFrame, Dict[str, str]]:
         labels, full_params = self._iot_discover(int(station['station_num']))
         if not metrics:
             metrics = self._default_metrics(labels, limit=3)
@@ -826,15 +1028,16 @@ class MongoDashboardRepository:
             for full_key, sensor_label in sensor_list:
                 plot_labels[full_key] = sensor_label
 
-        projection: Dict[str, int] = {'_id': 0, 'datetime': 1, 'gps': 1, 'date_time_position': 1, 'dateTimePosition': 1}
+        projection: Dict[str, int] = {'_id': 0, 'datetime': 1}
         for sensor_list in selected_full.values():
             for full_key, _ in sensor_list:
                 projection[full_key.split('.', 1)[0]] = 1
 
         query = self._base_query_for_station_period(station, period, 'datetime')
-        cursor = self.db[f'station{station["station_num"]}'].find(query, projection).sort('datetime', ASCENDING)
+        collection_name = f'station{station["station_num"]}'
+        docs, meta = self._time_sampled_documents(collection_name, 'datetime', query, projection, display_points)
         data: List[Dict[str, Any]] = []
-        for record in cursor:
+        for record in docs:
             entry: Dict[str, Any] = {'timestamp': self._localize(record.get('datetime'))}
             for _base_param, sensor_list in selected_full.items():
                 for full_key, _label in sensor_list:
@@ -842,16 +1045,6 @@ class MongoDashboardRepository:
                     sensor_doc = record.get(sensor_key, {})
                     if isinstance(sensor_doc, dict) and sensor_param in sensor_doc and isinstance(sensor_doc[sensor_param], (int, float)):
                         entry[full_key] = sensor_doc[sensor_param]
-            gps = record.get('gps', {})
-            if isinstance(gps, dict) and isinstance(gps.get('position'), list) and len(gps['position']) >= 2:
-                entry['Longitude'], entry['Latitude'] = gps['position'][0], gps['position'][1]
-            else:
-                fallback = record.get('date_time_position') or record.get('dateTimePosition')
-                if isinstance(fallback, dict):
-                    lon = fallback.get('longitude')
-                    lat = fallback.get('latitude')
-                    if isinstance(lon, (int, float)) and isinstance(lat, (int, float)):
-                        entry['Longitude'], entry['Latitude'] = lon, lat
             data.append(entry)
 
         df = pd.DataFrame(data)
@@ -870,6 +1063,7 @@ class MongoDashboardRepository:
             df = combined
 
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
+        df = self._limit_frame_points(df, display_points, meta)
         return df, plot_labels
 
     def _metric_projection_root(self, metric: str) -> str:
@@ -904,6 +1098,7 @@ class MongoDashboardRepository:
         period: str,
         aggregation: str,
         clean: bool = False,
+        display_points: Optional[int] = MAX_CHART_POINTS,
     ) -> Tuple[pd.DataFrame, Dict[str, str]]:
         label_map = self._available_metric_map(station)
         if not metrics:
@@ -919,8 +1114,43 @@ class MongoDashboardRepository:
         clean_fidas = clean and station['device_type'] == 'Fidas_Palas'
         if clean_fidas:
             projection['errors'] = 1
+            query['errors'] = {'$lte': 0}
 
-        docs = self.db[collection_name].find(query, projection).sort(time_field, ASCENDING)
+        docs, meta = self._time_sampled_documents(collection_name, time_field, query, projection, display_points)
+        present_fields: set[str] = set()
+        for doc in docs:
+            for metric in metrics:
+                if self._coerce_document_number(self._document_metric_value(doc, metric)) is not None:
+                    present_fields.add(metric)
+        missing_fields = [metric for metric in metrics if metric not in present_fields]
+        if missing_fields and display_points:
+            seen_stamps = {doc.get(time_field) for doc in docs}
+            backfill_limit = max(24, min(180, self._display_point_cap(display_points) or 180))
+            collection = self.db[collection_name]
+            for metric in missing_fields:
+                metric_query = dict(query)
+                metric_query[metric] = {'$exists': True}
+                cursor = collection.find(metric_query, projection).limit(backfill_limit)
+                hint_name = None
+                if station.get('device_type') == 'Fidas_Palas':
+                    if metric == 'PM2.5':
+                        hint_name = 'errors_pm25_datetime_1'
+                    elif metric == 'PM10':
+                        hint_name = 'errors_pm10_datetime_1'
+                    elif metric == 'PM1':
+                        hint_name = 'errors_pm1_datetime_1'
+                if hint_name:
+                    try:
+                        cursor = cursor.hint(hint_name)
+                    except Exception:
+                        pass
+                for doc in cursor:
+                    stamp = doc.get(time_field)
+                    if stamp in seen_stamps:
+                        continue
+                    seen_stamps.add(stamp)
+                    docs.append(doc)
+            docs.sort(key=lambda item: item.get(time_field) or datetime.min.replace(tzinfo=timezone.utc))
         rows: List[Dict[str, Any]] = []
         for doc in docs:
             row: Dict[str, Any] = {'timestamp': self._localize_station_datetime(station, doc.get(time_field))}
@@ -948,10 +1178,11 @@ class MongoDashboardRepository:
                 df = df.dropna(subset=cleanable, how='all')
             df = df.drop(columns=['_fidas_errors'])
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
+        df = self._limit_frame_points(df, display_points, meta)
         return df, label_map
 
-    def _meteo_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str]]:
-        return self._document_dataframe(station, self.settings.mongo_meteo_collection, 'Timestamp', metrics, period, aggregation)
+    def _meteo_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, display_points: Optional[int] = MAX_CHART_POINTS) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        return self._document_dataframe(station, self.settings.mongo_meteo_collection, 'Timestamp', metrics, period, aggregation, display_points=display_points)
         label_map = {
             'I3_VPOWER': 'Voltage Power (V)',
             'I4_VOUT': 'Voltage Output (V)',
@@ -981,8 +1212,8 @@ class MongoDashboardRepository:
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, label_map
 
-    def _fidas_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, clean: bool = False) -> Tuple[pd.DataFrame, Dict[str, str]]:
-        return self._document_dataframe(station, self.settings.mongo_fidas_collection, 'datetime', metrics, period, aggregation, clean=clean)
+    def _fidas_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, clean: bool = False, display_points: Optional[int] = MAX_CHART_POINTS) -> Tuple[pd.DataFrame, Dict[str, str]]:
+        return self._document_dataframe(station, self.settings.mongo_fidas_collection, 'datetime', metrics, period, aggregation, clean=clean, display_points=display_points)
         label_map = {
             'PM1': 'PM1 (µg/m³)',
             'PM2.5': 'PM2.5 (µg/m³)',
@@ -1027,7 +1258,7 @@ class MongoDashboardRepository:
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
         return df, label_map
 
-    def _buoy_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str) -> Tuple[pd.DataFrame, Dict[str, str], List[Dict[str, Any]]]:
+    def _buoy_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, display_points: Optional[int] = MAX_CHART_POINTS) -> Tuple[pd.DataFrame, Dict[str, str], List[Dict[str, Any]]]:
         scalar_params = self.BUOY_SCALAR_PARAMS
         profile_params = self.BUOY_PROFILE_PARAMS
         label_map = {metric: self._metric_key_to_label(station, metric) for metric in scalar_params + profile_params}
@@ -1037,7 +1268,7 @@ class MongoDashboardRepository:
         projection = {'_id': 0, 'datetime': 1, 'depth': 1}
         for metric in metrics:
             projection[metric] = 1
-        docs = list(self.db[self.settings.mongo_buoy_collection].find(query, projection).sort('datetime', ASCENDING))
+        docs, meta = self._time_sampled_documents(self.settings.mongo_buoy_collection, 'datetime', query, projection, display_points)
         rows: List[Dict[str, Any]] = []
         profiles: List[Dict[str, Any]] = []
         for doc in docs:
@@ -1062,10 +1293,22 @@ class MongoDashboardRepository:
         if df.empty:
             return df, label_map, profiles[-5:]
         df = self._aggregate_df(df, self.AGG_MAP.get(aggregation.lower()))
+        df = self._limit_frame_points(df, display_points, meta)
         return df, label_map, profiles[-5:]
 
-    def get_buoy_profiles(self, station_id: str, period: str = '24H', metrics: Optional[List[str]] = None) -> Dict[str, Any]:
-        station = self.get_station_summary(station_id)
+    def get_buoy_profiles(
+        self,
+        station_id: str,
+        period: str = '24H',
+        metrics: Optional[List[str]] = None,
+        station: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        station = station or self.get_station_summary(station_id)
+        metric_key = '|'.join(metrics or [])
+        cache_key = f'buoy_profiles:{station["station_id"]}:{period.upper()}:{metric_key}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
         if station['device_type'] != 'Buoy':
             return {
                 'station': station,
@@ -1078,6 +1321,7 @@ class MongoDashboardRepository:
         label_map = {metric: self._metric_key_to_label(station, metric) for metric in self.BUOY_PROFILE_PARAMS}
         default_profile_metrics = [metric for metric in self.BUOY_DEFAULT_PROFILE_PARAMS if metric in label_map]
         selected = [metric for metric in (metrics or default_profile_metrics) if metric in label_map]
+        self._ensure_time_index(self.settings.mongo_buoy_collection, 'datetime')
         query = self._base_query_for_station_period(station, period, 'datetime')
         query['depth'] = {'$elemMatch': {'$gt': 0}}
         projection = {'_id': 0, 'datetime': 1, 'depth': 1}
@@ -1125,7 +1369,7 @@ class MongoDashboardRepository:
                     'latest_label': latest['label'],
                 })
 
-        return {
+        payload = {
             'station': station,
             'period': period,
             'effective_period': effective_period,
@@ -1134,6 +1378,8 @@ class MongoDashboardRepository:
             'charts': charts,
             'message': None if charts else 'No profile data was available for the selected display period.',
         }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
 
     def get_timeseries(
         self,
@@ -1143,21 +1389,30 @@ class MongoDashboardRepository:
         metrics: Optional[List[str]] = None,
         split_sensors: bool = False,
         clean: bool = False,
+        station: Optional[Dict[str, Any]] = None,
+        display_points: Optional[int] = MAX_CHART_POINTS,
     ) -> Dict[str, Any]:
-        station = self.get_station_summary(station_id)
+        station = station or self.get_station_summary(station_id)
         metrics = metrics or []
+        cache_key = None
+        if display_points is not None:
+            metric_key = '|'.join(metrics)
+            cache_key = f'timeseries:{station["station_id"]}:{period.upper()}:{aggregation.lower()}:{split_sensors}:{clean}:{metric_key}:{display_points}'
+            cached = self.cache.get(cache_key)
+            if cached is not None:
+                return cached
         extra: Dict[str, Any] = {}
         if station['device_type'] == 'IoTBox':
-            df, label_map = self._iot_dataframe(station, metrics, split_sensors, period, aggregation)
+            df, label_map = self._iot_dataframe(station, metrics, split_sensors, period, aggregation, display_points=display_points)
         elif station['device_type'] == 'Meteorological':
-            df, label_map = self._meteo_dataframe(station, metrics, period, aggregation)
+            df, label_map = self._meteo_dataframe(station, metrics, period, aggregation, display_points=display_points)
         elif station['device_type'] == 'Fidas_Palas':
-            df, label_map = self._fidas_dataframe(station, metrics, period, aggregation, clean=clean)
+            df, label_map = self._fidas_dataframe(station, metrics, period, aggregation, clean=clean, display_points=display_points)
         elif station['device_type'] == 'Buoy':
-            df, label_map, profiles = self._buoy_dataframe(station, metrics, period, aggregation)
+            df, label_map, profiles = self._buoy_dataframe(station, metrics, period, aggregation, display_points=display_points)
             extra['profiles'] = profiles
         else:
-            return {
+            payload = {
                 'station': station,
                 'period': period,
                 'aggregation': aggregation,
@@ -1168,9 +1423,12 @@ class MongoDashboardRepository:
                 'events': [],
                 'message': 'This station type is currently metadata-first in the Mongo adapter. Quick View and metadata remain available.',
             }
+            if cache_key:
+                self.cache.set(cache_key, payload, ttl_seconds=30)
+            return payload
 
         if df.empty:
-            return {
+            payload = {
                 'station': station,
                 'period': period,
                 'aggregation': aggregation,
@@ -1183,10 +1441,13 @@ class MongoDashboardRepository:
                 'message': 'No data was available for the selected time range.',
                 **extra,
             }
+            if cache_key:
+                self.cache.set(cache_key, payload, ttl_seconds=30)
+            return payload
 
         metric_keys = [column for column in df.columns if column != 'timestamp' and not column.startswith('Lat') and not column.startswith('Long')]
         if not metric_keys:
-            return {
+            payload = {
                 'station': station,
                 'period': period,
                 'aggregation': aggregation,
@@ -1199,12 +1460,17 @@ class MongoDashboardRepository:
                 'message': 'No parameters are selected.',
                 **extra,
             }
+            if cache_key:
+                self.cache.set(cache_key, payload, ttl_seconds=30)
+            return payload
         charts = []
         events = self._detect_events(df, station, metric_keys)
+        timestamps = [self._dt_string(value) for value in df['timestamp']]
         for metric in metric_keys:
             label = label_map.get(metric, self._metric_key_to_label(station, metric))
             canonical = self._label_to_canonical(label)
-            values = df[metric].dropna()
+            numeric_series = pd.to_numeric(df[metric], errors='coerce')
+            values = numeric_series.dropna()
             threshold_key = canonical if canonical in self.thresholds else label.split(' (')[0]
             thresholds = self.thresholds.get(threshold_key)
             charts.append(
@@ -1215,10 +1481,10 @@ class MongoDashboardRepository:
                     'thresholds': thresholds,
                     'series': [
                         {
-                            'x': self._dt_string(row['timestamp']),
-                            'y': None if pd.isna(row[metric]) else float(row[metric]),
+                            'x': stamp,
+                            'y': None if pd.isna(value) else float(value),
                         }
-                        for _, row in df[['timestamp', metric]].iterrows()
+                        for stamp, value in zip(timestamps, numeric_series)
                     ],
                     'summary': {
                         'min': None if values.empty else round(float(values.min()), 2),
@@ -1228,17 +1494,7 @@ class MongoDashboardRepository:
                     },
                 }
             )
-        table_rows = []
-        sample_df = df.tail(100).copy()
-        sample_df = sample_df.sort_values('timestamp', ascending=False)
-        for _, row in sample_df.iterrows():
-            table_row = {'timestamp': self._human_dt(row['timestamp'])}
-            for metric in metric_keys[:6]:
-                value = row.get(metric)
-                table_row[metric] = None if pd.isna(value) else round(float(value), 2)
-            table_rows.append(table_row)
-
-        return {
+        payload = {
             'station': station,
             'period': period,
             'aggregation': aggregation,
@@ -1246,10 +1502,19 @@ class MongoDashboardRepository:
             'metrics': [{'key': key, 'label': label_map.get(key, key)} for key in metric_keys],
             'available_metrics': self._metric_options(station, label_map),
             'charts': charts,
-            'table': table_rows,
+            'table': [],
             'events': events,
+            'sampling': {
+                'source_points': int(df.attrs.get('source_points', len(df))),
+                'returned_points': int(df.attrs.get('returned_points', len(df))),
+                'sampled': bool(df.attrs.get('sampled', False)),
+                'display_cap': df.attrs.get('display_cap'),
+            },
             **extra,
         }
+        if cache_key:
+            self.cache.set(cache_key, payload, ttl_seconds=30)
+        return payload
 
     def _detect_events(self, df: pd.DataFrame, station: Dict[str, Any], metric_keys: List[str]) -> List[Dict[str, Any]]:
         events: List[Dict[str, Any]] = []
@@ -1311,18 +1576,41 @@ class MongoDashboardRepository:
         include_trends: bool = False,
         include_sensor_trends: bool = False,
         clean: bool = False,
+        station: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        station = self.get_station_summary(station_id)
+        station = station or self.get_station_summary(station_id)
+        cache_key = f'latest_cards:{station["station_id"]}:{period.upper()}:{include_trends}:{include_sensor_trends}:{clean}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
         aggregation = self._quick_aggregation_for_period(period)
         quick_metrics = self._quick_metrics_for_station(station)
-        timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=quick_metrics, split_sensors=False, clean=clean)
+        trend_points = 360 if include_trends else 180
+        timeseries = self.get_timeseries(
+            station_id,
+            period=period,
+            aggregation=aggregation,
+            metrics=quick_metrics,
+            split_sensors=False,
+            clean=clean,
+            station=station,
+            display_points=trend_points,
+        )
         charts = timeseries.get('charts', [])
         cards = []
         trends = []
         sensor_trends_by_label: Dict[str, List[Dict[str, Any]]] = {}
         primary_aqi = None
         if include_trends and include_sensor_trends and station['device_type'] == 'IoTBox':
-            sensor_timeseries = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=quick_metrics, split_sensors=True)
+            sensor_timeseries = self.get_timeseries(
+                station_id,
+                period=period,
+                aggregation=aggregation,
+                metrics=quick_metrics,
+                split_sensors=True,
+                station=station,
+                display_points=trend_points,
+            )
             for sensor_chart in sensor_timeseries.get('charts', []):
                 sensor_trends_by_label.setdefault(sensor_chart['canonical_label'], []).append({
                     'metric': sensor_chart['metric'],
@@ -1360,7 +1648,7 @@ class MongoDashboardRepository:
                     'series': chart['series'],
                     'sensor_trends': sensor_trends_by_label.get(chart['canonical_label'], []),
                 })
-        return {
+        payload = {
             'station': station,
             'period': period,
             'clean': clean and station['device_type'] == 'Fidas_Palas',
@@ -1370,8 +1658,10 @@ class MongoDashboardRepository:
             'trends': trends,
             'primary_aqi': primary_aqi,
             'events': timeseries.get('events', []),
-            'latest_table': timeseries.get('table', [])[:8],
+            'latest_table': [],
         }
+        self.cache.set(cache_key, payload, ttl_seconds=30)
+        return payload
 
     def _extract_unit(self, label: str) -> str:
         if '(' in label and ')' in label:
@@ -1387,15 +1677,27 @@ class MongoDashboardRepository:
     ) -> List[Dict[str, Any]]:
         collection = self.db[collection_name]
         projection = {'_id': 0, time_field: 1, 'sizes': 1, 'spectra': 1}
-        count = collection.count_documents(query)
-        if count <= max_frames:
-            return list(collection.find(query, projection).sort(time_field, ASCENDING))
-        if count <= max_frames * 4:
-            docs = list(collection.find(query, projection).sort(time_field, ASCENDING))
-            indexes = np.linspace(0, len(docs) - 1, max_frames).round().astype(int)
-            return [docs[index] for index in sorted(set(indexes.tolist()))]
+        if time_field not in query:
+            pipeline = []
+            if query:
+                pipeline.extend([
+                    {'$sample': {'size': min(max_frames * 8, 2000)}},
+                    {'$match': query},
+                    {'$limit': max_frames},
+                ])
+            else:
+                pipeline.append({'$sample': {'size': max_frames}})
+            pipeline.extend([
+                {'$project': projection},
+                {'$sort': {time_field: ASCENDING}},
+            ])
+            return list(collection.aggregate(pipeline, allowDiskUse=True))
 
-        first = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
+        first_page = list(collection.find(query, projection).sort(time_field, ASCENDING).limit(max_frames + 1))
+        if len(first_page) <= max_frames:
+            return first_page
+
+        first = first_page[0] if first_page else collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
         last = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, DESCENDING)])
         if not first or not last or not first.get(time_field) or not last.get(time_field):
             return []
@@ -1434,8 +1736,19 @@ class MongoDashboardRepository:
                 numeric.append(None)
         return numeric
 
-    def get_fidas_spectra(self, station_id: str, period: str = '24H', max_frames: int = 700, clean: bool = False) -> Dict[str, Any]:
-        station = self.get_station_summary(station_id)
+    def get_fidas_spectra(
+        self,
+        station_id: str,
+        period: str = '24H',
+        max_frames: int = 700,
+        clean: bool = False,
+        station: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        station = station or self.get_station_summary(station_id)
+        cache_key = f'fidas_spectra:{station["station_id"]}:{period.upper()}:{max_frames}:{clean}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
         if station['device_type'] != 'Fidas_Palas':
             return {
                 'station': station,
@@ -1447,8 +1760,9 @@ class MongoDashboardRepository:
             }
 
         collection_name = self.settings.mongo_fidas_collection
-        if collection_name not in self.db.list_collection_names():
+        if not self._collection_exists(collection_name):
             return {'station': station, 'period': period, 'clean': clean, 'sizes': [], 'frames': [], 'message': 'Fidas collection was not found.'}
+        self._ensure_time_index(collection_name, 'datetime')
 
         query = self._base_query_for_station_period(station, period, 'datetime')
         if clean:
@@ -1473,7 +1787,7 @@ class MongoDashboardRepository:
             })
 
         sizes = sizes[: min((len(frame['values']) for frame in frames), default=len(sizes))]
-        return {
+        payload = {
             'station': station,
             'period': period,
             'clean': clean,
@@ -1484,6 +1798,8 @@ class MongoDashboardRepository:
             'frame_count': len(frames),
             'latest_index': max(0, len(frames) - 1),
         }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
 
     def get_network_summary(self) -> Dict[str, Any]:
         cache_key = 'network_summary'
@@ -1543,8 +1859,26 @@ class MongoDashboardRepository:
     # ------------------------------------------------------------------
     # Raw export helpers
     # ------------------------------------------------------------------
-    def export_frame(self, station_id: str, period: str, aggregation: str, metrics: Optional[List[str]], split_sensors: bool, clean: bool = False) -> pd.DataFrame:
-        payload = self.get_timeseries(station_id, period=period, aggregation=aggregation, metrics=metrics, split_sensors=split_sensors, clean=clean)
+    def export_frame(
+        self,
+        station_id: str,
+        period: str,
+        aggregation: str,
+        metrics: Optional[List[str]],
+        split_sensors: bool,
+        clean: bool = False,
+        station: Optional[Dict[str, Any]] = None,
+    ) -> pd.DataFrame:
+        payload = self.get_timeseries(
+            station_id,
+            period=period,
+            aggregation=aggregation,
+            metrics=metrics,
+            split_sensors=split_sensors,
+            clean=clean,
+            station=station,
+            display_points=None,
+        )
         charts = payload.get('charts', [])
         if not charts:
             return pd.DataFrame()

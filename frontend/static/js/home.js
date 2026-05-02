@@ -18,10 +18,12 @@
     search: '',
     filters: null,
     markers: null,
+    allStations: [],
     stations: [],
     selectedStationId: null,
     loadRequestId: 0,
     fitToken: 0,
+    markerKey: '',
   };
 
   const STATION_TYPE_STYLES = {
@@ -205,6 +207,9 @@
   }
 
   function renderMarkers(stations) {
+    const nextKey = stations.map((station) => station.station_id).join('|');
+    if (nextKey === state.markerKey) return;
+    state.markerKey = nextKey;
     if (state.markers) state.markers.remove();
     state.markers = L.layerGroup();
     const plotted = jitterStations(stations);
@@ -221,6 +226,27 @@
     });
     state.markers.addTo(map);
     fitMapToStations(plotted);
+  }
+
+  function stationMatchesFilters(station) {
+    if (state.privacy !== 'all' && privacyLabel(station).toLowerCase() !== state.privacy) return false;
+    if (state.device_type !== 'all' && station.device_type !== state.device_type) return false;
+    if (state.status !== 'all' && station.status !== state.status) return false;
+    if (!state.search) return true;
+    const term = state.search.toLowerCase();
+    return [
+      station.name,
+      station.device_label,
+      station.location_text,
+      station.status,
+      privacyLabel(station),
+    ].filter(Boolean).join(' ').toLowerCase().includes(term);
+  }
+
+  function applyStationFilters() {
+    state.stations = state.allStations.filter(stationMatchesFilters);
+    renderMarkers(state.stations);
+    renderLegend();
   }
 
   function resetDrawerTabs() {
@@ -306,15 +332,10 @@
   async function loadStations() {
     const requestId = ++state.loadRequestId;
     const url = new URL('/api/map/stations', window.location.origin);
-    url.searchParams.set('privacy', state.privacy);
-    url.searchParams.set('device_type', state.device_type);
-    url.searchParams.set('status', state.status);
-    url.searchParams.set('search', state.search);
     const payload = await App.fetchJSON(url.toString());
     if (requestId !== state.loadRequestId) return;
-    state.stations = payload.stations || [];
-    renderMarkers(state.stations);
-    renderLegend();
+    state.allStations = payload.stations || [];
+    applyStationFilters();
   }
 
   function debounce(fn, delay = 250) {
@@ -341,21 +362,21 @@
       state.search = event.target.value.trim();
       const other = event.target.id === 'station-search' ? document.getElementById('station-search-mobile') : document.getElementById('station-search');
       if (other && other.value !== event.target.value) other.value = event.target.value;
-      await loadStations();
+      applyStationFilters();
     }, 240);
 
     document.getElementById('station-search')?.addEventListener('input', debouncedSearch);
     document.getElementById('station-search-mobile')?.addEventListener('input', debouncedSearch);
 
     ['privacy-select', 'device-type-select', 'status-select'].forEach((id) => {
-      document.getElementById(id)?.addEventListener('change', async () => {
+      document.getElementById(id)?.addEventListener('change', () => {
         syncStateFromSelects('');
         renderFilterSelects();
-        await loadStations();
+        applyStationFilters();
       });
     });
 
-    document.getElementById('reset-filters')?.addEventListener('click', async () => {
+    document.getElementById('reset-filters')?.addEventListener('click', () => {
       state.privacy = 'all';
       state.device_type = 'all';
       state.status = 'all';
@@ -365,7 +386,7 @@
       const mobile = document.getElementById('station-search-mobile');
       if (mobile) mobile.value = '';
       renderFilterSelects();
-      await loadStations();
+      applyStationFilters();
       closeDrawer();
     });
 
@@ -374,11 +395,11 @@
       document.getElementById('mobile-filter-modal')?.showModal();
     });
     document.getElementById('close-mobile-filters')?.addEventListener('click', () => document.getElementById('mobile-filter-modal')?.close());
-    document.getElementById('apply-mobile-filters')?.addEventListener('click', async () => {
+    document.getElementById('apply-mobile-filters')?.addEventListener('click', () => {
       syncStateFromSelects('-mobile');
       renderFilterSelects();
       document.getElementById('mobile-filter-modal')?.close();
-      await loadStations();
+      applyStationFilters();
     });
     document.getElementById('reset-filters-mobile')?.addEventListener('click', () => {
       state.privacy = 'all';
