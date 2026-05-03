@@ -132,6 +132,7 @@ def create_app() -> FastAPI:
             'Meteorological': 'meteostation_station.html',
             'Buoy': 'buoy_station.html',
             'underwater_probe': 'underwater.html',
+            'SBNTransect': 'sbn_stations.html',
         }
         template_name = station_templates.get(summary.get('device_type'), 'station.html')
         return templates.TemplateResponse(request, template_name, {
@@ -326,6 +327,156 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=404, detail='No data available for export.')
         filename = f'{station_id}_{period}_{aggregation}.csv'
         return StreamingResponse(csv_iter, media_type='text/csv', headers={'Content-Disposition': f'attachment; filename={filename}'})
+
+    @app.get('/api/sbn/options')
+    def api_sbn_options(repo: MongoDashboardRepository = Depends(get_repo)):
+        return cached_json_response(repo, 'sbn_options', repo.get_sbn_options, ttl_seconds=300)
+
+    @app.get('/api/sbn/cells')
+    def api_sbn_cells(
+        campaign_month: str = Query(...),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'sbn_cells:{campaign_month}:{instrument}:{depth_bin_m}:{metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_sbn_cells(campaign_month=campaign_month, instrument=instrument, depth_bin_m=depth_bin_m, metric=metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/sbn/selection')
+    def api_sbn_selection(
+        instrument: str = Query(default='combined'),
+        campaign_month: Optional[str] = Query(default=None),
+        metric: Optional[str] = Query(default=None),
+        depth_bin_m: int = Query(default=0),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'sbn_selection:{instrument}:{campaign_month or ""}:{metric or ""}:{depth_bin_m}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_sbn_selection(instrument=instrument, campaign_month=campaign_month, metric=metric, depth_bin_m=depth_bin_m),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/sbn/trend')
+    def api_sbn_trend(
+        waypoint_id: str = Query(...),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        try:
+            key = f'sbn_trend:{waypoint_id}:{instrument}:{depth_bin_m}:{metric}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_sbn_trend(waypoint_id=waypoint_id, instrument=instrument, depth_bin_m=depth_bin_m, metric=metric),
+                ttl_seconds=60,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail='SBN waypoint not found.') from exc
+
+    @app.get('/api/sbn/heatmap/depth-waypoint')
+    def api_sbn_depth_waypoint_heatmap(
+        campaign_month: str = Query(...),
+        instrument: str = Query(default='combined'),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'sbn_depth_waypoint:{campaign_month}:{instrument}:{metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_sbn_depth_waypoint_heatmap(campaign_month=campaign_month, instrument=instrument, metric=metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/sbn/heatmap/month-depth')
+    def api_sbn_month_depth_heatmap(
+        waypoint_id: str = Query(...),
+        instrument: str = Query(default='combined'),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        try:
+            key = f'sbn_month_depth:{waypoint_id}:{instrument}:{metric}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_sbn_month_depth_heatmap(waypoint_id=waypoint_id, instrument=instrument, metric=metric),
+                ttl_seconds=60,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail='SBN waypoint not found.') from exc
+
+    @app.get('/api/sbn/heatmap/month-waypoint')
+    def api_sbn_month_waypoint_heatmap(
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'sbn_month_waypoint:{instrument}:{depth_bin_m}:{metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_sbn_month_waypoint_heatmap(instrument=instrument, depth_bin_m=depth_bin_m, metric=metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/sbn/crossplot')
+    def api_sbn_crossplot(
+        campaign_month: str = Query(...),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        x_metric: str = Query(...),
+        y_metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'sbn_crossplot:{campaign_month}:{instrument}:{depth_bin_m}:{x_metric}:{y_metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_sbn_crossplot(campaign_month=campaign_month, instrument=instrument, depth_bin_m=depth_bin_m, x_metric=x_metric, y_metric=y_metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/sbn/availability')
+    def api_sbn_availability(
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'sbn_availability:{instrument}:{depth_bin_m}:{metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_sbn_availability(instrument=instrument, depth_bin_m=depth_bin_m, metric=metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/sbn/profiles')
+    def api_sbn_profiles(
+        campaign_month: Optional[str] = Query(default=None),
+        instrument: Optional[str] = Query(default=None),
+        waypoint_id: Optional[str] = Query(default=None),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'sbn_profiles:{campaign_month or ""}:{instrument or ""}:{waypoint_id or ""}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_sbn_profiles(campaign_month=campaign_month, instrument=instrument, waypoint_id=waypoint_id),
+            ttl_seconds=120,
+        )
 
     return app
 

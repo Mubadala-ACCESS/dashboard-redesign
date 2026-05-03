@@ -177,6 +177,75 @@ class MongoDashboardRepository:
         'tds_mg_l': ['tds_mg_l', 'tds_mg_per_l_field'],
         'battery_power_volt': ['battery_power_volt', 'batt_v_field'],
     }
+    SBN_COLLECTIONS = {
+        'events': 'sbn_transect_events',
+        'profiles': 'sbn_transect_profiles',
+        'samples': 'sbn_transect_samples',
+        'cells': 'sbn_transect_cells',
+        'registry': 'sbn_transect_column_registry',
+    }
+    SBN_METRIC_LABELS = {
+        'temp_c': 'Temperature',
+        'temp2_c': 'Temperature 2',
+        'salinity_psu': 'Salinity',
+        'do_mg_l': 'Dissolved Oxygen',
+        'do_pct_sat': 'Dissolved Oxygen Saturation',
+        'chlorophyll_ug_l': 'Chlorophyll-A',
+        'chlorophyll_rfu': 'Chlorophyll-A',
+        'turbidity_fnu': 'Turbidity',
+        'ph': 'pH',
+        'par': 'PAR',
+        'phycoerythrin_ug_l': 'Phycoerythrin',
+        'phycoerythrin_rfu': 'Phycoerythrin',
+        'cond_ms_cm': 'Conductivity',
+        'sp_cond_ms_cm': 'Specific Conductivity',
+        'pressure_dbar': 'Pressure',
+        'pressure_psi_a': 'Pressure',
+        'depth_m': 'Depth',
+        'fdom_qsu': 'fDOM',
+        'fdom_rfu': 'fDOM',
+        'tds_mg_l': 'Total Dissolved Solids',
+        'orp_mv': 'ORP',
+    }
+    SBN_METRIC_UNITS = {
+        'temp_c': '°C',
+        'temp2_c': '°C',
+        'salinity_psu': 'PSU',
+        'do_mg_l': 'mg/L',
+        'do_pct_sat': '%',
+        'chlorophyll_ug_l': 'µg/L',
+        'chlorophyll_rfu': 'RFU',
+        'turbidity_fnu': 'FNU',
+        'ph': '',
+        'par': 'rel.',
+        'phycoerythrin_ug_l': 'µg/L',
+        'phycoerythrin_rfu': 'RFU',
+        'cond_ms_cm': 'mS/cm',
+        'sp_cond_ms_cm': 'mS/cm',
+        'pressure_dbar': 'dbar',
+        'pressure_psi_a': 'psi',
+        'depth_m': 'm',
+        'fdom_qsu': 'QSU',
+        'fdom_rfu': 'RFU',
+        'tds_mg_l': 'mg/L',
+        'orp_mv': 'mV',
+    }
+    SBN_METRIC_PRIORITY = [
+        'temp_c',
+        'salinity_psu',
+        'do_mg_l',
+        'do_pct_sat',
+        'chlorophyll_ug_l',
+        'chlorophyll_rfu',
+        'turbidity_fnu',
+        'ph',
+        'par',
+        'phycoerythrin_ug_l',
+        'phycoerythrin_rfu',
+        'cond_ms_cm',
+        'sp_cond_ms_cm',
+        'pressure_dbar',
+    ]
 
     def __init__(self, settings: Settings, metadata_service: MetadataService):
         self.settings = settings
@@ -196,6 +265,7 @@ class MongoDashboardRepository:
         self.thresholds = self.metadata_service.thresholds()
         self.special_availability = self.metadata_service.special_availability()
         self._ensure_station_indexes()
+        self._ensure_sbn_indexes()
         self.station_projection = {
             '_id': 1,
             'id': 1,
@@ -237,6 +307,25 @@ class MongoDashboardRepository:
             collection.create_index([('type', ASCENDING), ('status', ASCENDING), ('public', ASCENDING)], background=True)
             collection.create_index([('lat', ASCENDING), ('long', ASCENDING)], background=True)
             collection.create_index([('name', ASCENDING)], background=True)
+        except Exception:
+            return
+
+    def _ensure_sbn_indexes(self) -> None:
+        try:
+            self.db[self.SBN_COLLECTIONS['events']].create_index([('campaign_month', ASCENDING)], background=True)
+            self.db[self.SBN_COLLECTIONS['profiles']].create_index(
+                [('campaign_month', ASCENDING), ('instrument', ASCENDING), ('waypoint_order', ASCENDING)],
+                background=True,
+            )
+            self.db[self.SBN_COLLECTIONS['profiles']].create_index([('waypoint_id', ASCENDING), ('campaign_month', ASCENDING)], background=True)
+            self.db[self.SBN_COLLECTIONS['cells']].create_index(
+                [('campaign_month', ASCENDING), ('instrument', ASCENDING), ('depth_bin_m', ASCENDING), ('waypoint_order', ASCENDING)],
+                background=True,
+            )
+            self.db[self.SBN_COLLECTIONS['cells']].create_index(
+                [('waypoint_id', ASCENDING), ('instrument', ASCENDING), ('depth_bin_m', ASCENDING), ('campaign_month', ASCENDING)],
+                background=True,
+            )
         except Exception:
             return
 
@@ -509,6 +598,90 @@ class MongoDashboardRepository:
             return f'station{station_num}', 'datetime'
         return None, None
 
+    def _sbn_waypoint_order(self, value: str | None) -> Optional[int]:
+        if not value:
+            return None
+        match = re.search(r'XT[_\s-]?(\d{1,2})', str(value), flags=re.IGNORECASE)
+        if not match:
+            return None
+        order = int(match.group(1))
+        return order if 1 <= order <= 99 else None
+
+    def _sbn_canonical_waypoint(self, value: str | None) -> Optional[str]:
+        order = self._sbn_waypoint_order(value)
+        if order is None:
+            return None
+        return f'SBN_XT{order:02d}'
+
+    def _sbn_public_waypoint(self, value: str | None) -> Optional[str]:
+        order = self._sbn_waypoint_order(value)
+        if order is None:
+            return None
+        return f'XT{order:02d}'
+
+    def _sbn_metric_label(self, metric: str) -> str:
+        return self.SBN_METRIC_LABELS.get(metric, self._pretty_metric_label(metric))
+
+    def _sbn_metric_unit(self, metric: str) -> str:
+        if metric in self.SBN_METRIC_UNITS:
+            return self.SBN_METRIC_UNITS[metric]
+        label = self._sbn_metric_label(metric).lower()
+        if 'temperature' in label:
+            return '°C'
+        if 'salinity' in label:
+            return 'PSU'
+        if 'oxygen' in label and 'saturation' in label:
+            return '%'
+        if 'oxygen' in label:
+            return 'mg/L'
+        if 'turbidity' in label:
+            return 'FNU'
+        if 'chlorophyll' in label or 'phycoerythrin' in label:
+            return 'µg/L'
+        if 'conductivity' in label:
+            return 'mS/cm'
+        if 'pressure' in label:
+            return 'dbar'
+        return ''
+
+    def _sbn_metric_stats_from_doc(self, doc: Dict[str, Any], metric: str) -> Optional[Dict[str, Any]]:
+        metrics = doc.get('metrics')
+        if not isinstance(metrics, dict):
+            return None
+        stats = metrics.get(metric)
+        if not isinstance(stats, dict):
+            return None
+        avg = stats.get('avg')
+        if not self._is_numeric_scalar(avg):
+            return None
+        return {
+            'avg': float(avg),
+            'min': float(stats['min']) if self._is_numeric_scalar(stats.get('min')) else None,
+            'max': float(stats['max']) if self._is_numeric_scalar(stats.get('max')) else None,
+            'n': int(stats.get('n') or 0),
+        }
+
+    def _sbn_time_extent(self, waypoint_id: Optional[str] = None) -> Dict[str, Optional[str]]:
+        canonical = self._sbn_canonical_waypoint(waypoint_id) if waypoint_id else None
+        cache_key = f'sbn_time_extent:{canonical or "all"}'
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+        profiles = self.db[self.SBN_COLLECTIONS['profiles']]
+        query: Dict[str, Any] = {}
+        if canonical:
+            query['waypoint_id'] = canonical
+        projection = {'ts_min': 1, 'ts_max': 1}
+        first = profiles.find_one({**query, 'ts_min': {'$exists': True}}, projection=projection, sort=[('ts_min', ASCENDING)])
+        last = profiles.find_one({**query, 'ts_max': {'$exists': True}}, projection=projection, sort=[('ts_max', DESCENDING)])
+        payload = {
+            'earliest': self._human_dt(first.get('ts_min') if first else None) if first else None,
+            'latest': self._human_dt(last.get('ts_max') if last else None) if last else None,
+            'latest_iso': self._dt_string(last.get('ts_max') if last else None) if last else None,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=300)
+        return payload
+
     def _station_has_collection(self, station: Dict[str, Any]) -> bool:
         collection_name, _ = self._collection_for_station(station)
         return self._collection_exists(collection_name)
@@ -518,6 +691,11 @@ class MongoDashboardRepository:
         cached = self.cache.get(cache_key)
         if cached:
             return cached
+
+        if station.get('device_type') == 'SBNTransect':
+            payload = self._sbn_time_extent(str(station.get('station_id') or ''))
+            self.cache.set(cache_key, payload, ttl_seconds=300)
+            return payload
 
         collection_name, time_field = self._collection_for_station(station)
         if not self._collection_exists(collection_name):
@@ -578,7 +756,7 @@ class MongoDashboardRepository:
         freshness = self._freshness_payload(station, latest.get(time_field) if latest and time_field in latest else None)
         capabilities = {
             'quick_view': True,
-            'advanced_analysis': station['device_type'] in self.TIME_SERIES_TYPES,
+            'advanced_analysis': station['device_type'] in self.TIME_SERIES_TYPES or station['device_type'] == 'SBNTransect',
             'metadata': True,
             'raw_export': station['device_type'] in self.TIME_SERIES_TYPES,
         }
@@ -1776,6 +1954,743 @@ class MongoDashboardRepository:
 
     def _detect_events(self, df: pd.DataFrame, station: Dict[str, Any], metric_keys: List[str]) -> List[Dict[str, Any]]:
         return []
+
+    # ------------------------------------------------------------------
+    # SBN transect rollup API
+    # ------------------------------------------------------------------
+    def _sbn_waypoint_docs(self) -> List[Dict[str, Any]]:
+        cache_key = 'sbn_waypoints'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        docs = list(
+            self.db[self.settings.mongo_stations_info_collection].find(
+                {'type': 'SBNTransect'},
+                {'_id': 0, 'id': 1, 'name': 1, 'lat': 1, 'long': 1, 'status': 1, 'public': 1},
+            )
+        )
+        waypoints: List[Dict[str, Any]] = []
+        for doc in docs:
+            canonical = self._sbn_canonical_waypoint(str(doc.get('id') or doc.get('name') or ''))
+            label = self._sbn_public_waypoint(canonical)
+            order = self._sbn_waypoint_order(canonical)
+            if not canonical or not label or order is None:
+                continue
+            try:
+                lat = float(doc.get('lat')) if doc.get('lat') is not None else None
+                lon = float(doc.get('long')) if doc.get('long') is not None else None
+            except Exception:
+                lat = None
+                lon = None
+            waypoints.append(
+                {
+                    'id': label,
+                    'label': label,
+                    'name': doc.get('name') or f'SBN Transect Waypoint {order}',
+                    'order': order,
+                    'lat': lat,
+                    'lon': lon,
+                    'status': doc.get('status') or 'Active',
+                    'privacy': 'Public' if doc.get('public', True) else 'Private',
+                }
+            )
+        if not waypoints and self._collection_exists(self.SBN_COLLECTIONS['cells']):
+            pipeline = [
+                {'$group': {'_id': '$waypoint_id', 'order': {'$first': '$waypoint_order'}, 'lat': {'$first': '$lat'}, 'lon': {'$first': '$long'}}},
+                {'$sort': {'order': ASCENDING}},
+            ]
+            for doc in self.db[self.SBN_COLLECTIONS['cells']].aggregate(pipeline):
+                label = self._sbn_public_waypoint(doc.get('_id'))
+                if not label:
+                    continue
+                waypoints.append(
+                    {
+                        'id': label,
+                        'label': label,
+                        'name': f'SBN Transect Waypoint {int(doc.get("order") or 0)}',
+                        'order': int(doc.get('order') or self._sbn_waypoint_order(label) or 0),
+                        'lat': doc.get('lat'),
+                        'lon': doc.get('lon'),
+                        'status': 'Active',
+                        'privacy': 'Public',
+                    }
+                )
+        waypoints.sort(key=lambda item: item['order'])
+        self.cache.set(cache_key, waypoints, ttl_seconds=300)
+        return waypoints
+
+    def _sbn_available_metrics(self) -> List[Dict[str, Any]]:
+        cache_key = 'sbn_available_metrics'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        if not self._collection_exists(self.SBN_COLLECTIONS['cells']):
+            return []
+        pipeline = [
+            {'$match': {'depth_bin_m': {'$gte': 0}}},
+            {'$project': {'pairs': {'$objectToArray': '$metrics'}}},
+            {'$unwind': '$pairs'},
+            {'$group': {'_id': '$pairs.k', 'cells': {'$sum': 1}, 'samples': {'$sum': {'$ifNull': ['$pairs.v.n', 0]}}}},
+        ]
+        metrics = []
+        rank = {key: index for index, key in enumerate(self.SBN_METRIC_PRIORITY)}
+        for doc in self.db[self.SBN_COLLECTIONS['cells']].aggregate(pipeline, allowDiskUse=True):
+            key = doc.get('_id')
+            if not key:
+                continue
+            metrics.append(
+                {
+                    'key': key,
+                    'label': self._sbn_metric_label(key),
+                    'unit': self._sbn_metric_unit(key),
+                    'cells': int(doc.get('cells') or 0),
+                    'samples': int(doc.get('samples') or 0),
+                    'rank': rank.get(key, len(rank)),
+                }
+            )
+        metrics.sort(key=lambda item: (item.pop('rank'), item['label'].lower(), item['key']))
+        self.cache.set(cache_key, metrics, ttl_seconds=300)
+        return metrics
+
+    def _sbn_normalized_depth(self, value: Any) -> Optional[int]:
+        try:
+            depth = int(round(float(value)))
+        except (TypeError, ValueError):
+            return None
+        return depth if depth >= 0 else None
+
+    def _sbn_valid_depths(self, values: Iterable[Any]) -> List[int]:
+        depths = sorted({
+            depth
+            for depth in (self._sbn_normalized_depth(value) for value in values)
+            if depth is not None
+        })
+        return depths
+
+    def _sbn_surface_depth(self, depths: List[int]) -> int:
+        return min(depths) if depths else 0
+
+    def _sbn_cell_query(self, campaign_month: Optional[str], depth_bin_m: Optional[int], metric: str) -> Dict[str, Any]:
+        query: Dict[str, Any] = {f'metrics.{metric}.avg': {'$exists': True}}
+        if campaign_month:
+            query['campaign_month'] = campaign_month
+        normalized_depth = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            query['depth_bin_m'] = {'$gte': 0}
+        else:
+            query['depth_bin_m'] = normalized_depth if normalized_depth is not None else 0
+        return query
+
+    def _sbn_format_cell(self, doc: Dict[str, Any], metric: str, instrument: str | None = None) -> Dict[str, Any]:
+        stats = self._sbn_metric_stats_from_doc(doc, metric)
+        label = self._sbn_public_waypoint(doc.get('waypoint_id')) or str(doc.get('waypoint_id') or '')
+        return {
+            'campaign_month': doc.get('campaign_month'),
+            'waypoint_id': label,
+            'waypoint_label': label,
+            'waypoint_order': int(doc.get('waypoint_order') or self._sbn_waypoint_order(label) or 0),
+            'instrument': instrument or doc.get('instrument'),
+            'source_instruments': doc.get('source_instruments'),
+            'depth_bin_m': doc.get('depth_bin_m'),
+            'lat': doc.get('lat'),
+            'lon': doc.get('long'),
+            'metric': metric,
+            'value': stats.get('avg') if stats else None,
+            'stats': stats,
+            'metrics': {metric: stats} if stats else {},
+        }
+
+    def _sbn_missing_cell(self, waypoint: Dict[str, Any], campaign_month: Optional[str], instrument: str, depth_bin_m: Optional[int], metric: str) -> Dict[str, Any]:
+        return {
+            'campaign_month': campaign_month,
+            'waypoint_id': waypoint['id'],
+            'waypoint_label': waypoint['label'],
+            'waypoint_order': waypoint['order'],
+            'instrument': instrument,
+            'source_instruments': [],
+            'depth_bin_m': depth_bin_m,
+            'lat': waypoint.get('lat'),
+            'lon': waypoint.get('lon'),
+            'metric': metric,
+            'value': None,
+            'stats': None,
+            'metrics': {},
+        }
+
+    def _sbn_combine_docs(self, docs: List[Dict[str, Any]], metric: str, group_key: str) -> List[Dict[str, Any]]:
+        grouped: Dict[Any, List[Dict[str, Any]]] = {}
+        for doc in docs:
+            grouped.setdefault(doc.get(group_key), []).append(doc)
+        combined = []
+        for key, group in grouped.items():
+            stats_list = [self._sbn_metric_stats_from_doc(doc, metric) for doc in group]
+            stats_list = [stats for stats in stats_list if stats and self._is_numeric_scalar(stats.get('avg'))]
+            if not stats_list:
+                continue
+            total_n = sum(max(0, int(stats.get('n') or 0)) for stats in stats_list)
+            weights = [max(1, int(stats.get('n') or 0)) for stats in stats_list]
+            avg = sum(stats['avg'] * weight for stats, weight in zip(stats_list, weights)) / sum(weights)
+            mins = [stats.get('min') for stats in stats_list if stats.get('min') is not None]
+            maxes = [stats.get('max') for stats in stats_list if stats.get('max') is not None]
+            base = dict(group[0])
+            base['instrument'] = 'combined'
+            base['source_instruments'] = sorted({doc.get('instrument') for doc in group if doc.get('instrument')})
+            base['metrics'] = {
+                metric: {
+                    'avg': avg,
+                    'min': min(mins) if mins else None,
+                    'max': max(maxes) if maxes else None,
+                    'n': total_n,
+                }
+            }
+            combined.append(base)
+        return combined
+
+    def get_sbn_options(self) -> Dict[str, Any]:
+        cache_key = 'sbn_options_v1'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        events = []
+        if self._collection_exists(self.SBN_COLLECTIONS['events']):
+            events = list(
+                self.db[self.SBN_COLLECTIONS['events']].find(
+                    {},
+                    {'_id': 0, 'campaign_id': 1, 'campaign_month': 1, 'transect_date': 1, 'status': 1, 'profile_count': 1, 'instruments': 1, 'complete_instruments': 1},
+                ).sort('campaign_month', ASCENDING)
+            )
+        cell_months: List[str] = []
+        if self._collection_exists(self.SBN_COLLECTIONS['cells']):
+            cell_months = sorted(
+                value
+                for value in self.db[self.SBN_COLLECTIONS['cells']].distinct('campaign_month', {'depth_bin_m': {'$gte': 0}})
+                if value
+            )
+        months = cell_months or [event['campaign_month'] for event in events if event.get('campaign_month')]
+        instruments = sorted(
+            value
+            for value in (self.db[self.SBN_COLLECTIONS['cells']].distinct('instrument', {'depth_bin_m': {'$gte': 0}}) if self._collection_exists(self.SBN_COLLECTIONS['cells']) else [])
+            if value
+        )
+        months_by_instrument: Dict[str, List[str]] = {}
+        if self._collection_exists(self.SBN_COLLECTIONS['cells']):
+            for doc in self.db[self.SBN_COLLECTIONS['cells']].aggregate([
+                {'$match': {'depth_bin_m': {'$gte': 0}}},
+                {'$group': {'_id': '$instrument', 'months': {'$addToSet': '$campaign_month'}}},
+            ]):
+                if doc.get('_id'):
+                    months_by_instrument[str(doc['_id'])] = sorted(month for month in doc.get('months', []) if month)
+        depths = self._sbn_valid_depths(
+            self.db[self.SBN_COLLECTIONS['cells']].distinct('depth_bin_m') if self._collection_exists(self.SBN_COLLECTIONS['cells']) else []
+        )
+        payload = {
+            'months': months,
+            'events': [
+                {
+                    **event,
+                    'transect_date': self._dt_string(event.get('transect_date')) if event.get('transect_date') else None,
+                }
+                for event in events
+            ],
+            'instruments': instruments,
+            'months_by_instrument': months_by_instrument,
+            'waypoints': self._sbn_waypoint_docs(),
+            'depths': depths,
+            'metrics': self._sbn_available_metrics(),
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=300)
+        return payload
+
+    def _sbn_instrument_query(self, instrument: str) -> Dict[str, Any]:
+        return {} if instrument == 'combined' else {'instrument': instrument}
+
+    def _sbn_order_metric_docs(self, metric_keys: Iterable[str]) -> List[Dict[str, Any]]:
+        available = {item['key']: item for item in self._sbn_available_metrics()}
+        rank = {key: index for index, key in enumerate(self.SBN_METRIC_PRIORITY)}
+        ordered = sorted(
+            [key for key in metric_keys if key],
+            key=lambda key: (rank.get(key, len(rank)), self._sbn_metric_label(key).lower(), key),
+        )
+        return [
+            {
+                'key': key,
+                'label': available.get(key, {}).get('label') or self._sbn_metric_label(key),
+                'unit': available.get(key, {}).get('unit') or self._sbn_metric_unit(key),
+            }
+            for key in ordered
+        ]
+
+    def _sbn_distinct_months(self, instrument: str) -> List[str]:
+        query = {'depth_bin_m': {'$gte': 0}, **self._sbn_instrument_query(instrument)}
+        return sorted(month for month in self.db[self.SBN_COLLECTIONS['cells']].distinct('campaign_month', query) if month)
+
+    def _sbn_distinct_metrics(self, instrument: str, campaign_month: str) -> List[str]:
+        query = {'campaign_month': campaign_month, 'depth_bin_m': {'$gte': 0}, **self._sbn_instrument_query(instrument)}
+        cache_key = f'sbn_metric_keys:{instrument}:{campaign_month}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        pipeline = [
+            {'$match': query},
+            {'$project': {'pairs': {'$objectToArray': '$metrics'}}},
+            {'$unwind': '$pairs'},
+            {'$group': {'_id': '$pairs.k'}},
+        ]
+        metrics = [doc['_id'] for doc in self.db[self.SBN_COLLECTIONS['cells']].aggregate(pipeline, allowDiskUse=True) if doc.get('_id')]
+        ordered = [item['key'] for item in self._sbn_order_metric_docs(metrics)]
+        self.cache.set(cache_key, ordered, ttl_seconds=180)
+        return ordered
+
+    def _sbn_distinct_depths(self, instrument: str, campaign_month: str, metric: str) -> List[int]:
+        query = {
+            'campaign_month': campaign_month,
+            'depth_bin_m': {'$gte': 0},
+            f'metrics.{metric}.avg': {'$exists': True},
+            **self._sbn_instrument_query(instrument),
+        }
+        return self._sbn_valid_depths(self.db[self.SBN_COLLECTIONS['cells']].distinct('depth_bin_m', query))
+
+    def _sbn_closest_depth(self, requested: int, depths: List[int]) -> int:
+        if not depths:
+            return int(requested or 0)
+        return min(depths, key=lambda depth: (abs(depth - int(requested or 0)), depth))
+
+    def get_sbn_selection(
+        self,
+        instrument: str = 'combined',
+        campaign_month: Optional[str] = None,
+        metric: Optional[str] = None,
+        depth_bin_m: int = 0,
+    ) -> Dict[str, Any]:
+        valid_instruments = ['combined'] + self.get_sbn_options().get('instruments', [])
+        if instrument not in valid_instruments:
+            instrument = 'combined'
+
+        months = self._sbn_distinct_months(instrument)
+        if not months and instrument != 'combined':
+            instrument = 'combined'
+            months = self._sbn_distinct_months(instrument)
+        if not months:
+            return {
+                'instrument': instrument,
+                'campaign_month': campaign_month,
+                'metric': metric,
+                'depth_bin_m': int(depth_bin_m or 0),
+                'months': [],
+                'metrics': [],
+                'depths': [],
+                'compare_months': [],
+                'has_data': False,
+            }
+
+        if campaign_month not in months:
+            campaign_month = months[-1]
+
+        metric_keys = self._sbn_distinct_metrics(instrument, campaign_month)
+        if not metric_keys and instrument != 'combined':
+            instrument = 'combined'
+            months = self._sbn_distinct_months(instrument)
+            campaign_month = campaign_month if campaign_month in months else months[-1]
+            metric_keys = self._sbn_distinct_metrics(instrument, campaign_month)
+        if metric not in metric_keys:
+            preferred = [key for key in self.SBN_METRIC_PRIORITY if key in metric_keys]
+            metric = (preferred or metric_keys or [metric or ''])[0]
+
+        depths = self._sbn_distinct_depths(instrument, campaign_month, metric)
+        if not depths and metric_keys:
+            # Some instruments/months have sparse parameter coverage. Pick the first
+            # metric with depth cells so controls cannot land on an empty dashboard.
+            for candidate in metric_keys:
+                candidate_depths = self._sbn_distinct_depths(instrument, campaign_month, candidate)
+                if candidate_depths:
+                    metric = candidate
+                    depths = candidate_depths
+                    break
+        requested_depth = self._sbn_normalized_depth(depth_bin_m)
+        resolved_depth = self._sbn_closest_depth(requested_depth if requested_depth is not None else self._sbn_surface_depth(depths), depths)
+        compare_months = sorted(
+            month
+            for month in self.db[self.SBN_COLLECTIONS['cells']].distinct(
+                'campaign_month',
+                {
+                    f'metrics.{metric}.avg': {'$exists': True},
+                    'depth_bin_m': resolved_depth,
+                    **self._sbn_instrument_query(instrument),
+                },
+            )
+            if month
+        )
+        payload = {
+            'instrument': instrument,
+            'campaign_month': campaign_month,
+            'metric': metric,
+            'depth_bin_m': resolved_depth,
+            'months': months,
+            'metrics': self._sbn_order_metric_docs(metric_keys),
+            'depths': depths,
+            'compare_months': compare_months,
+            'has_data': bool(depths and metric),
+        }
+        return payload
+
+    def get_sbn_cells(
+        self,
+        campaign_month: str,
+        instrument: str,
+        depth_bin_m: int,
+        metric: str,
+        include_missing: bool = True,
+    ) -> Dict[str, Any]:
+        cache_key = f'sbn_cells:{campaign_month}:{instrument}:{depth_bin_m}:{metric}:{include_missing}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        collection = self.db[self.SBN_COLLECTIONS['cells']]
+        query = self._sbn_cell_query(campaign_month, depth_bin_m, metric)
+        projection = {
+            '_id': 0,
+            'campaign_month': 1,
+            'waypoint_id': 1,
+            'waypoint_order': 1,
+            'instrument': 1,
+            'depth_bin_m': 1,
+            'lat': 1,
+            'long': 1,
+            f'metrics.{metric}': 1,
+        }
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        docs = list(collection.find(query, projection).sort([('waypoint_order', ASCENDING), ('instrument', ASCENDING)]))
+        if instrument == 'combined':
+            docs = self._sbn_combine_docs(docs, metric, 'waypoint_id')
+        rows_by_label = {self._sbn_public_waypoint(doc.get('waypoint_id')): self._sbn_format_cell(doc, metric, instrument) for doc in docs}
+        if include_missing:
+            rows = [rows_by_label.get(waypoint['label']) or self._sbn_missing_cell(waypoint, campaign_month, instrument, depth_bin_m, metric) for waypoint in self._sbn_waypoint_docs()]
+        else:
+            rows = sorted(rows_by_label.values(), key=lambda item: item['waypoint_order'])
+        payload = {
+            'campaign_month': campaign_month,
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'metric': {'key': metric, 'label': self._sbn_metric_label(metric), 'unit': self._sbn_metric_unit(metric)},
+            'data': rows,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_sbn_trend(self, waypoint_id: str, instrument: str, depth_bin_m: int, metric: str) -> Dict[str, Any]:
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        canonical = self._sbn_canonical_waypoint(waypoint_id)
+        if not canonical:
+            raise KeyError('Waypoint not found.')
+        cache_key = f'sbn_trend:{canonical}:{instrument}:{depth_bin_m}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query = self._sbn_cell_query(None, depth_bin_m, metric)
+        query['waypoint_id'] = canonical
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        projection = {'_id': 0, 'campaign_month': 1, 'waypoint_id': 1, 'waypoint_order': 1, 'instrument': 1, 'depth_bin_m': 1, f'metrics.{metric}': 1}
+        docs = list(self.db[self.SBN_COLLECTIONS['cells']].find(query, projection).sort([('campaign_month', ASCENDING), ('instrument', ASCENDING)]))
+        if instrument == 'combined':
+            docs = self._sbn_combine_docs(docs, metric, 'campaign_month')
+        rows = [self._sbn_format_cell(doc, metric, instrument) for doc in sorted(docs, key=lambda item: item.get('campaign_month') or '')]
+        payload = {
+            'waypoint_id': self._sbn_public_waypoint(canonical),
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'metric': {'key': metric, 'label': self._sbn_metric_label(metric), 'unit': self._sbn_metric_unit(metric)},
+            'data': rows,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_sbn_depth_waypoint_heatmap(self, campaign_month: str, instrument: str, metric: str) -> Dict[str, Any]:
+        cache_key = f'sbn_depth_waypoint_heatmap:{campaign_month}:{instrument}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query = self._sbn_cell_query(campaign_month, None, metric)
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        projection = {'_id': 0, 'campaign_month': 1, 'waypoint_id': 1, 'waypoint_order': 1, 'instrument': 1, 'depth_bin_m': 1, f'metrics.{metric}': 1}
+        docs = list(self.db[self.SBN_COLLECTIONS['cells']].find(query, projection))
+        if instrument == 'combined':
+            pair_groups: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+            for doc in docs:
+                depth = self._sbn_normalized_depth(doc.get('depth_bin_m'))
+                if depth is not None:
+                    pair_groups.setdefault((doc.get('waypoint_id'), depth), []).append(doc)
+            docs = []
+            for group in pair_groups.values():
+                docs.extend(self._sbn_combine_docs(group, metric, 'campaign_month')[:1])
+        depths = self._sbn_valid_depths(doc.get('depth_bin_m') for doc in docs)
+        waypoints = self._sbn_waypoint_docs()
+        values: Dict[Tuple[str, int], float] = {}
+        for doc in docs:
+            label = self._sbn_public_waypoint(doc.get('waypoint_id'))
+            stats = self._sbn_metric_stats_from_doc(doc, metric)
+            if label and stats:
+                depth = self._sbn_normalized_depth(doc.get('depth_bin_m'))
+                if depth is not None:
+                    values[(label, depth)] = stats['avg']
+        z = [[values.get((waypoint['label'], depth)) for waypoint in waypoints] for depth in depths]
+        payload = {
+            'campaign_month': campaign_month,
+            'instrument': instrument,
+            'metric': {'key': metric, 'label': self._sbn_metric_label(metric), 'unit': self._sbn_metric_unit(metric)},
+            'x': [waypoint['label'] for waypoint in waypoints],
+            'y': depths,
+            'z': z,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_sbn_month_depth_heatmap(self, waypoint_id: str, instrument: str, metric: str) -> Dict[str, Any]:
+        canonical = self._sbn_canonical_waypoint(waypoint_id)
+        if not canonical:
+            raise KeyError('Waypoint not found.')
+        cache_key = f'sbn_month_depth_heatmap:{canonical}:{instrument}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query = self._sbn_cell_query(None, None, metric)
+        query['waypoint_id'] = canonical
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        projection = {'_id': 0, 'campaign_month': 1, 'waypoint_id': 1, 'instrument': 1, 'depth_bin_m': 1, f'metrics.{metric}': 1}
+        raw_docs = list(self.db[self.SBN_COLLECTIONS['cells']].find(query, projection))
+        if instrument == 'combined':
+            pair_groups: Dict[Tuple[str, int], List[Dict[str, Any]]] = {}
+            for doc in raw_docs:
+                depth = self._sbn_normalized_depth(doc.get('depth_bin_m'))
+                if depth is not None:
+                    pair_groups.setdefault((doc.get('campaign_month'), depth), []).append(doc)
+            docs = []
+            for group in pair_groups.values():
+                docs.extend(self._sbn_combine_docs(group, metric, 'waypoint_id')[:1])
+        else:
+            docs = raw_docs
+        months = sorted({doc.get('campaign_month') for doc in docs if doc.get('campaign_month')})
+        depths = self._sbn_valid_depths(doc.get('depth_bin_m') for doc in docs)
+        values: Dict[Tuple[str, int], float] = {}
+        for doc in docs:
+            stats = self._sbn_metric_stats_from_doc(doc, metric)
+            if stats:
+                depth = self._sbn_normalized_depth(doc.get('depth_bin_m'))
+                if depth is not None:
+                    values[(doc.get('campaign_month'), depth)] = stats['avg']
+        z = [[values.get((month, depth)) for month in months] for depth in depths]
+        payload = {
+            'waypoint_id': self._sbn_public_waypoint(canonical),
+            'instrument': instrument,
+            'metric': {'key': metric, 'label': self._sbn_metric_label(metric), 'unit': self._sbn_metric_unit(metric)},
+            'x': months,
+            'y': depths,
+            'z': z,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_sbn_month_waypoint_heatmap(self, instrument: str, depth_bin_m: int, metric: str) -> Dict[str, Any]:
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        cache_key = f'sbn_month_waypoint_heatmap:{instrument}:{depth_bin_m}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query = self._sbn_cell_query(None, depth_bin_m, metric)
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        projection = {'_id': 0, 'campaign_month': 1, 'waypoint_id': 1, 'waypoint_order': 1, 'instrument': 1, 'depth_bin_m': 1, f'metrics.{metric}': 1}
+        docs = list(self.db[self.SBN_COLLECTIONS['cells']].find(query, projection))
+        if instrument == 'combined':
+            pair_groups: Dict[Tuple[str, str], List[Dict[str, Any]]] = {}
+            for doc in docs:
+                pair_groups.setdefault((doc.get('campaign_month'), doc.get('waypoint_id')), []).append(doc)
+            docs = []
+            for group in pair_groups.values():
+                docs.extend(self._sbn_combine_docs(group, metric, 'campaign_month')[:1])
+        months = sorted({doc.get('campaign_month') for doc in docs if doc.get('campaign_month')})
+        waypoints = self._sbn_waypoint_docs()
+        values: Dict[Tuple[str, str], float] = {}
+        for doc in docs:
+            label = self._sbn_public_waypoint(doc.get('waypoint_id'))
+            stats = self._sbn_metric_stats_from_doc(doc, metric)
+            if label and stats:
+                values[(label, doc.get('campaign_month'))] = stats['avg']
+        z = [[values.get((waypoint['label'], month)) for month in months] for waypoint in waypoints]
+        payload = {
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'metric': {'key': metric, 'label': self._sbn_metric_label(metric), 'unit': self._sbn_metric_unit(metric)},
+            'x': months,
+            'y': [waypoint['label'] for waypoint in waypoints],
+            'z': z,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_sbn_crossplot(self, campaign_month: str, instrument: str, depth_bin_m: int, x_metric: str, y_metric: str) -> Dict[str, Any]:
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        cache_key = f'sbn_crossplot:{campaign_month}:{instrument}:{depth_bin_m}:{x_metric}:{y_metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query: Dict[str, Any] = {
+            'campaign_month': campaign_month,
+            'depth_bin_m': depth_bin_m,
+            f'metrics.{x_metric}.avg': {'$exists': True},
+            f'metrics.{y_metric}.avg': {'$exists': True},
+        }
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        projection = {'_id': 0, 'campaign_month': 1, 'waypoint_id': 1, 'waypoint_order': 1, 'instrument': 1, 'depth_bin_m': 1, f'metrics.{x_metric}': 1, f'metrics.{y_metric}': 1}
+        docs = list(self.db[self.SBN_COLLECTIONS['cells']].find(query, projection).sort([('waypoint_order', ASCENDING), ('instrument', ASCENDING)]))
+        if instrument == 'combined':
+            grouped: Dict[str, List[Dict[str, Any]]] = {}
+            for doc in docs:
+                grouped.setdefault(doc.get('waypoint_id'), []).append(doc)
+            rows = []
+            for waypoint, group in grouped.items():
+                x_stats = [self._sbn_metric_stats_from_doc(doc, x_metric) for doc in group]
+                y_stats = [self._sbn_metric_stats_from_doc(doc, y_metric) for doc in group]
+                x_values = [stats['avg'] for stats in x_stats if stats]
+                y_values = [stats['avg'] for stats in y_stats if stats]
+                if not x_values or not y_values:
+                    continue
+                rows.append(
+                    {
+                        'waypoint_id': self._sbn_public_waypoint(waypoint),
+                        'waypoint_order': int(group[0].get('waypoint_order') or 0),
+                        'instrument': 'combined',
+                        'x': sum(x_values) / len(x_values),
+                        'y': sum(y_values) / len(y_values),
+                    }
+                )
+        else:
+            rows = []
+            for doc in docs:
+                x_stats = self._sbn_metric_stats_from_doc(doc, x_metric)
+                y_stats = self._sbn_metric_stats_from_doc(doc, y_metric)
+                if x_stats and y_stats:
+                    rows.append(
+                        {
+                            'waypoint_id': self._sbn_public_waypoint(doc.get('waypoint_id')),
+                            'waypoint_order': int(doc.get('waypoint_order') or 0),
+                            'instrument': doc.get('instrument'),
+                            'x': x_stats['avg'],
+                            'y': y_stats['avg'],
+                        }
+                    )
+        rows.sort(key=lambda item: item['waypoint_order'])
+        payload = {
+            'campaign_month': campaign_month,
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'x_metric': {'key': x_metric, 'label': self._sbn_metric_label(x_metric), 'unit': self._sbn_metric_unit(x_metric)},
+            'y_metric': {'key': y_metric, 'label': self._sbn_metric_label(y_metric), 'unit': self._sbn_metric_unit(y_metric)},
+            'data': rows,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_sbn_availability(self, instrument: str, depth_bin_m: int, metric: str) -> Dict[str, Any]:
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        cache_key = f'sbn_availability:{instrument}:{depth_bin_m}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query = self._sbn_cell_query(None, depth_bin_m, metric)
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        projection = {'_id': 0, 'campaign_month': 1, 'waypoint_id': 1, 'instrument': 1, f'metrics.{metric}': 1}
+        docs = list(self.db[self.SBN_COLLECTIONS['cells']].find(query, projection))
+        months = sorted({doc.get('campaign_month') for doc in docs if doc.get('campaign_month')})
+        waypoints = self._sbn_waypoint_docs()
+        if instrument == 'combined':
+            event_instruments = {event.get('campaign_month'): event.get('instruments') or [] for event in self.get_sbn_options().get('events', [])}
+            buckets: Dict[Tuple[str, str], set[str]] = {}
+            for doc in docs:
+                label = self._sbn_public_waypoint(doc.get('waypoint_id'))
+                if label:
+                    buckets.setdefault((label, doc.get('campaign_month')), set()).add(doc.get('instrument'))
+            z = []
+            for waypoint in waypoints:
+                row = []
+                for month in months:
+                    expected = max(1, len(event_instruments.get(month) or []))
+                    row.append(round(len(buckets.get((waypoint['label'], month), set())) / expected * 100, 1))
+                z.append(row)
+        else:
+            present = {(self._sbn_public_waypoint(doc.get('waypoint_id')), doc.get('campaign_month')) for doc in docs}
+            z = [[100 if (waypoint['label'], month) in present else 0 for month in months] for waypoint in waypoints]
+        payload = {
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'metric': {'key': metric, 'label': self._sbn_metric_label(metric), 'unit': self._sbn_metric_unit(metric)},
+            'x': months,
+            'y': [waypoint['label'] for waypoint in waypoints],
+            'z': z,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_sbn_profiles(self, campaign_month: Optional[str] = None, instrument: Optional[str] = None, waypoint_id: Optional[str] = None) -> Dict[str, Any]:
+        cache_key = f'sbn_profiles:{campaign_month or ""}:{instrument or ""}:{waypoint_id or ""}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query: Dict[str, Any] = {}
+        if campaign_month:
+            query['campaign_month'] = campaign_month
+        if instrument and instrument != 'combined':
+            query['instrument'] = instrument
+        canonical = self._sbn_canonical_waypoint(waypoint_id) if waypoint_id else None
+        if canonical:
+            query['waypoint_id'] = canonical
+        cursor = self.db[self.SBN_COLLECTIONS['profiles']].find(
+            query,
+            {
+                '_id': 0,
+                'campaign_month': 1,
+                'waypoint_id': 1,
+                'waypoint_order': 1,
+                'instrument': 1,
+                'row_count': 1,
+                'duplicate_rows': 1,
+                'depth_min_m': 1,
+                'depth_max_m': 1,
+                'ts_min': 1,
+                'ts_max': 1,
+                'fields': 1,
+                'status': 1,
+            },
+        ).sort([('campaign_month', ASCENDING), ('waypoint_order', ASCENDING), ('instrument', ASCENDING)])
+        rows = []
+        for doc in cursor.limit(1000):
+            rows.append(
+                {
+                    **doc,
+                    'waypoint_id': self._sbn_public_waypoint(doc.get('waypoint_id')),
+                    'ts_min': self._dt_string(doc.get('ts_min')) if doc.get('ts_min') else None,
+                    'ts_max': self._dt_string(doc.get('ts_max')) if doc.get('ts_max') else None,
+                }
+            )
+        payload = {'data': rows}
+        self.cache.set(cache_key, payload, ttl_seconds=120)
+        return payload
 
     # ------------------------------------------------------------------
     # Latest cards and alerts

@@ -5,6 +5,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>SBN Transects Dashboard</title>
+  <link rel="icon" href="/static/img/favicon.ico" sizes="any" />
+  <link rel="shortcut icon" href="/static/img/favicon.ico" />
+  <link rel="apple-touch-icon" href="/static/img/favicon.png" />
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
   <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
@@ -30,7 +33,7 @@
       --radius-lg: 18px;
       --radius-md: 14px;
       --radius-sm: 10px;
-      --max-width: 1680px;
+      --max-width: none;
       --topbar-h: 72px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
@@ -46,7 +49,7 @@
     body { min-height: 100vh; }
     button, input, select { font: inherit; }
 
-    .app-shell { max-width: var(--max-width); margin: 0 auto; padding: 0 20px 28px; }
+    .app-shell { width: 100%; max-width: var(--max-width); margin: 0; padding: 0 20px 28px; }
 
     .topbar {
       position: sticky;
@@ -67,32 +70,51 @@
     .brand {
       display: inline-flex;
       align-items: center;
-      gap: 14px;
-      color: #fff;
       min-width: 0;
+      flex: 0 0 auto;
+      text-decoration: none;
     }
-    .brand-badge {
-      width: 42px;
+    .brand-logo {
+      display: block;
       height: 42px;
-      border-radius: 14px;
-      background: rgba(255,255,255,0.14);
-      display: grid;
-      place-items: center;
-      font-weight: 800;
-      letter-spacing: 0.04em;
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.2);
+      max-height: 42px;
+      width: auto;
+      max-width: min(320px, 32vw);
+      object-fit: contain;
     }
-    .brand-copy h1 {
-      margin: 0;
-      font-size: 1.05rem;
-      line-height: 1.1;
-      font-weight: 800;
-      letter-spacing: -0.02em;
+    .topnav {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
     }
-    .brand-copy p {
-      margin: 4px 0 0;
-      font-size: 0.92rem;
-      color: rgba(255,255,255,0.78);
+    .topnav a {
+      color: rgba(255, 255, 255, 0.92);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      border-radius: 12px;
+      transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+    .topnav a:hover,
+    .topnav a.is-active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+    .topnav a:active { transform: translateY(1px); }
+    .topbar > .brand:not(.app-brand) { display: none; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
     }
 
     .page { display: grid; gap: 22px; }
@@ -411,13 +433,18 @@
         padding: 0 14px;
         margin-inline: -14px;
       }
+      .brand-logo { height: 34px; max-height: 34px; max-width: 220px; }
+      .topnav a { padding: 9px 11px; font-size: 0.9rem; }
       .app-shell { padding-inline: 14px; }
       :root { --topbar-h: 64px; }
     }
 
     @media (max-width: 760px) {
       .topbar { gap: 10px; flex-wrap: nowrap; overflow: hidden; }
-      .brand-copy p { display: none; }
+      .brand-logo { height: 30px; max-height: 30px; max-width: 170px; }
+      .topnav { gap: 4px; overflow-x: auto; scrollbar-width: none; }
+      .topnav::-webkit-scrollbar { display: none; }
+      .topnav a { white-space: nowrap; font-size: 0.84rem; padding: 8px 10px; }
       .analysis-header { flex-direction: column; align-items: stretch; }
       .tab-switch { width: 100%; justify-content: space-between; }
       .summary-grid, .side-kv, .chart-grid { grid-template-columns: 1fr; }
@@ -428,13 +455,15 @@
 <body>
   <div class="app-shell">
     <header class="topbar">
-      <div class="brand">
-        <div class="brand-badge">XT</div>
-        <div class="brand-copy">
-          <h1>SBN Transects Dashboard</h1>
-          <p>Monthly XT01–XT20 Transect Preview</p>
-        </div>
-      </div>
+      <a class="brand app-brand" href="/" aria-label="Go to homepage">
+        <img src="/static/img/maccess-logo.png" alt="Mubadala ACCESS Center logo" class="brand-logo" />
+        <span class="sr-only">Mubadala ACCESS Center</span>
+      </a>
+      <nav class="topnav" aria-label="Primary navigation">
+        <a href="/">Map</a>
+        <a href="/get-started">Get Started</a>
+        <a href="/status">Status</a>
+      </nav>
     </header>
 
     <main class="page station-page" data-transect-id="XT08">
@@ -636,10 +665,6 @@
               </div>
             </article>
 
-            <article class="chart-card chart-span-2">
-              <header><div><h3>Data Availability</h3><p>Coverage by month and transect for the selected parameter.</p></div></header>
-              <div id="availabilityChart" class="chart-host"></div>
-            </article>
           </div>
         </section>
       </section>
@@ -647,7 +672,8 @@
   </div>
 
   <script>
-    const METRICS = {
+    const INITIAL_STATION = {{ station|default(none)|tojson }};
+    let METRICS = {
       temp: { key: 'temp', label: 'Temperature', unit: '°C', zmin: 20, zmax: 32 },
       sal: { key: 'sal', label: 'Salinity', unit: 'PSU', zmin: 35.6, zmax: 37.3 },
       oxygen: { key: 'oxygen', label: 'Dissolved Oxygen', unit: 'mg/L', zmin: 4.2, zmax: 7.2 },
@@ -960,7 +986,8 @@
     }
 
     function depthIndexFromValue(depth) {
-      const idx = state.dataset.depths.indexOf(depth);
+      const depths = activeDepths();
+      const idx = depths.indexOf(depth);
       return idx >= 0 ? idx : 0;
     }
 
@@ -1002,17 +1029,30 @@
     }
 
     function depthSliderLabel(depth) {
-      return `${depth} m`;
+      return Number(depth) === 0 ? 'Surface (0 m)' : `${depth} m`;
     }
 
     function plotDepth(key) {
       return state.chartDepths[key] ?? 0;
     }
 
+    function activeDepths() {
+      const depths = state.validDepths?.length ? state.validDepths : (state.dataset?.depths || [0]);
+      const clean = depths
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value) && value >= 0)
+        .sort((a, b) => a - b);
+      return clean.length ? clean : [0];
+    }
+
     function syncDepthSliders() {
-      const maxIndex = state.dataset.depths.length - 1;
+      const depths = activeDepths();
+      const maxIndex = Math.max(0, depths.length - 1);
       document.querySelectorAll('.plot-depth-range').forEach(input => {
         const key = input.dataset.depthKey;
+        if (!depths.includes(plotDepth(key))) {
+          state.chartDepths[key] = depths[0] ?? 0;
+        }
         input.min = '0';
         input.max = String(maxIndex);
         input.step = '1';
@@ -1049,7 +1089,8 @@
     }
 
     function populateCompareBox() {
-      ids.compareBox.innerHTML = state.dataset.months.slice().reverse().map(month => {
+      const months = (state.validCompareMonths?.length ? state.validCompareMonths : state.dataset.months).slice().reverse();
+      ids.compareBox.innerHTML = months.map(month => {
         const checked = state.compareMonths.includes(month) ? 'checked' : '';
         const disabled = (!checked && state.compareMonths.length >= 5) ? 'disabled' : '';
         return `
@@ -1370,29 +1411,6 @@
       }], baseLayout(`${xMetric.label} (${xMetric.unit || 'unitless'})`, `${yMetric.label} (${yMetric.unit || 'unitless'})`), { responsive: true, displayModeBar: false });
     }
 
-    function renderAvailability() {
-      const x = state.dataset.months.map(formatMonth);
-      const y = state.dataset.transects.map(t => t.id);
-      const z = y.map(transectId => state.dataset.months.map(month => {
-        const rand = seededRandom(`avail-${transectId}-${month}-${state.metric}-${state.instrument}`);
-        let coverage = 88 + rand() * 10;
-        if (state.instrument === 'rbr' && (state.metric === 'chlorophyll' || state.metric === 'pe' || state.metric === 'par')) coverage -= 25;
-        if (rand() < 0.07) coverage -= 18;
-        return clamp(coverage, 35, 100);
-      }));
-      Plotly.newPlot('availabilityChart', [{
-        x, y, z,
-        type: 'heatmap',
-        colorscale: 'Blues',
-        zmin: 0,
-        zmax: 100,
-        colorbar: { title: 'Coverage %' },
-        hovertemplate: 'Transect: %{y}<br>Month: %{x}<br>Coverage: %{z:.0f}%<extra></extra>'
-      }], baseLayout('Month', 'Transect', {
-        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
-      }), { responsive: true, displayModeBar: false });
-    }
-
     function initMap() {
       if (state.map) return;
       state.map = L.map('transectMap', { zoomControl: true, scrollWheelZoom: true });
@@ -1467,7 +1485,7 @@
       setTimeout(() => {
         if (state.map) state.map.invalidateSize();
         if (window.Plotly) {
-          ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart','availabilityChart']
+          ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
             .forEach(id => {
               const el = document.getElementById(id);
               if (el) Plotly.Plots.resize(el);
@@ -1489,7 +1507,6 @@
       renderComparisonChart();
       renderMonthlyHeatmap();
       renderTSChart();
-      renderAvailability();
     }
 
     function bindEvents() {
@@ -1567,7 +1584,7 @@
       });
       window.addEventListener('resize', () => {
         if (state.map) state.map.invalidateSize();
-        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart','availabilityChart']
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
           .forEach(id => {
             const el = document.getElementById(id);
             if (el && window.Plotly) Plotly.Plots.resize(el);
@@ -1575,15 +1592,705 @@
       });
     }
 
-    function init() {
-      state.dataset = buildDataset();
-      populateControls();
-      bindEvents();
-      renderAll();
-      switchTab('quick');
+    const SBN_API_CACHE = new Map();
+    const SBN_DEFAULT_CHART_METRICS = ['temp_c', 'salinity_psu', 'do_mg_l', 'chlorophyll_ug_l', 'chlorophyll_rfu'];
+    const SBN_COLOR_PALETTE = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#db2777', '#0891b2', '#7c3aed', '#64748b'];
+
+    function stationWaypointId() {
+      const name = INITIAL_STATION?.name || '';
+      const match = name.match(/waypoint\s+(\d{1,2})/i) || name.match(/XT[_\s-]?(\d{1,2})/i);
+      return match ? `XT${String(Number(match[1])).padStart(2, '0')}` : null;
     }
 
-    init();
+    function apiUrl(path, params = {}) {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== '') qs.set(key, String(value));
+      });
+      return qs.toString() ? `${path}?${qs.toString()}` : path;
+    }
+
+    async function sbnFetch(path, params = {}) {
+      const url = apiUrl(path, params);
+      if (SBN_API_CACHE.has(url)) return SBN_API_CACHE.get(url);
+      const request = fetch(url).then(async response => {
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          throw new Error(`${response.status} ${response.statusText}: ${text.slice(0, 160)}`);
+        }
+        return response.json();
+      });
+      SBN_API_CACHE.set(url, request);
+      return request;
+    }
+
+    function optionLabel(value) {
+      return String(value || '').replace(/^./, letter => letter.toUpperCase());
+    }
+
+    function instrumentLabel(value) {
+      const labels = { combined: 'Combined', exo: 'Exo Sonde', idronaut: 'Idronaut', rbr: 'RBR' };
+      return labels[value] || optionLabel(value);
+    }
+
+    function monthsForInstrument(instrument) {
+      if (state.validMonths?.length && state.validInstrument === instrument) return state.validMonths;
+      if (!state.dataset?.months?.length) return [];
+      if (instrument === 'combined') return state.dataset.months;
+      const months = state.dataset.monthsByInstrument?.[instrument] || [];
+      return months.length ? months : state.dataset.months;
+    }
+
+    function preferredInstrumentForMonth(month) {
+      const instruments = state.dataset?.instruments || [];
+      const priority = ['exo', 'rbr', 'idronaut'];
+      const candidates = instruments.filter(instrument => (state.dataset.monthsByInstrument?.[instrument] || []).includes(month));
+      return priority.find(instrument => candidates.includes(instrument)) || candidates[0] || 'combined';
+    }
+
+    function syncMonthOptionsForInstrument() {
+      const allowed = new Set(monthsForInstrument(state.instrument));
+      ids.monthSelect.innerHTML = state.dataset.months.map(month => {
+        const disabled = allowed.has(month) ? '' : 'disabled';
+        return `<option value="${month}" ${disabled}>${formatMonth(month)}</option>`;
+      }).join('');
+      if (!allowed.has(state.month)) {
+        const values = Array.from(allowed);
+        state.month = values[values.length - 1] || state.dataset.months[state.dataset.months.length - 1] || '';
+      }
+      ids.monthSelect.value = state.month;
+    }
+
+    function metricColor(metricKey) {
+      if (COLORS[metricKey]) return COLORS[metricKey];
+      const keys = Object.keys(METRICS);
+      const index = Math.max(0, keys.indexOf(metricKey));
+      return SBN_COLOR_PALETTE[index % SBN_COLOR_PALETTE.length];
+    }
+
+    function metricLabel(metricKey) {
+      return METRICS[metricKey]?.label || metricKey;
+    }
+
+    function metricUnit(metricKey) {
+      return METRICS[metricKey]?.unit || '';
+    }
+
+    function metricAxisTitle(metricKey) {
+      const unit = metricUnit(metricKey);
+      return unit ? `${metricLabel(metricKey)} (${unit})` : metricLabel(metricKey);
+    }
+
+    function availableMetric(...keys) {
+      const valid = state.validMetricKeys?.length ? state.validMetricKeys : Object.keys(METRICS);
+      return keys.find(key => METRICS[key] && valid.includes(key)) || valid.find(key => METRICS[key]) || Object.keys(METRICS)[0];
+    }
+
+    function chartMetric(slot) {
+      const map = {
+        tempTransect: ['temp_c', 'temp2_c'],
+        salTransect: ['salinity_psu'],
+        oxyTransect: ['do_mg_l', 'do_pct_sat'],
+        chlTransect: ['chlorophyll_ug_l', 'chlorophyll_rfu'],
+      };
+      return availableMetric(...(map[slot] || [state.metric]));
+    }
+
+    function selectedTransect() {
+      return state.dataset?.transects?.find(item => item.id === state.transectId) || state.dataset?.transects?.[0] || null;
+    }
+
+    function defaultDepth(depths) {
+      const clean = (depths || [])
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value) && value >= 0)
+        .sort((a, b) => a - b);
+      return clean[0] ?? 0;
+    }
+
+    function plotEmpty(targetId, message) {
+      Plotly.newPlot(targetId, [], {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 40, r: 20, t: 20, b: 40 },
+        annotations: [{
+          text: message,
+          x: 0.5, y: 0.5, xref: 'paper', yref: 'paper',
+          showarrow: false,
+          font: { size: 15, color: '#627084' }
+        }],
+        xaxis: { visible: false },
+        yaxis: { visible: false }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function rowsForPlot(rows) {
+      return (rows || []).slice().sort((a, b) => (a.waypoint_order || 0) - (b.waypoint_order || 0));
+    }
+
+    async function fetchSbnCells(month, instrument, depth, metric) {
+      return sbnFetch('/api/sbn/cells', {
+        campaign_month: month,
+        instrument,
+        depth_bin_m: depth,
+        metric
+      });
+    }
+
+    function drawSbnSeriesChart(targetId, rows, metricKey, color, name, layoutOverrides = {}) {
+      const sorted = rowsForPlot(rows);
+      const x = sorted.map(row => row.waypoint_label || row.waypoint_id);
+      const y = sorted.map(row => row.value);
+      if (!y.some(value => value !== null && value !== undefined)) {
+        plotEmpty(targetId, 'No rollup cells are available for this selection.');
+        return;
+      }
+      const trace = {
+        x,
+        y,
+        name,
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'markers' : undefined,
+        line: { color, width: 0 },
+        marker: { color, size: state.style === 'line' ? 9 : 8 },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      };
+      Plotly.newPlot(targetId, [trace], baseLayout('', metricAxisTitle(metricKey), {
+        xaxis: { title: '', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' },
+        ...layoutOverrides
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function drawSbnHeatmap(targetId, payload, xTitle, yTitle, options = {}) {
+      const hasValue = (payload?.z || []).some(row => (row || []).some(value => value !== null && value !== undefined && Number.isFinite(Number(value))));
+      if (!payload?.x?.length || !payload?.y?.length || !hasValue) {
+        plotEmpty(targetId, 'No heatmap cells are available for this selection.');
+        return;
+      }
+      const metric = payload.metric || METRICS[state.metric] || {};
+      Plotly.newPlot(targetId, [{
+        x: payload.x.map(value => value && /^\d{4}-\d{2}$/.test(value) ? formatMonth(value) : value),
+        y: payload.y,
+        z: payload.z,
+        type: 'heatmap',
+        colorscale: options.colorscale || 'Viridis',
+        reversescale: !!options.reversescale,
+        zmid: options.zmid,
+        zmin: options.zmin,
+        zmax: options.zmax,
+        colorbar: { title: metric.unit ? `${metric.label}<br>${metric.unit}` : metric.label },
+        hovertemplate: options.hovertemplate || '%{x}<br>%{y}<br>%{z:.2f}<extra></extra>'
+      }], baseLayout(xTitle, yTitle, {
+        yaxis: { title: yTitle, autorange: options.reverseY ? 'reversed' : true, gridcolor: 'rgba(24,33,47,0.08)' },
+        xaxis: { title: xTitle, tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    async function syncSbnSelection() {
+      if (!state.dataset) return;
+      const selection = await sbnFetch('/api/sbn/selection', {
+        instrument: state.instrument,
+        campaign_month: state.month,
+        metric: state.metric,
+        depth_bin_m: plotDepth('publicTransect')
+      });
+      state.instrument = selection.instrument || state.instrument;
+      state.month = selection.campaign_month || state.month;
+      state.metric = selection.metric || state.metric;
+      state.validInstrument = state.instrument;
+      state.validMonths = selection.months || state.dataset.months || [];
+      state.validMetrics = selection.metrics?.length ? selection.metrics : Object.values(METRICS);
+      state.validMetricKeys = state.validMetrics.map(metric => metric.key);
+      state.validDepths = selection.depths?.length ? selection.depths : (state.dataset.depths || [0]);
+      state.validCompareMonths = selection.compare_months || state.validMonths;
+      const resolvedDepth = selection.depth_bin_m ?? state.validDepths[0] ?? 0;
+      Object.keys(state.chartDepths).forEach(key => {
+        if (!state.validDepths.includes(state.chartDepths[key])) {
+          state.chartDepths[key] = resolvedDepth;
+        }
+      });
+      state.compareMonths = state.compareMonths.filter(month => state.validCompareMonths.includes(month) && month !== state.month);
+      if (!state.compareMonths.length) {
+        const latestComparison = state.validCompareMonths
+          .filter(month => month !== state.month)
+          .slice()
+          .sort()
+          .pop();
+        if (latestComparison) state.compareMonths = [latestComparison];
+      }
+      if (!state.validMetricKeys.includes(state.xMetric)) {
+        state.xMetric = availableMetric('salinity_psu', 'cond_ms_cm', state.metric);
+      }
+      if (!state.validMetricKeys.includes(state.yMetric) || state.yMetric === state.xMetric) {
+        state.yMetric = state.validMetricKeys.find(key => key !== state.xMetric) || state.xMetric;
+      }
+    }
+
+    async function loadSbnOptions() {
+      const options = await sbnFetch('/api/sbn/options');
+      const metrics = (options.metrics || []).filter(metric => metric.key);
+      if (metrics.length) {
+        METRICS = Object.fromEntries(metrics.map(metric => [
+          metric.key,
+          {
+            key: metric.key,
+            label: metric.label || metric.key,
+            unit: metric.unit || '',
+            zmin: undefined,
+            zmax: undefined
+          }
+        ]));
+      }
+      state.dataset = {
+        transects: options.waypoints || [],
+        months: options.months || [],
+        monthsByInstrument: options.months_by_instrument || {},
+        depths: options.depths?.length ? options.depths : [0],
+        events: options.events || [],
+        instruments: options.instruments || [],
+        metrics
+      };
+      const depth = defaultDepth(state.dataset.depths);
+      Object.keys(state.chartDepths).forEach(key => { state.chartDepths[key] = depth; });
+      state.transectId = stationWaypointId() || state.dataset.transects[0]?.id || 'XT01';
+      state.month = state.dataset.months[state.dataset.months.length - 1] || '';
+      state.instrument = preferredInstrumentForMonth(state.month);
+      state.metric = availableMetric('do_mg_l', 'temp_c', 'salinity_psu') || Object.keys(METRICS)[0];
+      state.xMetric = availableMetric('salinity_psu', 'cond_ms_cm', state.metric) || state.metric;
+      state.yMetric = availableMetric('temp_c', 'do_mg_l') || state.metric;
+      if (state.xMetric === state.yMetric) {
+        state.yMetric = Object.keys(METRICS).find(key => key !== state.xMetric) || state.yMetric;
+      }
+      await syncSbnSelection();
+    }
+
+    function populateSbnControls() {
+      ids.transectSelect.innerHTML = state.dataset.transects.map(item => `<option value="${item.id}">${item.label || item.id}</option>`).join('');
+      const metricOptions = state.validMetrics?.length ? state.validMetrics : Object.values(METRICS);
+      ids.metricSelect.innerHTML = metricOptions.map(metric => `<option value="${metric.key}">${metric.label}${metric.unit ? ` (${metric.unit})` : ''}</option>`).join('');
+      ids.instrumentSelect.innerHTML = [
+        '<option value="combined">Combined</option>',
+        ...state.dataset.instruments.map(instrument => `<option value="${instrument}">${instrumentLabel(instrument)}</option>`)
+      ].join('');
+      const crossOptions = metricOptions.map(metric => `<option value="${metric.key}">${metric.label}</option>`).join('');
+      ids.xMetricSelect.innerHTML = crossOptions;
+      ids.yMetricSelect.innerHTML = crossOptions;
+      ids.transectSelect.value = state.transectId;
+      ids.metricSelect.value = state.metric;
+      ids.instrumentSelect.value = state.instrument;
+      syncMonthOptionsForInstrument();
+      ids.styleSelect.value = state.style;
+      ids.xMetricSelect.value = state.xMetric;
+      ids.yMetricSelect.value = state.yMetric;
+      syncDepthSliders();
+      updateDepthControlVisibility();
+      populateCompareBox();
+    }
+
+    async function renderSbnHeaderAndCards() {
+      const transect = selectedTransect();
+      const first = state.dataset.transects[0];
+      const last = state.dataset.transects[state.dataset.transects.length - 1];
+      if (!transect) return;
+      ids.transectEyebrow.textContent = 'SBN Transect';
+      ids.transectTitle.textContent = transect.name || transect.label || transect.id;
+      ids.transectSubtitle.textContent = `${formatMonth(state.month)} campaign rollups by waypoint, depth, and instrument.`;
+      ids.transectStart.textContent = first?.lat && first?.lon ? `${Number(first.lat).toFixed(4)}, ${Number(first.lon).toFixed(4)}` : 'N/A';
+      ids.transectEnd.textContent = last?.lat && last?.lon ? `${Number(last.lat).toFixed(4)}, ${Number(last.lon).toFixed(4)}` : 'N/A';
+      ids.instrumentPill.textContent = instrumentLabel(state.instrument);
+      ids.transectFreshnessText.textContent = `${formatMonth(state.month)} · ${metricLabel(state.metric)} · ${instrumentLabel(state.instrument)} · ${plotDepth('publicTransect')} m`;
+
+      const cardMetrics = SBN_DEFAULT_CHART_METRICS.map(key => availableMetric(key)).filter(Boolean);
+      const uniqueMetrics = [...new Set(cardMetrics)].slice(0, 4);
+      const cards = await Promise.all(uniqueMetrics.map(async metricKey => {
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('publicTransect'), metricKey);
+        const rows = rowsForPlot(payload.data);
+        const row = rows.find(item => item.waypoint_id === state.transectId);
+        const valid = rows.map(item => item.value).filter(value => value !== null && value !== undefined && !Number.isNaN(value));
+        const transectMean = mean(valid);
+        return {
+          label: metricLabel(metricKey),
+          unit: metricUnit(metricKey),
+          value: row?.value,
+          detail: transectMean === null ? 'No matching rollup cells at this depth.' : `Transect mean ${formatNumber(transectMean, 2)}${metricUnit(metricKey) ? ` ${metricUnit(metricKey)}` : ''}.`
+        };
+      }));
+      ids.latestCards.innerHTML = cards.map(card => `
+        <article class="metric-card">
+          <span>${card.label}</span>
+          <strong>${formatNumber(card.value, 2)}${card.unit ? ` ${card.unit}` : ''}</strong>
+          <small>${card.detail}</small>
+        </article>
+      `).join('');
+    }
+
+    async function renderSbnLatestTransect() {
+      if (state.style === 'heatmap') {
+        const payload = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
+          campaign_month: state.month,
+          instrument: state.instrument,
+          metric: state.metric
+        });
+        drawSbnHeatmap('publicTransect', payload, 'Waypoint', 'Depth (m)', { reverseY: true });
+        return;
+      }
+      const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('publicTransect'), state.metric);
+      drawSbnSeriesChart('publicTransect', payload.data, state.metric, COLORS.current, formatMonth(state.month));
+    }
+
+    async function renderSbnMonthlyTrend() {
+      if (state.style === 'heatmap') {
+        const payload = await sbnFetch('/api/sbn/heatmap/month-depth', {
+          waypoint_id: state.transectId,
+          instrument: state.instrument,
+          metric: state.metric
+        });
+        drawSbnHeatmap('publicTrend', payload, 'Month', 'Depth (m)', { reverseY: true });
+        return;
+      }
+      const payload = await sbnFetch('/api/sbn/trend', {
+        waypoint_id: state.transectId,
+        instrument: state.instrument,
+        depth_bin_m: plotDepth('publicTrend'),
+        metric: state.metric
+      });
+      const rows = payload.data || [];
+      if (!rows.length) {
+        plotEmpty('publicTrend', 'No monthly trend cells are available for this waypoint.');
+        return;
+      }
+      Plotly.newPlot('publicTrend', [{
+        x: rows.map(row => formatMonth(row.campaign_month)),
+        y: rows.map(row => row.value),
+        name: state.transectId,
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'markers' : undefined,
+        line: { color: COLORS.current, width: 0 },
+        marker: { color: COLORS.current, size: 9 },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(state.metric) + '<extra></extra>'
+      }], baseLayout('Month', metricAxisTitle(state.metric), {
+        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    async function renderSbnMetricChart(targetId, metricKey) {
+      if (!metricKey) {
+        plotEmpty(targetId, 'This parameter is not available in the SBN rollup cells.');
+        return;
+      }
+      if (state.style === 'heatmap') {
+        const payload = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
+          campaign_month: state.month,
+          instrument: state.instrument,
+          metric: metricKey
+        });
+        drawSbnHeatmap(targetId, payload, 'Waypoint', 'Depth (m)', { reverseY: true });
+        return;
+      }
+      const payload = await fetchSbnCells(state.month, state.instrument, plotDepth(targetId), metricKey);
+      drawSbnSeriesChart(targetId, payload.data, metricKey, metricColor(metricKey), formatMonth(state.month));
+    }
+
+    async function renderSbnComparisonChart() {
+      const months = [state.month, ...state.compareMonths];
+      if (state.style === 'heatmap') {
+        const current = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
+          campaign_month: state.month,
+          instrument: state.instrument,
+          metric: state.metric
+        });
+        if (!state.compareMonths.length) {
+          drawSbnHeatmap('comparisonChart', current, 'Waypoint', 'Depth (m)', { reverseY: true });
+          return;
+        }
+        const comparisons = await Promise.all(state.compareMonths.map(month => sbnFetch('/api/sbn/heatmap/depth-waypoint', {
+          campaign_month: month,
+          instrument: state.instrument,
+          metric: state.metric
+        })));
+        const comparisonMaps = comparisons.map(payload => {
+          const lookup = new Map();
+          (payload.y || []).forEach((depth, depthIndex) => {
+            (payload.x || []).forEach((waypoint, waypointIndex) => {
+              const value = payload.z?.[depthIndex]?.[waypointIndex];
+              if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
+                lookup.set(`${waypoint}::${depth}`, Number(value));
+              }
+            });
+          });
+          return lookup;
+        });
+        const z = (current.y || []).map((depth, depthIndex) => (current.x || []).map((waypoint, waypointIndex) => {
+          const value = current.z?.[depthIndex]?.[waypointIndex];
+          if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
+          const comparisonValues = comparisonMaps
+            .map(lookup => lookup.get(`${waypoint}::${depth}`))
+            .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
+          if (!comparisonValues.length) return null;
+          return Number(value) - mean(comparisonValues);
+        }));
+        drawSbnHeatmap('comparisonChart', {
+          ...current,
+          z,
+          metric: {
+            key: state.metric,
+            label: `${metricLabel(state.metric)} anomaly`,
+            unit: metricUnit(state.metric)
+          }
+        }, 'Waypoint', 'Depth (m)', {
+          reverseY: true,
+          colorscale: 'RdBu',
+          reversescale: true,
+          zmid: 0,
+          hovertemplate: 'Waypoint: %{x}<br>Depth: %{y} m<br>Difference: %{z:.2f}<extra></extra>'
+        });
+        return;
+      }
+      const payloads = await Promise.all(months.map(month => fetchSbnCells(month, state.instrument, plotDepth('comparisonChart'), state.metric)));
+      const traces = payloads.map((payload, index) => {
+        const rows = rowsForPlot(payload.data);
+        const color = index === 0 ? COLORS.current : COLORS.compare[(index - 1) % COLORS.compare.length];
+        return {
+          x: rows.map(row => row.waypoint_label || row.waypoint_id),
+          y: rows.map(row => row.value),
+          name: formatMonth(payload.campaign_month),
+          type: state.style === 'bar' ? 'bar' : 'scatter',
+          mode: state.style === 'line' ? 'markers' : undefined,
+          line: { color, width: 0 },
+          marker: { color, size: 8 },
+          hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(state.metric) + '<extra></extra>'
+        };
+      });
+      Plotly.newPlot('comparisonChart', traces, baseLayout('Waypoint', metricAxisTitle(state.metric), {
+        barmode: state.style === 'bar' ? 'group' : undefined,
+        xaxis: { title: 'Waypoint', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    async function renderSbnMonthlyHeatmap() {
+      const payload = await sbnFetch('/api/sbn/heatmap/month-waypoint', {
+        instrument: state.instrument,
+        depth_bin_m: plotDepth('monthlyHeatmap'),
+        metric: state.metric
+      });
+      drawSbnHeatmap('monthlyHeatmap', payload, 'Month', 'Waypoint', {
+        hovertemplate: 'Month: %{x}<br>Waypoint: %{y}<br>%{z:.2f}<extra></extra>'
+      });
+    }
+
+    async function renderSbnCrossPlot() {
+      if (state.xMetric === state.yMetric) {
+        plotEmpty('tsChart', 'Select different X and Y parameters.');
+        return;
+      }
+      const payload = await sbnFetch('/api/sbn/crossplot', {
+        campaign_month: state.month,
+        instrument: state.instrument,
+        depth_bin_m: plotDepth('tsChart'),
+        x_metric: state.xMetric,
+        y_metric: state.yMetric
+      });
+      const rows = payload.data || [];
+      if (!rows.length) {
+        plotEmpty('tsChart', 'No paired metric cells are available for this selection.');
+        return;
+      }
+      const xValues = rows.map(row => row.x);
+      const yValues = rows.map(row => row.y);
+      const binCount = Math.max(4, Math.min(12, Math.ceil(Math.sqrt(rows.length) * 1.6)));
+      Plotly.newPlot('tsChart', [
+        {
+          x: xValues,
+          y: yValues,
+          type: 'histogram2d',
+          nbinsx: binCount,
+          nbinsy: binCount,
+          colorscale: [
+            [0, 'rgba(91,33,182,0.06)'],
+            [0.25, 'rgba(91,33,182,0.28)'],
+            [0.55, 'rgba(20,184,166,0.62)'],
+            [1, 'rgba(14,116,144,0.92)']
+          ],
+          colorbar: { title: 'Waypoint<br>count' },
+          hovertemplate:
+            `${payload.x_metric.label}: %{x}<br>` +
+            `${payload.y_metric.label}: %{y}<br>` +
+            'Waypoints: %{z}<extra></extra>'
+        },
+        {
+          x: xValues,
+          y: yValues,
+          text: rows.map(row => row.waypoint_id),
+          mode: 'markers+text',
+          type: 'scatter',
+          textposition: 'top center',
+          marker: {
+            color: '#ffffff',
+            size: 8,
+            opacity: 0.95,
+            line: { color: COLORS.current, width: 2 }
+          },
+          hovertemplate:
+            'Waypoint: %{text}<br>' +
+            `${payload.x_metric.label}: %{x:.2f} ${payload.x_metric.unit || ''}<br>` +
+            `${payload.y_metric.label}: %{y:.2f} ${payload.y_metric.unit || ''}<extra></extra>`
+        }
+      ], baseLayout(
+        `${payload.x_metric.label} (${payload.x_metric.unit || 'unitless'})`,
+        `${payload.y_metric.label} (${payload.y_metric.unit || 'unitless'})`
+      ), { responsive: true, displayModeBar: false });
+    }
+
+    function renderSbnMap() {
+      initMap();
+      state.lineLayers.forEach(layer => state.map.removeLayer(layer));
+      state.markerLayers.forEach(layer => state.map.removeLayer(layer));
+      state.lineLayers = [];
+      state.markerLayers = [];
+      const waypoints = state.dataset.transects.filter(item => item.lat !== null && item.lon !== null && item.lat !== undefined && item.lon !== undefined);
+      const coords = waypoints.map(item => [Number(item.lat), Number(item.lon)]);
+      if (coords.length > 1) {
+        const line = L.polyline(coords, { color: '#5b21b6', weight: 4, opacity: 0.75 }).addTo(state.map);
+        state.lineLayers.push(line);
+      }
+      waypoints.forEach(item => {
+        const selected = item.id === state.transectId;
+        const marker = L.circleMarker([Number(item.lat), Number(item.lon)], {
+          radius: selected ? 7 : 5,
+          color: selected ? '#5b21b6' : '#64748b',
+          fillColor: selected ? '#7c3aed' : '#cbd5e1',
+          fillOpacity: selected ? 0.95 : 0.78,
+          weight: selected ? 3 : 1
+        }).addTo(state.map);
+        marker.bindPopup(`<strong>${item.label || item.id}</strong><br>${item.name || ''}<br>${formatMonth(state.month)} · ${instrumentLabel(state.instrument)}`);
+        marker.on('click', () => {
+          state.transectId = item.id;
+          ids.transectSelect.value = item.id;
+          renderSbnAll();
+        });
+        state.markerLayers.push(marker);
+      });
+      if (coords.length) state.map.fitBounds(coords, { padding: [24, 24], maxZoom: 11 });
+      setTimeout(() => state.map.invalidateSize(), 120);
+    }
+
+    async function renderSbnAll() {
+      const token = (state.renderToken || 0) + 1;
+      state.renderToken = token;
+      updateDepthControlVisibility();
+      try {
+        await syncSbnSelection();
+        if (token !== state.renderToken) return;
+        populateSbnControls();
+        await renderSbnHeaderAndCards();
+        if (token !== state.renderToken) return;
+        renderSbnMap();
+        await Promise.all([
+          renderSbnLatestTransect(),
+          renderSbnMonthlyTrend(),
+          renderSbnMetricChart('tempTransect', chartMetric('tempTransect')),
+          renderSbnMetricChart('salTransect', chartMetric('salTransect')),
+          renderSbnMetricChart('oxyTransect', chartMetric('oxyTransect')),
+          renderSbnMetricChart('chlTransect', chartMetric('chlTransect')),
+          renderSbnComparisonChart(),
+          renderSbnMonthlyHeatmap(),
+          renderSbnCrossPlot()
+        ]);
+      } catch (error) {
+        console.error('SBN render failed', error);
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+          .forEach(id => plotEmpty(id, 'SBN data could not be loaded for this selection.'));
+      }
+    }
+
+    function bindSbnEvents() {
+      ids.transectSelect.addEventListener('change', event => {
+        state.transectId = event.target.value;
+        renderSbnAll();
+      });
+      ids.monthSelect.addEventListener('change', event => {
+        state.month = event.target.value;
+        renderSbnAll();
+      });
+      ids.metricSelect.addEventListener('change', event => {
+        state.metric = event.target.value;
+        renderSbnAll();
+      });
+      ids.instrumentSelect.addEventListener('change', event => {
+        state.instrument = event.target.value;
+        renderSbnAll();
+      });
+      ids.styleSelect.addEventListener('change', event => {
+        state.style = event.target.value;
+        renderSbnAll();
+      });
+      document.querySelectorAll('.plot-depth-range').forEach(input => {
+        input.addEventListener('input', event => {
+          const key = event.target.dataset.depthKey;
+          const depths = activeDepths();
+          state.chartDepths[key] = depths[Number(event.target.value)] ?? depths[0] ?? 0;
+          const label = document.getElementById(`${key}DepthValueLabel`);
+          if (label) label.textContent = depthSliderLabel(state.chartDepths[key]);
+          renderSbnAll();
+        });
+      });
+      ids.xMetricSelect.addEventListener('change', event => {
+        state.xMetric = event.target.value;
+        renderSbnCrossPlot();
+      });
+      ids.yMetricSelect.addEventListener('change', event => {
+        state.yMetric = event.target.value;
+        renderSbnCrossPlot();
+      });
+      ids.compareBox.addEventListener('change', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        if (target.checked) {
+          if (state.compareMonths.length >= 5) {
+            target.checked = false;
+            return;
+          }
+          if (!state.compareMonths.includes(target.value)) state.compareMonths.push(target.value);
+        } else {
+          state.compareMonths = state.compareMonths.filter(month => month !== target.value);
+        }
+        populateCompareBox();
+        renderSbnComparisonChart();
+      });
+      ids.clearCompareBtn.addEventListener('click', () => {
+        state.compareMonths = [];
+        populateCompareBox();
+        renderSbnComparisonChart();
+      });
+      document.querySelectorAll('#viewTabs button').forEach(button => {
+        button.addEventListener('click', () => switchTab(button.dataset.tab));
+      });
+      window.addEventListener('resize', () => {
+        if (state.map) state.map.invalidateSize();
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+          .forEach(id => {
+            const el = document.getElementById(id);
+            if (el && window.Plotly) Plotly.Plots.resize(el);
+          });
+      });
+    }
+
+    async function initSbnMongoDashboard() {
+      try {
+        await loadSbnOptions();
+        populateSbnControls();
+        bindSbnEvents();
+        await renderSbnAll();
+        switchTab('quick');
+      } catch (error) {
+        console.error('SBN initialization failed', error);
+        ids.latestCards.innerHTML = '<article class="metric-card"><span>SBN data</span><strong>N/A</strong><small>The SBN collections are unavailable or empty.</small></article>';
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+          .forEach(id => plotEmpty(id, 'SBN data could not be loaded.'));
+      }
+    }
+
+    initSbnMongoDashboard();
   </script>
 </body>
 </html>
