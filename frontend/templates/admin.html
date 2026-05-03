@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block content %}
+<main class="page admin-page" data-csrf="{{ csrf_token }}">
+  <section class="analysis-header">
+    <div>
+      <span class="eyebrow">Access control</span>
+      <h1>Users, groups, and station ACLs</h1>
+      <p>Manage private-station access through group permissions and station-specific rules.</p>
+    </div>
+    <form method="post" action="/logout">
+      <input type="hidden" name="_csrf" value="{{ csrf_token }}" />
+      <button class="ghost-button" type="submit">Sign out</button>
+    </form>
+  </section>
+
+  <section class="admin-grid">
+    <article class="admin-card">
+      <span class="eyebrow">Signed in</span>
+      <h2>{{ user.username }}</h2>
+      <p>{{ user.email }}</p>
+    </article>
+    <article class="admin-card">
+      <span class="eyebrow">Policy</span>
+      <h2>ACL-first private access</h2>
+      <p>Private stations require an authenticated user with station, device-family, or all-station read permission.</p>
+    </article>
+  </section>
+
+  <section class="admin-card">
+    <span class="eyebrow">API</span>
+    <h2>Administrative endpoints</h2>
+    <p>
+      Use <code>/api/admin/users</code> and <code>/api/admin/groups</code> with
+      <code>x-csrf-token</code> for mutating requests. Password hashes, TOTP secrets,
+      and recovery code hashes are never returned.
+    </p>
+  </section>
+</main>
+{% endblock %}

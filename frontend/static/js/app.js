@@ -3,6 +3,17 @@ const App = (() => {
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!response.ok) {
       const detail = await response.text();
+      if (response.status === 401) {
+        try {
+          const payload = JSON.parse(detail);
+          if (payload.login_url) {
+            window.location.href = payload.login_url;
+            return new Promise(() => {});
+          }
+        } catch (error) {
+          // Fall through to the regular error path.
+        }
+      }
       throw new Error(detail || `Request failed: ${response.status}`);
     }
     return response.json();
