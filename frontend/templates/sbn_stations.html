@@ -118,9 +118,8 @@
     }
 
     .page { display: grid; gap: 22px; }
-    .station-page { grid-template-columns: 340px minmax(0, 1fr); align-items: start; }
-    .analysis-column, .left-rail { display: grid; gap: 20px; }
-    .left-rail { position: sticky; top: calc(var(--topbar-h) + 18px); align-self: start; }
+    .station-page { grid-template-columns: minmax(0, 1fr); align-items: start; }
+    .analysis-column { display: grid; gap: 20px; min-width: 0; }
 
     .side-summary-card, .control-card, .analysis-header, .chart-card {
       background: var(--panel-soft);
@@ -317,17 +316,62 @@
     .ghost-button:hover { background: var(--primary-soft); border-color: rgba(91, 33, 182, 0.16); }
 
     .analysis-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: start;
-      gap: 16px;
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) minmax(560px, auto);
+      align-items: end;
+      gap: 20px;
     }
+    .analysis-heading { min-width: 0; }
     .analysis-header h2 {
       margin: 4px 0 8px;
       font-size: 2rem;
       line-height: 1.06;
       letter-spacing: -0.03em;
       text-transform: capitalize;
+    }
+    .header-pills { margin-top: 12px; }
+    .header-controls {
+      display: flex;
+      align-items: end;
+      justify-content: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .toolbar-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(145px, 1fr));
+      gap: 10px;
+      min-width: min(760px, 100%);
+    }
+    .toolbar-field {
+      display: grid;
+      gap: 6px;
+    }
+    .toolbar-field label,
+    .chart-mini-field label,
+    .chart-depth-control label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .toolbar-field select,
+    .chart-mini-field select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 14px;
+      outline: none;
+      min-height: 48px;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .toolbar-field select:focus,
+    .chart-mini-field select:focus {
+      border-color: rgba(91, 33, 182, 0.35);
+      box-shadow: 0 0 0 4px rgba(91, 33, 182, 0.08);
     }
     .tab-switch {
       display: inline-flex;
@@ -352,6 +396,30 @@
       color: #fff;
       box-shadow: 0 10px 18px rgba(91, 33, 182, 0.2);
     }
+    .chart-mode-toggle {
+      display: inline-flex;
+      padding: 4px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+    .chart-mode-toggle button {
+      border: 1px solid transparent;
+      border-radius: 13px;
+      padding: 10px 14px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+    .chart-mode-toggle button.is-active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 10px 18px rgba(91, 33, 182, 0.2);
+    }
 
     .tab-panel { display: none; gap: 20px; }
     .tab-panel.is-active { display: grid; }
@@ -359,7 +427,7 @@
     .summary-grid {
       display: grid;
       gap: 16px;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     }
     .metric-card {
       padding: 18px;
@@ -380,6 +448,33 @@
     .metric-card strong {
       font-size: clamp(1.45rem, 2vw, 2.15rem);
       letter-spacing: -0.03em;
+    }
+    .metric-card-details {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .metric-card-details div {
+      padding: 9px 10px;
+      border-radius: 12px;
+      background: rgba(91, 33, 182, 0.06);
+    }
+    .metric-card-details b {
+      display: block;
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+    .metric-card-details span {
+      display: block;
+      font-size: 0.9rem;
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--text);
+      font-weight: 800;
     }
 
     .chart-grid {
@@ -411,6 +506,24 @@
     .chart-host.short { min-height: 320px; }
     .chart-span-2 { grid-column: span 2; }
     #transectMap { border-radius: 14px; overflow: hidden; }
+    .quick-plot-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      min-height: 0;
+    }
+    .quick-plot-card {
+      min-width: 0;
+      min-height: 300px;
+      padding: 10px 10px 4px;
+      border-radius: 16px;
+      background: rgba(248, 250, 252, 0.78);
+      border: 1px solid rgba(24, 33, 47, 0.06);
+    }
+    .quick-plot {
+      width: 100%;
+      min-height: 280px;
+    }
 
     .empty-compare {
       padding: 18px;
@@ -421,9 +534,10 @@
     }
 
     @media (max-width: 1320px) {
-      .station-page { grid-template-columns: 1fr; }
-      .left-rail { position: static; }
       .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .analysis-header { grid-template-columns: 1fr; align-items: stretch; }
+      .header-controls { justify-content: stretch; }
+      .toolbar-grid { min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
     }
 
     @media (max-width: 900px) {
@@ -447,7 +561,11 @@
       .topnav a { white-space: nowrap; font-size: 0.84rem; padding: 8px 10px; }
       .analysis-header { flex-direction: column; align-items: stretch; }
       .tab-switch { width: 100%; justify-content: space-between; }
-      .summary-grid, .side-kv, .chart-grid { grid-template-columns: 1fr; }
+      .toolbar-grid,
+      .summary-grid,
+      .side-kv,
+      .chart-grid,
+      .quick-plot-grid { grid-template-columns: 1fr; }
       .chart-span-2 { grid-column: span 1; }
     }
   </style>
@@ -467,81 +585,48 @@
     </header>
 
     <main class="page station-page" data-transect-id="XT08">
-      <aside class="left-rail">
-        <div class="side-summary-card">
-          <span class="eyebrow" id="transectEyebrow">Transect XT08</span>
-          <h1 id="transectTitle">Transect XT08</h1>
-          <p id="transectSubtitle">Monthly Exo Sonde, Idronaut, and RBR transect preview.</p>
-
-          <div class="pill-row">
-            <span class="status-pill">Active</span>
-            <span class="status-pill subtle" id="instrumentPill">Combined</span>
-          </div>
-
-          <div class="side-kv">
-            <div>
-              <span>Start</span>
-              <strong id="transectStart">24.1500, 56.2000</strong>
-            </div>
-            <div>
-              <span>End</span>
-              <strong id="transectEnd">24.7400, 57.2500</strong>
-            </div>
-          </div>
-        </div>
-
-        <div class="control-card">
-          <div class="field">
-            <label for="transectSelect">Transect</label>
-            <select id="transectSelect"></select>
-          </div>
-          <div class="field">
-            <label for="monthSelect">Month</label>
-            <select id="monthSelect"></select>
-          </div>
-          <div class="field">
-            <label for="metricSelect">Parameter</label>
-            <select id="metricSelect"></select>
-          </div>
-          <div class="field">
-            <label for="instrumentSelect">Instrument</label>
-            <select id="instrumentSelect">
-              <option value="combined">Combined</option>
-              <option value="exo">Exo Sonde</option>
-              <option value="idronaut">Idronaut</option>
-              <option value="rbr">RBR</option>
-            </select>
-          </div>
-          <div class="field">
-            <label for="styleSelect">Display Style</label>
-            <select id="styleSelect">
-              <option value="bar">Bar Chart</option>
-              <option value="line">Line Chart</option>
-              <option value="heatmap">Heatmap</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Compare With</label>
-            <div id="compareBox" class="compare-box"></div>
-            <div class="compare-actions">
-              <span id="compareHelp" class="compare-help">No comparison months selected.</span>
-              <button class="ghost-button" id="clearCompareBtn" type="button">Clear</button>
-            </div>
-          </div>
-        </div>
-      </aside>
-
       <section class="analysis-column">
         <section class="analysis-header">
-          <div>
-            <span class="eyebrow">Transect Analysis</span>
-            <h2>Monthly Transect Dashboard</h2>
+          <div class="analysis-heading">
+            <span class="eyebrow" id="transectEyebrow">SBN Transect</span>
+            <h2 id="transectTitle">Monthly Transect Dashboard</h2>
+            <p id="transectSubtitle">Monthly campaign rollups by waypoint, depth, and instrument.</p>
             <p id="transectFreshnessText">Monthly summary and advanced network analysis for XT01–XT20.</p>
+            <div class="pill-row header-pills">
+              <span class="status-pill">Active</span>
+              <span class="status-pill subtle" id="instrumentPill">Combined</span>
+            </div>
           </div>
 
-          <div class="tab-switch" id="viewTabs">
-            <button type="button" data-tab="quick" class="is-active">Summary</button>
-            <button type="button" data-tab="advanced">Advanced View</button>
+          <div class="header-controls">
+            <div class="toolbar-grid" aria-label="SBN transect controls">
+              <div class="toolbar-field">
+                <label for="transectSelect">Waypoint</label>
+                <select id="transectSelect"></select>
+              </div>
+              <div class="toolbar-field">
+                <label for="monthSelect">Campaign Month</label>
+                <select id="monthSelect"></select>
+              </div>
+              <div class="toolbar-field">
+                <label for="instrumentSelect">Instrument</label>
+                <select id="instrumentSelect">
+                  <option value="combined">Combined</option>
+                  <option value="exo">Exo Sonde</option>
+                  <option value="idronaut">Idronaut</option>
+                  <option value="rbr">RBR</option>
+                </select>
+              </div>
+              <div class="toolbar-field">
+                <label for="metricSelect">Advanced Focus</label>
+                <select id="metricSelect"></select>
+              </div>
+            </div>
+
+            <div class="tab-switch" id="viewTabs">
+              <button type="button" data-tab="quick" class="is-active">Quick View</button>
+              <button type="button" data-tab="advanced">Advanced</button>
+            </div>
           </div>
         </section>
 
@@ -552,18 +637,13 @@
             <article class="chart-card chart-span-2">
               <header>
                 <div>
-                  <h3>Transect Locator</h3>
-                  <p>All XT01–XT20 transects shown on a functional map.</p>
+                  <h3>Transect Snapshot</h3>
+                  <p>Core parameters across XT01-XT20 for the selected campaign, instrument, and depth.</p>
                 </div>
-              </header>
-              <div id="transectMap" class="chart-host short"></div>
-            </article>
-
-            <article class="chart-card chart-span-2">
-              <header>
-                <div>
-                  <h3>Latest Transect</h3>
-                  <p>Selected parameter across XT01–XT20 for the current month.</p>
+                <div class="chart-mode-toggle" id="styleToggle" aria-label="Quick view display style">
+                  <button type="button" data-style="bar" class="is-active">Bars</button>
+                  <button type="button" data-style="line">Points</button>
+                  <button type="button" data-style="heatmap">Heatmap</button>
                 </div>
               </header>
               <div class="chart-depth-control">
@@ -576,8 +656,8 @@
             <article class="chart-card chart-span-2">
               <header>
                 <div>
-                  <h3>Monthly Trend</h3>
-                  <p>Selected transect through time for the selected parameter.</p>
+                  <h3>Selected Waypoint Trends</h3>
+                  <p>Core parameters through campaign months for the selected waypoint.</p>
                 </div>
               </header>
               <div class="chart-depth-control">
@@ -625,7 +705,7 @@
             </article>
 
             <article class="chart-card chart-span-2">
-              <header><div><h3>Comparison Across XT01–XT20</h3><p>Current month and selected comparison months for the selected parameter.</p></div></header>
+              <header><div><h3>Waypoint Month x Depth</h3><p>Selected focus parameter through campaign months and depth for the selected waypoint.</p></div></header>
               <div class="chart-depth-control">
                 <label for="comparisonChartDepthRange">Depth <span id="comparisonChartDepthValueLabel">0 m</span></label>
                 <input class="plot-depth-range" data-depth-key="comparisonChart" id="comparisonChartDepthRange" type="range" min="0" max="10" step="1" value="0" />
@@ -739,6 +819,7 @@
       metricSelect: document.getElementById('metricSelect'),
       instrumentSelect: document.getElementById('instrumentSelect'),
       styleSelect: document.getElementById('styleSelect'),
+      styleToggle: document.getElementById('styleToggle'),
       xMetricSelect: document.getElementById('xMetricSelect'),
       yMetricSelect: document.getElementById('yMetricSelect'),
       compareBox: document.getElementById('compareBox'),
@@ -1063,8 +1144,11 @@
     }
 
     function updateDepthControlVisibility() {
-      const showDepthControls = state.style !== 'heatmap';
       document.querySelectorAll('.chart-depth-control').forEach(control => {
+        const key = control.querySelector('.plot-depth-range')?.dataset.depthKey;
+        const quickControl = key === 'publicTransect' || key === 'publicTrend';
+        const depthCellControl = key === 'monthlyHeatmap' || key === 'tsChart';
+        const showDepthControls = quickControl ? state.style !== 'heatmap' : depthCellControl;
         control.style.display = showDepthControls ? 'grid' : 'none';
       });
     }
@@ -1080,7 +1164,8 @@
       ids.monthSelect.value = state.month;
       ids.metricSelect.value = state.metric;
       ids.instrumentSelect.value = state.instrument;
-      ids.styleSelect.value = state.style;
+      if (ids.styleSelect) ids.styleSelect.value = state.style;
+      updateStyleToggle();
       syncDepthSliders();
       updateDepthControlVisibility();
       ids.xMetricSelect.value = state.xMetric;
@@ -1089,6 +1174,7 @@
     }
 
     function populateCompareBox() {
+      if (!ids.compareBox || !ids.compareHelp) return;
       const months = (state.validCompareMonths?.length ? state.validCompareMonths : state.dataset.months).slice().reverse();
       ids.compareBox.innerHTML = months.map(month => {
         const checked = state.compareMonths.includes(month) ? 'checked' : '';
@@ -1103,6 +1189,27 @@
       ids.compareHelp.textContent = state.compareMonths.length
         ? `${state.compareMonths.length} comparison month${state.compareMonths.length > 1 ? 's' : ''} selected.`
         : 'No comparison months selected.';
+    }
+
+    function updateStyleToggle() {
+      if (!ids.styleToggle) return;
+      ids.styleToggle.querySelectorAll('button[data-style]').forEach(button => {
+        button.classList.toggle('is-active', button.dataset.style === state.style);
+      });
+    }
+
+    function syncSbnPanelText() {
+      const snapshotCard = document.getElementById('publicTransect')?.closest('.chart-card');
+      const snapshotText = snapshotCard?.querySelector('header p');
+      if (snapshotText) snapshotText.textContent = 'Core parameters across XT01-XT20 for the selected campaign, instrument, and depth.';
+      const trendCard = document.getElementById('publicTrend')?.closest('.chart-card');
+      const trendText = trendCard?.querySelector('header p');
+      if (trendText) trendText.textContent = 'Core parameters through campaign months for the selected waypoint.';
+      const monthDepthCard = document.getElementById('comparisonChart')?.closest('.chart-card');
+      const monthDepthTitle = monthDepthCard?.querySelector('header h3');
+      const monthDepthText = monthDepthCard?.querySelector('header p');
+      if (monthDepthTitle) monthDepthTitle.textContent = 'Waypoint Month x Depth';
+      if (monthDepthText) monthDepthText.textContent = 'Selected focus parameter through campaign months and depth for the selected waypoint.';
     }
 
     function baseLayout(titleX, titleY, overrides = {}) {
@@ -1594,6 +1701,7 @@
 
     const SBN_API_CACHE = new Map();
     const SBN_DEFAULT_CHART_METRICS = ['temp_c', 'salinity_psu', 'do_mg_l', 'chlorophyll_ug_l', 'chlorophyll_rfu'];
+    const SBN_QUICK_METRIC_PREFERENCES = ['temp_c', 'salinity_psu', 'do_mg_l', 'chlorophyll_ug_l', 'turbidity_fnu', 'ph'];
     const SBN_COLOR_PALETTE = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#db2777', '#0891b2', '#7c3aed', '#64748b'];
 
     function stationWaypointId() {
@@ -1809,15 +1917,7 @@
           state.chartDepths[key] = resolvedDepth;
         }
       });
-      state.compareMonths = state.compareMonths.filter(month => state.validCompareMonths.includes(month) && month !== state.month);
-      if (!state.compareMonths.length) {
-        const latestComparison = state.validCompareMonths
-          .filter(month => month !== state.month)
-          .slice()
-          .sort()
-          .pop();
-        if (latestComparison) state.compareMonths = [latestComparison];
-      }
+      state.compareMonths = [];
       if (!state.validMetricKeys.includes(state.xMetric)) {
         state.xMetric = availableMetric('salinity_psu', 'cond_ms_cm', state.metric);
       }
@@ -1879,7 +1979,8 @@
       ids.metricSelect.value = state.metric;
       ids.instrumentSelect.value = state.instrument;
       syncMonthOptionsForInstrument();
-      ids.styleSelect.value = state.style;
+      if (ids.styleSelect) ids.styleSelect.value = state.style;
+      updateStyleToggle();
       ids.xMetricSelect.value = state.xMetric;
       ids.yMetricSelect.value = state.yMetric;
       syncDepthSliders();
@@ -1895,23 +1996,34 @@
       ids.transectEyebrow.textContent = 'SBN Transect';
       ids.transectTitle.textContent = transect.name || transect.label || transect.id;
       ids.transectSubtitle.textContent = `${formatMonth(state.month)} campaign rollups by waypoint, depth, and instrument.`;
-      ids.transectStart.textContent = first?.lat && first?.lon ? `${Number(first.lat).toFixed(4)}, ${Number(first.lon).toFixed(4)}` : 'N/A';
-      ids.transectEnd.textContent = last?.lat && last?.lon ? `${Number(last.lat).toFixed(4)}, ${Number(last.lon).toFixed(4)}` : 'N/A';
+      if (ids.transectStart) ids.transectStart.textContent = first?.lat && first?.lon ? `${Number(first.lat).toFixed(4)}, ${Number(first.lon).toFixed(4)}` : 'N/A';
+      if (ids.transectEnd) ids.transectEnd.textContent = last?.lat && last?.lon ? `${Number(last.lat).toFixed(4)}, ${Number(last.lon).toFixed(4)}` : 'N/A';
       ids.instrumentPill.textContent = instrumentLabel(state.instrument);
+      syncSbnPanelText();
       ids.transectFreshnessText.textContent = `${formatMonth(state.month)} · ${metricLabel(state.metric)} · ${instrumentLabel(state.instrument)} · ${plotDepth('publicTransect')} m`;
 
-      const cardMetrics = SBN_DEFAULT_CHART_METRICS.map(key => availableMetric(key)).filter(Boolean);
-      const uniqueMetrics = [...new Set(cardMetrics)].slice(0, 4);
+      const cardMetrics = SBN_QUICK_METRIC_PREFERENCES.map(key => availableMetric(key)).filter(Boolean);
+      const uniqueMetrics = [...new Set(cardMetrics)].slice(0, 6);
       const cards = await Promise.all(uniqueMetrics.map(async metricKey => {
         const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('publicTransect'), metricKey);
         const rows = rowsForPlot(payload.data);
         const row = rows.find(item => item.waypoint_id === state.transectId);
         const valid = rows.map(item => item.value).filter(value => value !== null && value !== undefined && !Number.isNaN(value));
         const transectMean = mean(valid);
+        const value = row?.value;
+        const delta = value !== null && value !== undefined && transectMean !== null ? value - transectMean : null;
+        const ranked = valid.slice().sort((a, b) => b - a);
+        const rank = value !== null && value !== undefined ? ranked.findIndex(item => item === value) + 1 : 0;
+        const sampleCount = row?.stats?.n ?? row?.n ?? null;
         return {
           label: metricLabel(metricKey),
           unit: metricUnit(metricKey),
-          value: row?.value,
+          value,
+          mean: transectMean,
+          delta,
+          rank,
+          total: valid.length,
+          sampleCount,
           detail: transectMean === null ? 'No matching rollup cells at this depth.' : `Transect mean ${formatNumber(transectMean, 2)}${metricUnit(metricKey) ? ` ${metricUnit(metricKey)}` : ''}.`
         };
       }));
@@ -1920,57 +2032,133 @@
           <span>${card.label}</span>
           <strong>${formatNumber(card.value, 2)}${card.unit ? ` ${card.unit}` : ''}</strong>
           <small>${card.detail}</small>
+          <div class="metric-card-details">
+            <div><b>Delta</b><span>${card.delta === null ? 'N/A' : `${card.delta > 0 ? '+' : ''}${formatNumber(card.delta, 2)}`}</span></div>
+            <div><b>Rank</b><span>${card.rank ? `${card.rank}/${card.total}` : 'N/A'}</span></div>
+            <div><b>Depth</b><span>${depthSliderLabel(plotDepth('publicTransect'))}</span></div>
+            <div><b>Samples</b><span>${card.sampleCount ?? 'N/A'}</span></div>
+          </div>
         </article>
       `).join('');
     }
 
-    async function renderSbnLatestTransect() {
-      if (state.style === 'heatmap') {
-        const payload = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
-          campaign_month: state.month,
-          instrument: state.instrument,
-          metric: state.metric
-        });
-        drawSbnHeatmap('publicTransect', payload, 'Waypoint', 'Depth (m)', { reverseY: true });
+    function quickMetricKeys(limit = 4) {
+      const preferred = SBN_QUICK_METRIC_PREFERENCES.map(key => availableMetric(key)).filter(Boolean);
+      return [...new Set(preferred)].slice(0, limit);
+    }
+
+    function prepareQuickPlotGrid(targetId, metrics) {
+      const container = document.getElementById(targetId);
+      if (!container) return [];
+      container.classList.add('quick-plot-grid');
+      container.innerHTML = metrics.map(metricKey => `
+        <div class="quick-plot-card">
+          <div id="${targetId}-${metricKey}" class="quick-plot"></div>
+        </div>
+      `).join('');
+      return metrics.map(metricKey => `${targetId}-${metricKey}`);
+    }
+
+    function drawSbnMiniWaypointChart(targetId, rows, metricKey) {
+      const sorted = rowsForPlot(rows);
+      const x = sorted.map(row => row.waypoint_label || row.waypoint_id);
+      const y = sorted.map(row => row.value);
+      if (!y.some(value => value !== null && value !== undefined)) {
+        plotEmpty(targetId, `No ${metricLabel(metricKey)} cells are available.`);
         return;
       }
-      const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('publicTransect'), state.metric);
-      drawSbnSeriesChart('publicTransect', payload.data, state.metric, COLORS.current, formatMonth(state.month));
+      const selectedIndex = sorted.findIndex(row => row.waypoint_id === state.transectId);
+      const color = metricColor(metricKey);
+      const markerColors = sorted.map((row, index) => index === selectedIndex ? COLORS.current : color);
+      Plotly.newPlot(targetId, [{
+        x,
+        y,
+        name: metricLabel(metricKey),
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'markers' : undefined,
+        marker: {
+          color: markerColors,
+          size: state.style === 'line' ? 8 : undefined,
+          line: { color: 'rgba(24,33,47,0.16)', width: state.style === 'bar' ? 0 : 1 }
+        },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('', metricAxisTitle(metricKey), {
+        margin: { l: 54, r: 16, t: 32, b: 48 },
+        title: { text: metricLabel(metricKey), x: 0, xanchor: 'left', font: { size: 15 } },
+        xaxis: { title: '', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function drawSbnMiniTrendChart(targetId, payload, metricKey) {
+      const rows = payload.data || [];
+      if (!rows.length) {
+        plotEmpty(targetId, `No ${metricLabel(metricKey)} trend cells are available.`);
+        return;
+      }
+      Plotly.newPlot(targetId, [{
+        x: rows.map(row => formatMonth(row.campaign_month)),
+        y: rows.map(row => row.value),
+        name: metricLabel(metricKey),
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'markers' : undefined,
+        marker: { color: metricColor(metricKey), size: state.style === 'line' ? 8 : undefined },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('Month', metricAxisTitle(metricKey), {
+        margin: { l: 54, r: 16, t: 32, b: 56 },
+        title: { text: metricLabel(metricKey), x: 0, xanchor: 'left', font: { size: 15 } },
+        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    async function renderSbnLatestTransect() {
+      const metrics = quickMetricKeys(4);
+      if (!metrics.length) {
+        plotEmpty('publicTransect', 'No SBN parameters are available for this selection.');
+        return;
+      }
+      const plotIds = prepareQuickPlotGrid('publicTransect', metrics);
+      await Promise.all(metrics.map(async (metricKey, index) => {
+        if (state.style === 'heatmap') {
+          const payload = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
+            campaign_month: state.month,
+            instrument: state.instrument,
+            metric: metricKey
+          });
+          drawSbnHeatmap(plotIds[index], payload, 'Waypoint', 'Depth (m)', { reverseY: true });
+          return;
+        }
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('publicTransect'), metricKey);
+        drawSbnMiniWaypointChart(plotIds[index], payload.data, metricKey);
+      }));
     }
 
     async function renderSbnMonthlyTrend() {
-      if (state.style === 'heatmap') {
-        const payload = await sbnFetch('/api/sbn/heatmap/month-depth', {
+      const metrics = quickMetricKeys(4);
+      if (!metrics.length) {
+        plotEmpty('publicTrend', 'No SBN parameters are available for this selection.');
+        return;
+      }
+      const plotIds = prepareQuickPlotGrid('publicTrend', metrics);
+      await Promise.all(metrics.map(async (metricKey, index) => {
+        if (state.style === 'heatmap') {
+          const payload = await sbnFetch('/api/sbn/heatmap/month-depth', {
+            waypoint_id: state.transectId,
+            instrument: state.instrument,
+            metric: metricKey
+          });
+          drawSbnHeatmap(plotIds[index], payload, 'Month', 'Depth (m)', { reverseY: true });
+          return;
+        }
+        const payload = await sbnFetch('/api/sbn/trend', {
           waypoint_id: state.transectId,
           instrument: state.instrument,
-          metric: state.metric
+          depth_bin_m: plotDepth('publicTrend'),
+          metric: metricKey
         });
-        drawSbnHeatmap('publicTrend', payload, 'Month', 'Depth (m)', { reverseY: true });
-        return;
-      }
-      const payload = await sbnFetch('/api/sbn/trend', {
-        waypoint_id: state.transectId,
-        instrument: state.instrument,
-        depth_bin_m: plotDepth('publicTrend'),
-        metric: state.metric
-      });
-      const rows = payload.data || [];
-      if (!rows.length) {
-        plotEmpty('publicTrend', 'No monthly trend cells are available for this waypoint.');
-        return;
-      }
-      Plotly.newPlot('publicTrend', [{
-        x: rows.map(row => formatMonth(row.campaign_month)),
-        y: rows.map(row => row.value),
-        name: state.transectId,
-        type: state.style === 'bar' ? 'bar' : 'scatter',
-        mode: state.style === 'line' ? 'markers' : undefined,
-        line: { color: COLORS.current, width: 0 },
-        marker: { color: COLORS.current, size: 9 },
-        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(state.metric) + '<extra></extra>'
-      }], baseLayout('Month', metricAxisTitle(state.metric), {
-        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
-      }), { responsive: true, displayModeBar: false });
+        drawSbnMiniTrendChart(plotIds[index], payload, metricKey);
+      }));
     }
 
     async function renderSbnMetricChart(targetId, metricKey) {
@@ -1978,93 +2166,24 @@
         plotEmpty(targetId, 'This parameter is not available in the SBN rollup cells.');
         return;
       }
-      if (state.style === 'heatmap') {
-        const payload = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
-          campaign_month: state.month,
-          instrument: state.instrument,
-          metric: metricKey
-        });
-        drawSbnHeatmap(targetId, payload, 'Waypoint', 'Depth (m)', { reverseY: true });
-        return;
-      }
-      const payload = await fetchSbnCells(state.month, state.instrument, plotDepth(targetId), metricKey);
-      drawSbnSeriesChart(targetId, payload.data, metricKey, metricColor(metricKey), formatMonth(state.month));
+      const payload = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
+        campaign_month: state.month,
+        instrument: state.instrument,
+        metric: metricKey
+      });
+      drawSbnHeatmap(targetId, payload, 'Waypoint', 'Depth (m)', { reverseY: true });
     }
 
     async function renderSbnComparisonChart() {
-      const months = [state.month, ...state.compareMonths];
-      if (state.style === 'heatmap') {
-        const current = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
-          campaign_month: state.month,
-          instrument: state.instrument,
-          metric: state.metric
-        });
-        if (!state.compareMonths.length) {
-          drawSbnHeatmap('comparisonChart', current, 'Waypoint', 'Depth (m)', { reverseY: true });
-          return;
-        }
-        const comparisons = await Promise.all(state.compareMonths.map(month => sbnFetch('/api/sbn/heatmap/depth-waypoint', {
-          campaign_month: month,
-          instrument: state.instrument,
-          metric: state.metric
-        })));
-        const comparisonMaps = comparisons.map(payload => {
-          const lookup = new Map();
-          (payload.y || []).forEach((depth, depthIndex) => {
-            (payload.x || []).forEach((waypoint, waypointIndex) => {
-              const value = payload.z?.[depthIndex]?.[waypointIndex];
-              if (value !== null && value !== undefined && Number.isFinite(Number(value))) {
-                lookup.set(`${waypoint}::${depth}`, Number(value));
-              }
-            });
-          });
-          return lookup;
-        });
-        const z = (current.y || []).map((depth, depthIndex) => (current.x || []).map((waypoint, waypointIndex) => {
-          const value = current.z?.[depthIndex]?.[waypointIndex];
-          if (value === null || value === undefined || !Number.isFinite(Number(value))) return null;
-          const comparisonValues = comparisonMaps
-            .map(lookup => lookup.get(`${waypoint}::${depth}`))
-            .filter(item => item !== null && item !== undefined && Number.isFinite(Number(item)));
-          if (!comparisonValues.length) return null;
-          return Number(value) - mean(comparisonValues);
-        }));
-        drawSbnHeatmap('comparisonChart', {
-          ...current,
-          z,
-          metric: {
-            key: state.metric,
-            label: `${metricLabel(state.metric)} anomaly`,
-            unit: metricUnit(state.metric)
-          }
-        }, 'Waypoint', 'Depth (m)', {
-          reverseY: true,
-          colorscale: 'RdBu',
-          reversescale: true,
-          zmid: 0,
-          hovertemplate: 'Waypoint: %{x}<br>Depth: %{y} m<br>Difference: %{z:.2f}<extra></extra>'
-        });
-        return;
-      }
-      const payloads = await Promise.all(months.map(month => fetchSbnCells(month, state.instrument, plotDepth('comparisonChart'), state.metric)));
-      const traces = payloads.map((payload, index) => {
-        const rows = rowsForPlot(payload.data);
-        const color = index === 0 ? COLORS.current : COLORS.compare[(index - 1) % COLORS.compare.length];
-        return {
-          x: rows.map(row => row.waypoint_label || row.waypoint_id),
-          y: rows.map(row => row.value),
-          name: formatMonth(payload.campaign_month),
-          type: state.style === 'bar' ? 'bar' : 'scatter',
-          mode: state.style === 'line' ? 'markers' : undefined,
-          line: { color, width: 0 },
-          marker: { color, size: 8 },
-          hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(state.metric) + '<extra></extra>'
-        };
+      const payload = await sbnFetch('/api/sbn/heatmap/month-depth', {
+        waypoint_id: state.transectId,
+        instrument: state.instrument,
+        metric: state.metric
       });
-      Plotly.newPlot('comparisonChart', traces, baseLayout('Waypoint', metricAxisTitle(state.metric), {
-        barmode: state.style === 'bar' ? 'group' : undefined,
-        xaxis: { title: 'Waypoint', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' }
-      }), { responsive: true, displayModeBar: false });
+      drawSbnHeatmap('comparisonChart', payload, 'Month', 'Depth (m)', {
+        reverseY: true,
+        hovertemplate: 'Month: %{x}<br>Depth: %{y} m<br>%{z:.2f}<extra></extra>'
+      });
     }
 
     async function renderSbnMonthlyHeatmap() {
@@ -2184,7 +2303,6 @@
         populateSbnControls();
         await renderSbnHeaderAndCards();
         if (token !== state.renderToken) return;
-        renderSbnMap();
         await Promise.all([
           renderSbnLatestTransect(),
           renderSbnMonthlyTrend(),
@@ -2220,10 +2338,22 @@
         state.instrument = event.target.value;
         renderSbnAll();
       });
-      ids.styleSelect.addEventListener('change', event => {
-        state.style = event.target.value;
-        renderSbnAll();
-      });
+      if (ids.styleSelect) {
+        ids.styleSelect.addEventListener('change', event => {
+          state.style = event.target.value;
+          updateStyleToggle();
+          renderSbnAll();
+        });
+      }
+      if (ids.styleToggle) {
+        ids.styleToggle.querySelectorAll('button[data-style]').forEach(button => {
+          button.addEventListener('click', () => {
+            state.style = button.dataset.style;
+            updateStyleToggle();
+            renderSbnAll();
+          });
+        });
+      }
       document.querySelectorAll('.plot-depth-range').forEach(input => {
         input.addEventListener('input', event => {
           const key = event.target.dataset.depthKey;
@@ -2242,36 +2372,39 @@
         state.yMetric = event.target.value;
         renderSbnCrossPlot();
       });
-      ids.compareBox.addEventListener('change', event => {
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) return;
-        if (target.checked) {
-          if (state.compareMonths.length >= 5) {
-            target.checked = false;
-            return;
-          }
-          if (!state.compareMonths.includes(target.value)) state.compareMonths.push(target.value);
-        } else {
-          state.compareMonths = state.compareMonths.filter(month => month !== target.value);
-        }
-        populateCompareBox();
-        renderSbnComparisonChart();
-      });
-      ids.clearCompareBtn.addEventListener('click', () => {
-        state.compareMonths = [];
-        populateCompareBox();
-        renderSbnComparisonChart();
-      });
+      if (ids.compareBox) {
+        ids.compareBox.addEventListener('change', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLInputElement)) return;
+          state.compareMonths = target.checked ? [target.value] : [];
+          populateCompareBox();
+          renderSbnComparisonChart();
+        });
+      }
+      if (ids.clearCompareBtn) {
+        ids.clearCompareBtn.addEventListener('click', () => {
+          state.compareMonths = [];
+          populateCompareBox();
+          renderSbnComparisonChart();
+        });
+      }
       document.querySelectorAll('#viewTabs button').forEach(button => {
         button.addEventListener('click', () => switchTab(button.dataset.tab));
       });
       window.addEventListener('resize', () => {
         if (state.map) state.map.invalidateSize();
+        const resizePlot = el => {
+          if (!el || !window.Plotly || !el._fullLayout) return;
+          Plotly.Plots.resize(el);
+        };
         ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
           .forEach(id => {
             const el = document.getElementById(id);
-            if (el && window.Plotly) Plotly.Plots.resize(el);
+            resizePlot(el);
           });
+        document.querySelectorAll('.quick-plot').forEach(el => {
+          resizePlot(el);
+        });
       });
     }
 
