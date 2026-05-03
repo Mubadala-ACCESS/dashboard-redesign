@@ -246,6 +246,7 @@ class MongoDashboardRepository:
         'sp_cond_ms_cm',
         'pressure_dbar',
     ]
+    SBN_INSTRUMENT_ORDER = ['exo', 'idronaut', 'rbr']
 
     def __init__(self, settings: Settings, metadata_service: MetadataService):
         self.settings = settings
@@ -2052,6 +2053,35 @@ class MongoDashboardRepository:
         self.cache.set(cache_key, metrics, ttl_seconds=300)
         return metrics
 
+    def _sbn_available_instruments(self) -> List[str]:
+        cache_key = 'sbn_available_instruments_v2'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        seen = set(self.SBN_INSTRUMENT_ORDER)
+        if self._collection_exists(self.SBN_COLLECTIONS['cells']):
+            seen.update(
+                str(value).lower()
+                for value in self.db[self.SBN_COLLECTIONS['cells']].distinct('instrument', {'depth_bin_m': {'$gte': 0}})
+                if value
+            )
+        if self._collection_exists(self.SBN_COLLECTIONS['profiles']):
+            seen.update(
+                str(value).lower()
+                for value in self.db[self.SBN_COLLECTIONS['profiles']].distinct('instrument')
+                if value
+            )
+        if self._collection_exists(self.SBN_COLLECTIONS['events']):
+            for value in self.db[self.SBN_COLLECTIONS['events']].distinct('instruments'):
+                if isinstance(value, list):
+                    seen.update(str(item).lower() for item in value if item)
+                elif value:
+                    seen.add(str(value).lower())
+        rank = {name: index for index, name in enumerate(self.SBN_INSTRUMENT_ORDER)}
+        instruments = sorted(seen, key=lambda name: (rank.get(name, len(rank)), name))
+        self.cache.set(cache_key, instruments, ttl_seconds=300)
+        return instruments
+
     def _sbn_normalized_depth(self, value: Any) -> Optional[int]:
         try:
             depth = int(round(float(value)))
@@ -2123,31 +2153,53 @@ class MongoDashboardRepository:
             grouped.setdefault(doc.get(group_key), []).append(doc)
         combined = []
         for key, group in grouped.items():
-            stats_list = [self._sbn_metric_stats_from_doc(doc, metric) for doc in group]
-            stats_list = [stats for stats in stats_list if stats and self._is_numeric_scalar(stats.get('avg'))]
-            if not stats_list:
-                continue
-            total_n = sum(max(0, int(stats.get('n') or 0)) for stats in stats_list)
-            weights = [max(1, int(stats.get('n') or 0)) for stats in stats_list]
-            avg = sum(stats['avg'] * weight for stats, weight in zip(stats_list, weights)) / sum(weights)
-            mins = [stats.get('min') for stats in stats_list if stats.get('min') is not None]
-            maxes = [stats.get('max') for stats in stats_list if stats.get('max') is not None]
-            base = dict(group[0])
-            base['instrument'] = 'combined'
-            base['source_instruments'] = sorted({doc.get('instrument') for doc in group if doc.get('instrument')})
-            base['metrics'] = {
-                metric: {
-                    'avg': avg,
-                    'min': min(mins) if mins else None,
-                    'max': max(maxes) if maxes else None,
-                    'n': total_n,
-                }
-            }
-            combined.append(base)
+            doc = self._sbn_combined_doc(group, metric)
+            if doc:
+                combined.append(doc)
         return combined
 
+    def _sbn_weighted_metric_stats(self, docs: List[Dict[str, Any]], metric: str) -> Optional[Dict[str, Any]]:
+        weighted_sum = 0.0
+        weight_total = 0
+        sample_total = 0
+        mins = []
+        maxes = []
+        for doc in docs:
+            stats = self._sbn_metric_stats_from_doc(doc, metric)
+            if not stats or not self._is_numeric_scalar(stats.get('avg')):
+                continue
+            n = max(0, int(stats.get('n') or 0))
+            weight = max(1, n)
+            weighted_sum += float(stats['avg']) * weight
+            weight_total += weight
+            sample_total += weight
+            if self._is_numeric_scalar(stats.get('min')):
+                mins.append(float(stats['min']))
+            if self._is_numeric_scalar(stats.get('max')):
+                maxes.append(float(stats['max']))
+        if not weight_total:
+            return None
+        return {
+            'avg': weighted_sum / weight_total,
+            'min': min(mins) if mins else None,
+            'max': max(maxes) if maxes else None,
+            'n': sample_total,
+        }
+
+    def _sbn_combined_doc(self, docs: List[Dict[str, Any]], metric: str) -> Optional[Dict[str, Any]]:
+        if not docs:
+            return None
+        stats = self._sbn_weighted_metric_stats(docs, metric)
+        if not stats:
+            return None
+        base = dict(docs[0])
+        base['instrument'] = 'combined'
+        base['source_instruments'] = sorted({str(doc.get('instrument')) for doc in docs if doc.get('instrument')})
+        base['metrics'] = {metric: stats}
+        return base
+
     def get_sbn_options(self) -> Dict[str, Any]:
-        cache_key = 'sbn_options_v1'
+        cache_key = 'sbn_options_v3'
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
@@ -2167,19 +2219,15 @@ class MongoDashboardRepository:
                 if value
             )
         months = cell_months or [event['campaign_month'] for event in events if event.get('campaign_month')]
-        instruments = sorted(
-            value
-            for value in (self.db[self.SBN_COLLECTIONS['cells']].distinct('instrument', {'depth_bin_m': {'$gte': 0}}) if self._collection_exists(self.SBN_COLLECTIONS['cells']) else [])
-            if value
-        )
-        months_by_instrument: Dict[str, List[str]] = {}
+        instruments = self._sbn_available_instruments()
+        months_by_instrument: Dict[str, List[str]] = {instrument: [] for instrument in instruments}
         if self._collection_exists(self.SBN_COLLECTIONS['cells']):
             for doc in self.db[self.SBN_COLLECTIONS['cells']].aggregate([
                 {'$match': {'depth_bin_m': {'$gte': 0}}},
                 {'$group': {'_id': '$instrument', 'months': {'$addToSet': '$campaign_month'}}},
             ]):
                 if doc.get('_id'):
-                    months_by_instrument[str(doc['_id'])] = sorted(month for month in doc.get('months', []) if month)
+                    months_by_instrument[str(doc['_id']).lower()] = sorted(month for month in doc.get('months', []) if month)
         depths = self._sbn_valid_depths(
             self.db[self.SBN_COLLECTIONS['cells']].distinct('depth_bin_m') if self._collection_exists(self.SBN_COLLECTIONS['cells']) else []
         )
@@ -2268,8 +2316,21 @@ class MongoDashboardRepository:
 
         months = self._sbn_distinct_months(instrument)
         if not months and instrument != 'combined':
-            instrument = 'combined'
-            months = self._sbn_distinct_months(instrument)
+            all_options = self.get_sbn_options()
+            all_months = all_options.get('months', [])
+            if campaign_month not in all_months:
+                campaign_month = all_months[-1] if all_months else campaign_month
+            return {
+                'instrument': instrument,
+                'campaign_month': campaign_month,
+                'metric': metric,
+                'depth_bin_m': int(depth_bin_m or 0),
+                'months': all_months,
+                'metrics': all_options.get('metrics', []),
+                'depths': all_options.get('depths', []),
+                'compare_months': [],
+                'has_data': False,
+            }
         if not months:
             return {
                 'instrument': instrument,
@@ -2429,7 +2490,9 @@ class MongoDashboardRepository:
                     pair_groups.setdefault((doc.get('waypoint_id'), depth), []).append(doc)
             docs = []
             for group in pair_groups.values():
-                docs.extend(self._sbn_combine_docs(group, metric, 'campaign_month')[:1])
+                combined_doc = self._sbn_combined_doc(group, metric)
+                if combined_doc:
+                    docs.append(combined_doc)
         depths = self._sbn_valid_depths(doc.get('depth_bin_m') for doc in docs)
         waypoints = self._sbn_waypoint_docs()
         values: Dict[Tuple[str, int], float] = {}
@@ -2474,7 +2537,9 @@ class MongoDashboardRepository:
                     pair_groups.setdefault((doc.get('campaign_month'), depth), []).append(doc)
             docs = []
             for group in pair_groups.values():
-                docs.extend(self._sbn_combine_docs(group, metric, 'waypoint_id')[:1])
+                combined_doc = self._sbn_combined_doc(group, metric)
+                if combined_doc:
+                    docs.append(combined_doc)
         else:
             docs = raw_docs
         months = sorted({doc.get('campaign_month') for doc in docs if doc.get('campaign_month')})
@@ -2517,7 +2582,9 @@ class MongoDashboardRepository:
                 pair_groups.setdefault((doc.get('campaign_month'), doc.get('waypoint_id')), []).append(doc)
             docs = []
             for group in pair_groups.values():
-                docs.extend(self._sbn_combine_docs(group, metric, 'campaign_month')[:1])
+                combined_doc = self._sbn_combined_doc(group, metric)
+                if combined_doc:
+                    docs.append(combined_doc)
         months = sorted({doc.get('campaign_month') for doc in docs if doc.get('campaign_month')})
         waypoints = self._sbn_waypoint_docs()
         values: Dict[Tuple[str, str], float] = {}
@@ -2562,19 +2629,17 @@ class MongoDashboardRepository:
                 grouped.setdefault(doc.get('waypoint_id'), []).append(doc)
             rows = []
             for waypoint, group in grouped.items():
-                x_stats = [self._sbn_metric_stats_from_doc(doc, x_metric) for doc in group]
-                y_stats = [self._sbn_metric_stats_from_doc(doc, y_metric) for doc in group]
-                x_values = [stats['avg'] for stats in x_stats if stats]
-                y_values = [stats['avg'] for stats in y_stats if stats]
-                if not x_values or not y_values:
+                x_stats = self._sbn_weighted_metric_stats(group, x_metric)
+                y_stats = self._sbn_weighted_metric_stats(group, y_metric)
+                if not x_stats or not y_stats:
                     continue
                 rows.append(
                     {
                         'waypoint_id': self._sbn_public_waypoint(waypoint),
                         'waypoint_order': int(group[0].get('waypoint_order') or 0),
                         'instrument': 'combined',
-                        'x': sum(x_values) / len(x_values),
-                        'y': sum(y_values) / len(y_values),
+                        'x': x_stats['avg'],
+                        'y': y_stats['avg'],
                     }
                 )
         else:
@@ -2691,6 +2756,116 @@ class MongoDashboardRepository:
         payload = {'data': rows}
         self.cache.set(cache_key, payload, ttl_seconds=120)
         return payload
+
+    def export_sbn_csv_iter(
+        self,
+        campaign_month: Optional[str] = None,
+        instrument: str = 'combined',
+        depth_bin_m: Optional[int] = None,
+        metrics: Optional[List[str]] = None,
+        all_depths: bool = False,
+        append_location: bool = False,
+    ) -> Iterable[str]:
+        metric_keys = [metric for metric in (metrics or []) if metric]
+        if not metric_keys:
+            metric_keys = [item['key'] for item in self._sbn_available_metrics()]
+        metric_keys = [metric for metric in metric_keys if metric]
+        header = [
+            'campaign_month',
+            'instrument',
+            'source_instruments',
+            'waypoint',
+            'waypoint_order',
+            'depth_bin_m',
+            'metric',
+            'metric_label',
+            'unit',
+            'avg',
+            'min',
+            'max',
+            'n',
+        ]
+        if append_location:
+            header.extend(['latitude', 'longitude'])
+        if not metric_keys or not self._collection_exists(self.SBN_COLLECTIONS['cells']):
+            return self._csv_chunk_writer([header])
+
+        query: Dict[str, Any] = {}
+        if campaign_month and str(campaign_month).lower() != 'all':
+            query['campaign_month'] = campaign_month
+        if not all_depths:
+            normalized_depth = self._sbn_normalized_depth(depth_bin_m)
+            query['depth_bin_m'] = normalized_depth if normalized_depth is not None else 0
+        else:
+            query['depth_bin_m'] = {'$gte': 0}
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        query['$or'] = [{f'metrics.{metric}.avg': {'$exists': True}} for metric in metric_keys]
+
+        projection: Dict[str, int] = {
+            '_id': 0,
+            'campaign_month': 1,
+            'waypoint_id': 1,
+            'waypoint_order': 1,
+            'instrument': 1,
+            'depth_bin_m': 1,
+            'lat': 1,
+            'long': 1,
+        }
+        for metric in metric_keys:
+            projection[f'metrics.{metric}'] = 1
+
+        docs = list(
+            self.db[self.SBN_COLLECTIONS['cells']]
+            .find(query, projection)
+            .sort([('campaign_month', ASCENDING), ('waypoint_order', ASCENDING), ('depth_bin_m', ASCENDING), ('instrument', ASCENDING)])
+            .batch_size(5000)
+        )
+
+        def row_for_doc(doc: Dict[str, Any], metric: str, stats: Dict[str, Any], export_instrument: str) -> List[Any]:
+            source_instruments = doc.get('source_instruments') or ([doc.get('instrument')] if doc.get('instrument') else [])
+            row: List[Any] = [
+                doc.get('campaign_month'),
+                export_instrument,
+                ';'.join(str(item) for item in source_instruments if item),
+                self._sbn_public_waypoint(doc.get('waypoint_id')) or doc.get('waypoint_id'),
+                int(doc.get('waypoint_order') or self._sbn_waypoint_order(doc.get('waypoint_id')) or 0),
+                doc.get('depth_bin_m'),
+                metric,
+                self._sbn_metric_label(metric),
+                self._sbn_metric_unit(metric),
+                stats.get('avg'),
+                stats.get('min'),
+                stats.get('max'),
+                stats.get('n'),
+            ]
+            if append_location:
+                row.extend([doc.get('lat'), doc.get('long')])
+            return row
+
+        def rows() -> Iterable[List[Any]]:
+            yield header
+            if instrument == 'combined':
+                grouped: Dict[Tuple[Any, Any, Any], List[Dict[str, Any]]] = {}
+                for doc in docs:
+                    grouped.setdefault((doc.get('campaign_month'), doc.get('waypoint_id'), doc.get('depth_bin_m')), []).append(doc)
+                for key in sorted(grouped.keys(), key=lambda item: (item[0] or '', int(self._sbn_waypoint_order(item[1]) or 0), int(item[2] or 0))):
+                    group = grouped[key]
+                    for metric in metric_keys:
+                        combined_doc = self._sbn_combined_doc(group, metric)
+                        if not combined_doc:
+                            continue
+                        stats = self._sbn_metric_stats_from_doc(combined_doc, metric)
+                        if stats:
+                            yield row_for_doc(combined_doc, metric, stats, 'combined')
+                return
+            for doc in docs:
+                for metric in metric_keys:
+                    stats = self._sbn_metric_stats_from_doc(doc, metric)
+                    if stats:
+                        yield row_for_doc(doc, metric, stats, str(doc.get('instrument') or instrument))
+
+        return self._csv_chunk_writer(rows())
 
     # ------------------------------------------------------------------
     # Latest cards and alerts

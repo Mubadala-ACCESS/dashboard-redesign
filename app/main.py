@@ -478,6 +478,30 @@ def create_app() -> FastAPI:
             ttl_seconds=120,
         )
 
+    @app.get('/api/sbn/export.csv')
+    def api_sbn_export_csv(
+        campaign_month: Optional[str] = Query(default=None),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: Optional[int] = Query(default=None),
+        metrics: Optional[str] = Query(default=None),
+        all_depths: bool = Query(default=False),
+        append_location: bool = Query(default=False),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        metric_list = parse_metric_list(metrics)
+        csv_iter = repo.export_sbn_csv_iter(
+            campaign_month=campaign_month,
+            instrument=instrument,
+            depth_bin_m=depth_bin_m,
+            metrics=metric_list,
+            all_depths=all_depths,
+            append_location=append_location,
+        )
+        month_part = campaign_month if campaign_month and campaign_month.lower() != 'all' else 'all-months'
+        depth_part = 'all-depths' if all_depths else f'{depth_bin_m or 0}m'
+        filename = f'sbn_{instrument}_{month_part}_{depth_part}.csv'
+        return StreamingResponse(csv_iter, media_type='text/csv', headers={'Content-Disposition': f'attachment; filename={filename}'})
+
     return app
 
 

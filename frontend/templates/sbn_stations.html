@@ -314,6 +314,19 @@
       transition: 0.18s ease;
     }
     .ghost-button:hover { background: var(--primary-soft); border-color: rgba(91, 33, 182, 0.16); }
+    .primary-button {
+      border: 1px solid rgba(91, 33, 182, 0.36);
+      border-radius: 14px;
+      padding: 12px 16px;
+      min-height: 48px;
+      background: linear-gradient(135deg, var(--primary), #7c3aed);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 12px 26px rgba(91, 33, 182, 0.22);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .primary-button:hover { transform: translateY(-1px); box-shadow: 0 16px 32px rgba(91, 33, 182, 0.28); }
 
     .analysis-header {
       display: grid;
@@ -419,6 +432,25 @@
       background: var(--primary);
       color: #fff;
       box-shadow: 0 10px 18px rgba(91, 33, 182, 0.2);
+    }
+    .advanced-view-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+      padding: 14px 16px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: var(--shadow-sm);
+    }
+    .advanced-view-toolbar span {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
     }
 
     .tab-panel { display: none; gap: 20px; }
@@ -532,6 +564,82 @@
       border: 1px dashed rgba(91, 33, 182, 0.2);
       color: var(--muted);
     }
+    .download-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2200;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      background: rgba(15, 23, 42, 0.42);
+      backdrop-filter: blur(6px);
+    }
+    .download-modal {
+      width: min(760px, 100%);
+      max-height: min(86vh, 760px);
+      overflow: auto;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.42);
+      background: #fff;
+      box-shadow: var(--shadow-lg);
+      padding: 22px;
+    }
+    .download-modal header {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    .download-modal h3 { margin: 2px 0 6px; font-size: 1.35rem; }
+    .download-form { display: grid; gap: 16px; }
+    .download-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .download-grid label,
+    .download-parameter-head { display: grid; gap: 7px; }
+    .download-grid span,
+    .download-parameter-head span {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+    .download-grid select {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fff;
+      color: var(--text);
+    }
+    .download-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .download-metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      max-height: 280px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .download-option {
+      display: flex;
+      align-items: start;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(91, 33, 182, 0.04);
+      font-weight: 700;
+    }
+    .download-option small { display: block; margin-top: 2px; color: var(--muted); font-weight: 600; }
+    .download-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
     @media (max-width: 1320px) {
       .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -565,7 +673,10 @@
       .summary-grid,
       .side-kv,
       .chart-grid,
-      .quick-plot-grid { grid-template-columns: 1fr; }
+      .quick-plot-grid,
+      .download-grid,
+      .download-metric-grid { grid-template-columns: 1fr; }
+      .advanced-view-toolbar { align-items: stretch; flex-direction: column; }
       .chart-span-2 { grid-column: span 1; }
     }
   </style>
@@ -627,6 +738,7 @@
               <button type="button" data-tab="quick" class="is-active">Quick View</button>
               <button type="button" data-tab="advanced">Advanced</button>
             </div>
+            <button class="primary-button" id="downloadCsvBtn" type="button">Download CSV</button>
           </div>
         </section>
 
@@ -670,6 +782,14 @@
         </section>
 
         <section id="advanced-view" class="tab-panel">
+          <div class="advanced-view-toolbar">
+            <span>Display style</span>
+            <div class="chart-mode-toggle" id="advancedStyleToggle" aria-label="Advanced display style">
+              <button type="button" data-advanced-style="heatmap" class="is-active">Heatmap</button>
+              <button type="button" data-advanced-style="bar">Bars</button>
+              <button type="button" data-advanced-style="line">Points</button>
+            </div>
+          </div>
           <div class="chart-grid">
             <article class="chart-card">
               <header><div><h3>Temperature</h3><p>Current month across XT01–XT20.</p></div></header>
@@ -785,6 +905,7 @@
       metric: 'oxygen',
       instrument: 'combined',
       style: 'bar',
+      advancedStyle: 'heatmap',
       chartDepths: {
         publicTransect: 0,
         publicTrend: 0,
@@ -820,6 +941,8 @@
       instrumentSelect: document.getElementById('instrumentSelect'),
       styleSelect: document.getElementById('styleSelect'),
       styleToggle: document.getElementById('styleToggle'),
+      advancedStyleToggle: document.getElementById('advancedStyleToggle'),
+      downloadCsvBtn: document.getElementById('downloadCsvBtn'),
       xMetricSelect: document.getElementById('xMetricSelect'),
       yMetricSelect: document.getElementById('yMetricSelect'),
       compareBox: document.getElementById('compareBox'),
@@ -1147,8 +1270,13 @@
       document.querySelectorAll('.chart-depth-control').forEach(control => {
         const key = control.querySelector('.plot-depth-range')?.dataset.depthKey;
         const quickControl = key === 'publicTransect' || key === 'publicTrend';
+        const advancedTransectControl = ['tempTransect', 'salTransect', 'oxyTransect', 'chlTransect', 'comparisonChart'].includes(key);
         const depthCellControl = key === 'monthlyHeatmap' || key === 'tsChart';
-        const showDepthControls = quickControl ? state.style !== 'heatmap' : depthCellControl;
+        const showDepthControls = quickControl
+          ? state.style !== 'heatmap'
+          : advancedTransectControl
+            ? state.advancedStyle !== 'heatmap'
+            : depthCellControl;
         control.style.display = showDepthControls ? 'grid' : 'none';
       });
     }
@@ -1192,10 +1320,16 @@
     }
 
     function updateStyleToggle() {
-      if (!ids.styleToggle) return;
-      ids.styleToggle.querySelectorAll('button[data-style]').forEach(button => {
-        button.classList.toggle('is-active', button.dataset.style === state.style);
-      });
+      if (ids.styleToggle) {
+        ids.styleToggle.querySelectorAll('button[data-style]').forEach(button => {
+          button.classList.toggle('is-active', button.dataset.style === state.style);
+        });
+      }
+      if (ids.advancedStyleToggle) {
+        ids.advancedStyleToggle.querySelectorAll('button[data-advanced-style]').forEach(button => {
+          button.classList.toggle('is-active', button.dataset.advancedStyle === state.advancedStyle);
+        });
+      }
     }
 
     function syncSbnPanelText() {
@@ -1896,6 +2030,56 @@
       }), { responsive: true, displayModeBar: false });
     }
 
+    function drawSbnAdvancedWaypointChart(targetId, rows, metricKey) {
+      const sorted = rowsForPlot(rows);
+      const x = sorted.map(row => row.waypoint_label || row.waypoint_id);
+      const y = sorted.map(row => row.value);
+      if (!y.some(value => value !== null && value !== undefined && Number.isFinite(Number(value)))) {
+        plotEmpty(targetId, 'No rollup cells are available for this depth.');
+        return;
+      }
+      Plotly.newPlot(targetId, [{
+        x,
+        y,
+        name: metricLabel(metricKey),
+        type: state.advancedStyle === 'bar' ? 'bar' : 'scatter',
+        mode: state.advancedStyle === 'line' ? 'markers' : undefined,
+        marker: {
+          color: metricColor(metricKey),
+          size: state.advancedStyle === 'line' ? 9 : undefined,
+          line: { color: 'rgba(24,33,47,0.16)', width: state.advancedStyle === 'bar' ? 0 : 1 }
+        },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('Waypoint', metricAxisTitle(metricKey), {
+        xaxis: { title: 'Waypoint', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function drawSbnAdvancedTrendChart(targetId, payload, metricKey) {
+      const rows = payload.data || [];
+      if (!rows.length || !rows.some(row => row.value !== null && row.value !== undefined && Number.isFinite(Number(row.value)))) {
+        plotEmpty(targetId, 'No campaign cells are available for this depth.');
+        return;
+      }
+      Plotly.newPlot(targetId, [{
+        x: rows.map(row => formatMonth(row.campaign_month)),
+        y: rows.map(row => row.value),
+        name: metricLabel(metricKey),
+        type: state.advancedStyle === 'bar' ? 'bar' : 'scatter',
+        mode: state.advancedStyle === 'line' ? 'markers' : undefined,
+        marker: {
+          color: metricColor(metricKey),
+          size: state.advancedStyle === 'line' ? 9 : undefined,
+          line: { color: 'rgba(24,33,47,0.16)', width: state.advancedStyle === 'bar' ? 0 : 1 }
+        },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('Campaign Month', metricAxisTitle(metricKey), {
+        xaxis: { title: 'Campaign Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
     async function syncSbnSelection() {
       if (!state.dataset) return;
       const selection = await sbnFetch('/api/sbn/selection', {
@@ -2168,6 +2352,11 @@
         plotEmpty(targetId, 'This parameter is not available in the SBN rollup cells.');
         return;
       }
+      if (state.advancedStyle !== 'heatmap') {
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth(targetId), metricKey);
+        drawSbnAdvancedWaypointChart(targetId, payload.data, metricKey);
+        return;
+      }
       const payload = await sbnFetch('/api/sbn/heatmap/depth-waypoint', {
         campaign_month: state.month,
         instrument: state.instrument,
@@ -2177,6 +2366,16 @@
     }
 
     async function renderSbnComparisonChart() {
+      if (state.advancedStyle !== 'heatmap') {
+        const payload = await sbnFetch('/api/sbn/trend', {
+          waypoint_id: state.transectId,
+          instrument: state.instrument,
+          depth_bin_m: plotDepth('comparisonChart'),
+          metric: state.metric
+        });
+        drawSbnAdvancedTrendChart('comparisonChart', payload, state.metric);
+        return;
+      }
       const payload = await sbnFetch('/api/sbn/heatmap/month-depth', {
         waypoint_id: state.transectId,
         instrument: state.instrument,
@@ -2189,6 +2388,11 @@
     }
 
     async function renderSbnMonthlyHeatmap() {
+      if (state.advancedStyle !== 'heatmap') {
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('monthlyHeatmap'), state.metric);
+        drawSbnAdvancedWaypointChart('monthlyHeatmap', payload.data, state.metric);
+        return;
+      }
       const payload = await sbnFetch('/api/sbn/heatmap/month-waypoint', {
         instrument: state.instrument,
         depth_bin_m: plotDepth('monthlyHeatmap'),
@@ -2295,6 +2499,116 @@
       setTimeout(() => state.map.invalidateSize(), 120);
     }
 
+    function buildSbnDownloadModal() {
+      const metricOptions = state.validMetrics?.length ? state.validMetrics : (state.dataset?.metrics || Object.values(METRICS));
+      const instruments = ['combined', ...(state.dataset?.instruments || [])];
+      const uniqueInstruments = [...new Set(instruments)];
+      const metricRows = metricOptions.map(metric => `
+        <label class="download-option">
+          <input type="checkbox" name="metric" value="${metric.key}" checked />
+          <span>
+            <strong>${metric.label || metric.key}</strong>
+            <small>${metric.unit || 'unitless'}</small>
+          </span>
+        </label>
+      `).join('');
+      return `
+        <div class="download-overlay" id="sbnDownloadOverlay" role="presentation">
+          <article class="download-modal" role="dialog" aria-modal="true" aria-labelledby="sbnDownloadTitle">
+            <header>
+              <div>
+                <span class="eyebrow">Download CSV</span>
+                <h3 id="sbnDownloadTitle">SBN transect rollups</h3>
+                <p>Export waypoint-depth rollups for one instrument family or a sample-weighted combined view.</p>
+              </div>
+              <button class="ghost-button" type="button" data-download-close>Close</button>
+            </header>
+            <form id="sbnDownloadForm" class="download-form">
+              <div class="download-grid">
+                <label>
+                  <span>Instrument</span>
+                  <select name="instrument">
+                    ${uniqueInstruments.map(instrument => `<option value="${instrument}" ${instrument === state.instrument ? 'selected' : ''}>${instrumentLabel(instrument)}</option>`).join('')}
+                  </select>
+                </label>
+                <label>
+                  <span>Campaign scope</span>
+                  <select name="campaign_scope">
+                    <option value="current">Current month (${formatMonth(state.month)})</option>
+                    <option value="all">All campaign months</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Depth scope</span>
+                  <select name="depth_scope">
+                    <option value="current">Current depth (${depthSliderLabel(plotDepth(state.activeTab === 'advanced' ? 'monthlyHeatmap' : 'publicTransect'))})</option>
+                    <option value="all">All sampled depths</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Location</span>
+                  <select name="append_location">
+                    <option value="false">Do not append coordinates</option>
+                    <option value="true">Append latitude and longitude</option>
+                  </select>
+                </label>
+              </div>
+              <label class="download-toggle">
+                <input type="checkbox" id="sbnDownloadAllMetrics" checked />
+                <span>Include all listed parameters</span>
+              </label>
+              <div class="download-parameter-head">
+                <span>Parameters</span>
+              </div>
+              <div class="download-metric-grid">${metricRows}</div>
+              <div class="download-actions">
+                <button class="ghost-button" type="button" data-download-close>Cancel</button>
+                <button class="primary-button" type="submit">Download CSV</button>
+              </div>
+            </form>
+          </article>
+        </div>
+      `;
+    }
+
+    function showSbnDownloadOptions() {
+      document.getElementById('sbnDownloadOverlay')?.remove();
+      document.body.insertAdjacentHTML('beforeend', buildSbnDownloadModal());
+      const overlay = document.getElementById('sbnDownloadOverlay');
+      const form = document.getElementById('sbnDownloadForm');
+      const allMetrics = document.getElementById('sbnDownloadAllMetrics');
+      const metricInputs = Array.from(form.querySelectorAll('input[name="metric"]'));
+      const close = () => overlay?.remove();
+      overlay.querySelectorAll('[data-download-close]').forEach(button => button.addEventListener('click', close));
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) close();
+      });
+      allMetrics?.addEventListener('change', () => {
+        metricInputs.forEach(input => { input.checked = allMetrics.checked; });
+      });
+      metricInputs.forEach(input => {
+        input.addEventListener('change', () => {
+          allMetrics.checked = metricInputs.every(item => item.checked);
+        });
+      });
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const data = new FormData(form);
+        const selectedMetrics = metricInputs.filter(input => input.checked).map(input => input.value);
+        if (!selectedMetrics.length) return;
+        const depthKey = state.activeTab === 'advanced' ? 'monthlyHeatmap' : 'publicTransect';
+        const url = new URL('/api/sbn/export.csv', window.location.origin);
+        url.searchParams.set('instrument', data.get('instrument') || state.instrument);
+        url.searchParams.set('campaign_month', data.get('campaign_scope') === 'all' ? 'all' : state.month);
+        url.searchParams.set('depth_bin_m', String(plotDepth(depthKey)));
+        url.searchParams.set('all_depths', data.get('depth_scope') === 'all' ? 'true' : 'false');
+        url.searchParams.set('append_location', data.get('append_location') === 'true' ? 'true' : 'false');
+        url.searchParams.set('metrics', selectedMetrics.join('|'));
+        window.location.href = url.toString();
+        close();
+      });
+    }
+
     async function renderSbnAll() {
       const token = (state.renderToken || 0) + 1;
       state.renderToken = token;
@@ -2356,6 +2670,16 @@
           });
         });
       }
+      if (ids.advancedStyleToggle) {
+        ids.advancedStyleToggle.querySelectorAll('button[data-advanced-style]').forEach(button => {
+          button.addEventListener('click', () => {
+            state.advancedStyle = button.dataset.advancedStyle;
+            updateStyleToggle();
+            updateDepthControlVisibility();
+            renderSbnAll();
+          });
+        });
+      }
       document.querySelectorAll('.plot-depth-range').forEach(input => {
         input.addEventListener('input', event => {
           const key = event.target.dataset.depthKey;
@@ -2393,6 +2717,7 @@
       document.querySelectorAll('#viewTabs button').forEach(button => {
         button.addEventListener('click', () => switchTab(button.dataset.tab));
       });
+      ids.downloadCsvBtn?.addEventListener('click', () => showSbnDownloadOptions());
       window.addEventListener('resize', () => {
         if (state.map) state.map.invalidateSize();
         const resizePlot = el => {
