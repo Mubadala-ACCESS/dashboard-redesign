@@ -705,7 +705,7 @@
             </article>
 
             <article class="chart-card chart-span-2">
-              <header><div><h3>Waypoint Month x Depth</h3><p>Selected focus parameter through campaign months and depth for the selected waypoint.</p></div></header>
+              <header><div><h3>Selected Waypoint Vertical History</h3><p>Focused parameter by campaign month and sampled depth for the selected waypoint.</p></div></header>
               <div class="chart-depth-control">
                 <label for="comparisonChartDepthRange">Depth <span id="comparisonChartDepthValueLabel">0 m</span></label>
                 <input class="plot-depth-range" data-depth-key="comparisonChart" id="comparisonChartDepthRange" type="range" min="0" max="10" step="1" value="0" />
@@ -1208,8 +1208,10 @@
       const monthDepthCard = document.getElementById('comparisonChart')?.closest('.chart-card');
       const monthDepthTitle = monthDepthCard?.querySelector('header h3');
       const monthDepthText = monthDepthCard?.querySelector('header p');
-      if (monthDepthTitle) monthDepthTitle.textContent = 'Waypoint Month x Depth';
-      if (monthDepthText) monthDepthText.textContent = 'Selected focus parameter through campaign months and depth for the selected waypoint.';
+      const transect = selectedTransect();
+      const waypoint = transect?.label || transect?.id || 'Selected waypoint';
+      if (monthDepthTitle) monthDepthTitle.textContent = `${waypoint} Vertical History`;
+      if (monthDepthText) monthDepthText.textContent = `${metricLabel(state.metric)} by campaign month and sampled depth at the selected waypoint.`;
     }
 
     function baseLayout(titleX, titleY, overrides = {}) {
@@ -2180,9 +2182,9 @@
         instrument: state.instrument,
         metric: state.metric
       });
-      drawSbnHeatmap('comparisonChart', payload, 'Month', 'Depth (m)', {
+      drawSbnHeatmap('comparisonChart', payload, 'Campaign Month', 'Depth (m)', {
         reverseY: true,
-        hovertemplate: 'Month: %{x}<br>Depth: %{y} m<br>%{z:.2f}<extra></extra>'
+        hovertemplate: 'Campaign: %{x}<br>Depth: %{y} m<br>%{z:.2f}<extra></extra>'
       });
     }
 
