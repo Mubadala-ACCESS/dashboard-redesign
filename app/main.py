@@ -133,6 +133,7 @@ def create_app() -> FastAPI:
             'Buoy': 'buoy_station.html',
             'underwater_probe': 'underwater.html',
             'SBNTransect': 'sbn_stations.html',
+            'JWCruise': 'jw_stations.html',
         }
         template_name = station_templates.get(summary.get('device_type'), 'station.html')
         return templates.TemplateResponse(request, template_name, {
@@ -500,6 +501,165 @@ def create_app() -> FastAPI:
         month_part = campaign_month if campaign_month and campaign_month.lower() != 'all' else 'all-months'
         depth_part = 'all-depths' if all_depths else f'{depth_bin_m or 0}m'
         filename = f'sbn_{instrument}_{month_part}_{depth_part}.csv'
+        return StreamingResponse(csv_iter, media_type='text/csv', headers={'Content-Disposition': f'attachment; filename={filename}'})
+
+    @app.get('/api/jw/options')
+    def api_jw_options(repo: MongoDashboardRepository = Depends(get_repo)):
+        return cached_json_response(repo, 'jw_options', repo.get_jw_options, ttl_seconds=300)
+
+    @app.get('/api/jw/cells')
+    def api_jw_cells(
+        campaign_month: str = Query(...),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'jw_cells:{campaign_month}:{instrument}:{depth_bin_m}:{metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_jw_cells(campaign_month=campaign_month, instrument=instrument, depth_bin_m=depth_bin_m, metric=metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/jw/selection')
+    def api_jw_selection(
+        instrument: str = Query(default='combined'),
+        campaign_month: Optional[str] = Query(default=None),
+        metric: Optional[str] = Query(default=None),
+        depth_bin_m: int = Query(default=0),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'jw_selection:{instrument}:{campaign_month or ""}:{metric or ""}:{depth_bin_m}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_jw_selection(instrument=instrument, campaign_month=campaign_month, metric=metric, depth_bin_m=depth_bin_m),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/jw/trend')
+    def api_jw_trend(
+        waypoint_id: str = Query(...),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        try:
+            key = f'jw_trend:{waypoint_id}:{instrument}:{depth_bin_m}:{metric}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_jw_trend(waypoint_id=waypoint_id, instrument=instrument, depth_bin_m=depth_bin_m, metric=metric),
+                ttl_seconds=60,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail='Jaywun waypoint not found.') from exc
+
+    @app.get('/api/jw/heatmap/depth-waypoint')
+    def api_jw_depth_waypoint_heatmap(
+        campaign_month: str = Query(...),
+        instrument: str = Query(default='combined'),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'jw_depth_waypoint:{campaign_month}:{instrument}:{metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_jw_depth_waypoint_heatmap(campaign_month=campaign_month, instrument=instrument, metric=metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/jw/heatmap/month-depth')
+    def api_jw_month_depth_heatmap(
+        waypoint_id: str = Query(...),
+        instrument: str = Query(default='combined'),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        try:
+            key = f'jw_month_depth:{waypoint_id}:{instrument}:{metric}'
+            return cached_json_response(
+                repo,
+                key,
+                lambda: repo.get_jw_month_depth_heatmap(waypoint_id=waypoint_id, instrument=instrument, metric=metric),
+                ttl_seconds=60,
+            )
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail='Jaywun waypoint not found.') from exc
+
+    @app.get('/api/jw/heatmap/month-waypoint')
+    def api_jw_month_waypoint_heatmap(
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'jw_month_waypoint:{instrument}:{depth_bin_m}:{metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_jw_month_waypoint_heatmap(instrument=instrument, depth_bin_m=depth_bin_m, metric=metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/jw/crossplot')
+    def api_jw_crossplot(
+        campaign_month: str = Query(...),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: int = Query(default=0),
+        x_metric: str = Query(...),
+        y_metric: str = Query(...),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'jw_crossplot:{campaign_month}:{instrument}:{depth_bin_m}:{x_metric}:{y_metric}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_jw_crossplot(campaign_month=campaign_month, instrument=instrument, depth_bin_m=depth_bin_m, x_metric=x_metric, y_metric=y_metric),
+            ttl_seconds=60,
+        )
+
+    @app.get('/api/jw/profiles')
+    def api_jw_profiles(
+        campaign_month: Optional[str] = Query(default=None),
+        instrument: Optional[str] = Query(default=None),
+        waypoint_id: Optional[str] = Query(default=None),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        key = f'jw_profiles:{campaign_month or ""}:{instrument or ""}:{waypoint_id or ""}'
+        return cached_json_response(
+            repo,
+            key,
+            lambda: repo.get_jw_profiles(campaign_month=campaign_month, instrument=instrument, waypoint_id=waypoint_id),
+            ttl_seconds=120,
+        )
+
+    @app.get('/api/jw/export.csv')
+    def api_jw_export_csv(
+        campaign_month: Optional[str] = Query(default=None),
+        instrument: str = Query(default='combined'),
+        depth_bin_m: Optional[int] = Query(default=None),
+        metrics: Optional[str] = Query(default=None),
+        all_depths: bool = Query(default=False),
+        append_location: bool = Query(default=False),
+        repo: MongoDashboardRepository = Depends(get_repo),
+    ):
+        metric_list = parse_metric_list(metrics)
+        csv_iter = repo.export_jw_csv_iter(
+            campaign_month=campaign_month,
+            instrument=instrument,
+            depth_bin_m=depth_bin_m,
+            metrics=metric_list,
+            all_depths=all_depths,
+            append_location=append_location,
+        )
+        month_part = campaign_month if campaign_month and campaign_month.lower() != 'all' else 'all-months'
+        depth_part = 'all-depths' if all_depths else f'{depth_bin_m or 0}m'
+        filename = f'jaywun_{instrument}_{month_part}_{depth_part}.csv'
         return StreamingResponse(csv_iter, media_type='text/csv', headers={'Content-Disposition': f'attachment; filename={filename}'})
 
     return app

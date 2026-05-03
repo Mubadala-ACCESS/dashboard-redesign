@@ -1,0 +1,2757 @@
+﻿
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Jaywun Cruises Dashboard</title>
+  <link rel="icon" href="/static/img/favicon.ico" sizes="any" />
+  <link rel="shortcut icon" href="/static/img/favicon.ico" />
+  <link rel="apple-touch-icon" href="/static/img/favicon.png" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <style>
+    :root {
+      --bg: #f3f5f8;
+      --bg-soft: #f7f8fc;
+      --panel: #ffffff;
+      --panel-soft: rgba(255, 255, 255, 0.94);
+      --text: #18212f;
+      --muted: #627084;
+      --line: rgba(24, 33, 47, 0.1);
+      --primary: #5b21b6;
+      --primary-strong: #4c1d95;
+      --primary-soft: rgba(91, 33, 182, 0.08);
+      --success: #0f766e;
+      --warning: #d97706;
+      --danger: #dc2626;
+      --shadow-sm: 0 10px 26px rgba(15, 23, 42, 0.08);
+      --shadow-md: 0 24px 60px rgba(17, 24, 39, 0.12);
+      --shadow-lg: 0 34px 80px rgba(15, 23, 42, 0.18);
+      --radius-xl: 24px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --max-width: none;
+      --topbar-h: 72px;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: radial-gradient(circle at top left, rgba(124, 58, 237, 0.08), transparent 22%), linear-gradient(180deg, #f5f3ff 0%, #f8fafc 24%, #f4f7fb 100%);
+      color: var(--text);
+    }
+    body { min-height: 100vh; }
+    button, input, select { font: inherit; }
+
+    .app-shell { width: 100%; max-width: var(--max-width); margin: 0; padding: 0 20px 28px; }
+
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      height: var(--topbar-h);
+      min-height: var(--topbar-h);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+      padding: 0 20px;
+      margin: 0 -20px 22px;
+      background: linear-gradient(90deg, #4b166f 0%, #6e2aa8 100%);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 10px 30px rgba(76, 29, 149, 0.16);
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      flex: 0 0 auto;
+      text-decoration: none;
+    }
+    .brand-logo {
+      display: block;
+      height: 42px;
+      max-height: 42px;
+      width: auto;
+      max-width: min(320px, 32vw);
+      object-fit: contain;
+    }
+    .topnav {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+    }
+    .topnav a {
+      color: rgba(255, 255, 255, 0.92);
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 0.95rem;
+      padding: 10px 14px;
+      border-radius: 12px;
+      transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+    }
+    .topnav a:hover,
+    .topnav a.is-active {
+      background: rgba(255, 255, 255, 0.12);
+      color: #ffffff;
+    }
+    .topnav a:active { transform: translateY(1px); }
+    .topbar > .brand:not(.app-brand) { display: none; }
+    .sr-only {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0 0 0 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
+    .page { display: grid; gap: 22px; }
+    .station-page { grid-template-columns: minmax(0, 1fr); align-items: start; }
+    .analysis-column { display: grid; gap: 20px; min-width: 0; }
+
+    .side-summary-card, .control-card, .analysis-header, .chart-card {
+      background: var(--panel-soft);
+      border: 1px solid rgba(255, 255, 255, 0.78);
+      border-radius: var(--radius-xl);
+      box-shadow: var(--shadow-md);
+      backdrop-filter: blur(14px);
+    }
+    .side-summary-card, .control-card, .analysis-header { padding: 22px; }
+    .chart-card { padding: 16px; }
+
+    .side-summary-card,
+    .control-card,
+    .analysis-header {
+      background: linear-gradient(180deg, rgba(255,255,255,.98) 0%, rgba(248,250,255,.94) 100%);
+      box-shadow:
+        inset 0 1px 0 rgba(255,255,255,.85),
+        0 16px 32px rgba(255,255,255,.2),
+        var(--shadow-lg);
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 6px;
+      font-size: 0.74rem;
+      text-transform: uppercase;
+      letter-spacing: 0.16em;
+      font-weight: 800;
+      color: var(--primary);
+    }
+    .side-summary-card h1 {
+      margin: 6px 0 8px;
+      font-size: 2rem;
+      line-height: 1.05;
+      letter-spacing: -0.03em;
+    }
+    .side-summary-card p,
+    .analysis-header p,
+    .chart-card p,
+    .metric-card small,
+    .small-note,
+    .compare-help {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.55;
+    }
+
+    .pill-row { display: flex; gap: 10px; flex-wrap: wrap; }
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.85rem;
+      background: rgba(15, 118, 110, 0.12);
+      color: var(--success);
+    }
+    .status-pill.subtle { background: rgba(98, 112, 132, 0.12); color: var(--muted); }
+
+    .side-kv {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      margin: 18px 0 0;
+    }
+    .side-kv div {
+      padding: 12px;
+      border-radius: 14px;
+      background: rgba(91, 33, 182, 0.06);
+    }
+    .side-kv span {
+      display: block;
+      color: var(--muted);
+      font-size: 0.8rem;
+      margin-bottom: 4px;
+    }
+    .side-kv strong {
+      display: block;
+      font-size: 0.98rem;
+    }
+
+    .control-card h3 {
+      margin: 0 0 10px;
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .field { display: grid; gap: 8px; margin-bottom: 16px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label {
+      margin: 0;
+      font-size: 0.88rem;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .control-card select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 14px;
+      outline: none;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .control-card input[type="range"] {
+      width: 100%;
+      accent-color: var(--primary);
+    }
+    .control-card select:focus {
+      border-color: rgba(91, 33, 182, 0.35);
+      box-shadow: 0 0 0 4px rgba(91, 33, 182, 0.08);
+    }
+
+    .compare-box {
+      max-height: 200px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: #fff;
+      padding: 8px;
+      display: grid;
+      gap: 6px;
+    }
+    .chart-toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: end;
+      margin-top: 8px;
+    }
+    .chart-mini-field {
+      display: grid;
+      gap: 4px;
+      min-width: 160px;
+    }
+    .chart-mini-field label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .chart-mini-field select {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 12px;
+      padding: 9px 10px;
+      outline: none;
+    }
+    .chart-depth-control {
+      display: grid;
+      gap: 6px;
+      margin: 8px 0 12px;
+    }
+    .chart-depth-control label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--muted);
+      font-weight: 700;
+    }
+    .chart-depth-control input[type="range"] {
+      width: 100%;
+      accent-color: var(--primary);
+    }
+    .compare-option {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 10px;
+      border-radius: 12px;
+      background: rgba(91, 33, 182, 0.04);
+    }
+    .compare-option input { margin: 0; }
+    .compare-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; }
+    .ghost-button {
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 10px 14px;
+      background: #fff;
+      color: var(--primary-strong);
+      font-weight: 700;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+    .ghost-button:hover { background: var(--primary-soft); border-color: rgba(91, 33, 182, 0.16); }
+    .primary-button {
+      border: 1px solid rgba(91, 33, 182, 0.36);
+      border-radius: 14px;
+      padding: 12px 16px;
+      min-height: 48px;
+      background: linear-gradient(135deg, var(--primary), #7c3aed);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+      box-shadow: 0 12px 26px rgba(91, 33, 182, 0.22);
+      transition: transform 0.18s ease, box-shadow 0.18s ease;
+    }
+    .primary-button:hover { transform: translateY(-1px); box-shadow: 0 16px 32px rgba(91, 33, 182, 0.28); }
+
+    .analysis-header {
+      display: grid;
+      grid-template-columns: minmax(260px, 1fr) minmax(560px, auto);
+      align-items: end;
+      gap: 20px;
+    }
+    .analysis-heading { min-width: 0; }
+    .analysis-header h2 {
+      margin: 4px 0 8px;
+      font-size: 2rem;
+      line-height: 1.06;
+      letter-spacing: -0.03em;
+      text-transform: capitalize;
+    }
+    .header-pills { margin-top: 12px; }
+    .header-controls {
+      display: flex;
+      align-items: end;
+      justify-content: flex-end;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .toolbar-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(145px, 1fr));
+      gap: 10px;
+      min-width: min(760px, 100%);
+    }
+    .toolbar-field {
+      display: grid;
+      gap: 6px;
+    }
+    .toolbar-field label,
+    .chart-mini-field label,
+    .chart-depth-control label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: var(--muted);
+      font-weight: 800;
+    }
+    .toolbar-field select,
+    .chart-mini-field select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--text);
+      border-radius: 14px;
+      padding: 12px 14px;
+      outline: none;
+      min-height: 48px;
+      transition: border-color 0.18s ease, box-shadow 0.18s ease;
+    }
+    .toolbar-field select:focus,
+    .chart-mini-field select:focus {
+      border-color: rgba(91, 33, 182, 0.35);
+      box-shadow: 0 0 0 4px rgba(91, 33, 182, 0.08);
+    }
+    .tab-switch {
+      display: inline-flex;
+      padding: 4px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.86);
+      border: 1px solid var(--line);
+      gap: 4px;
+    }
+    .tab-switch button {
+      border: 1px solid transparent;
+      border-radius: 14px;
+      padding: 11px 15px;
+      font-weight: 700;
+      transition: 0.18s ease;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+    .tab-switch button.is-active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 10px 18px rgba(91, 33, 182, 0.2);
+    }
+    .chart-mode-toggle {
+      display: inline-flex;
+      padding: 4px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+    .chart-mode-toggle button {
+      border: 1px solid transparent;
+      border-radius: 13px;
+      padding: 10px 14px;
+      background: transparent;
+      color: var(--muted);
+      font-weight: 800;
+      cursor: pointer;
+      transition: 0.18s ease;
+    }
+    .chart-mode-toggle button.is-active {
+      background: var(--primary);
+      color: #fff;
+      box-shadow: 0 10px 18px rgba(91, 33, 182, 0.2);
+    }
+    .advanced-view-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 12px;
+      padding: 14px 16px;
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.9);
+      box-shadow: var(--shadow-sm);
+    }
+    .advanced-view-toolbar span {
+      color: var(--muted);
+      font-size: 0.78rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    .tab-panel { display: none; gap: 20px; }
+    .tab-panel.is-active { display: grid; }
+
+    .summary-grid {
+      display: grid;
+      gap: 16px;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    }
+    .metric-card {
+      padding: 18px;
+      background: rgba(255, 255, 255, 0.86);
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      display: grid;
+      gap: 8px;
+    }
+    .metric-card span {
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 700;
+    }
+    .metric-card strong {
+      font-size: clamp(1.45rem, 2vw, 2.15rem);
+      letter-spacing: -0.03em;
+    }
+    .metric-card-details {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      margin-top: 4px;
+    }
+    .metric-card-details div {
+      padding: 9px 10px;
+      border-radius: 12px;
+      background: rgba(91, 33, 182, 0.06);
+    }
+    .metric-card-details b {
+      display: block;
+      font-size: 0.68rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 3px;
+    }
+    .metric-card-details span {
+      display: block;
+      font-size: 0.9rem;
+      letter-spacing: 0;
+      text-transform: none;
+      color: var(--text);
+      font-weight: 800;
+    }
+
+    .chart-grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .chart-card {
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid rgba(255, 255, 255, 0.75);
+      box-shadow: var(--shadow-sm);
+      min-width: 0;
+    }
+    .chart-card header {
+      display: flex;
+      justify-content: space-between;
+      align-items: start;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+    .chart-card h3 {
+      margin: 0 0 8px;
+      letter-spacing: -0.02em;
+      text-transform: capitalize;
+    }
+    .chart-card p { font-size: 0.92rem; }
+    .chart-host { min-height: 320px; }
+    .chart-host.tall { min-height: 430px; }
+    .chart-host.short { min-height: 320px; }
+    .chart-span-2 { grid-column: span 2; }
+    #transectMap { border-radius: 14px; overflow: hidden; }
+    .quick-plot-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+      min-height: 0;
+    }
+    .quick-plot-card {
+      min-width: 0;
+      min-height: 300px;
+      padding: 10px 10px 4px;
+      border-radius: 16px;
+      background: rgba(248, 250, 252, 0.78);
+      border: 1px solid rgba(24, 33, 47, 0.06);
+    }
+    .quick-plot {
+      width: 100%;
+      min-height: 280px;
+    }
+
+    .empty-compare {
+      padding: 18px;
+      border-radius: 14px;
+      background: rgba(91, 33, 182, 0.05);
+      border: 1px dashed rgba(91, 33, 182, 0.2);
+      color: var(--muted);
+    }
+    .download-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 2200;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      background: rgba(15, 23, 42, 0.42);
+      backdrop-filter: blur(6px);
+    }
+    .download-modal {
+      width: min(760px, 100%);
+      max-height: min(86vh, 760px);
+      overflow: auto;
+      border-radius: 24px;
+      border: 1px solid rgba(255, 255, 255, 0.42);
+      background: #fff;
+      box-shadow: var(--shadow-lg);
+      padding: 22px;
+    }
+    .download-modal header {
+      display: flex;
+      align-items: start;
+      justify-content: space-between;
+      gap: 18px;
+      margin-bottom: 16px;
+    }
+    .download-modal h3 { margin: 2px 0 6px; font-size: 1.35rem; }
+    .download-form { display: grid; gap: 16px; }
+    .download-grid { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .download-grid label,
+    .download-parameter-head { display: grid; gap: 7px; }
+    .download-grid span,
+    .download-parameter-head span {
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 800;
+      letter-spacing: 0.13em;
+      text-transform: uppercase;
+    }
+    .download-grid select {
+      width: 100%;
+      min-height: 48px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: #fff;
+      color: var(--text);
+    }
+    .download-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-weight: 700;
+    }
+    .download-metric-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      max-height: 280px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .download-option {
+      display: flex;
+      align-items: start;
+      gap: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(91, 33, 182, 0.04);
+      font-weight: 700;
+    }
+    .download-option small { display: block; margin-top: 2px; color: var(--muted); font-weight: 600; }
+    .download-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+    @media (max-width: 1320px) {
+      .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .analysis-header { grid-template-columns: 1fr; align-items: stretch; }
+      .header-controls { justify-content: stretch; }
+      .toolbar-grid { min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+
+    @media (max-width: 900px) {
+      .topbar {
+        height: 64px;
+        min-height: 64px;
+        padding: 0 14px;
+        margin-inline: -14px;
+      }
+      .brand-logo { height: 34px; max-height: 34px; max-width: 220px; }
+      .topnav a { padding: 9px 11px; font-size: 0.9rem; }
+      .app-shell { padding-inline: 14px; }
+      :root { --topbar-h: 64px; }
+    }
+
+    @media (max-width: 760px) {
+      .topbar { gap: 10px; flex-wrap: nowrap; overflow: hidden; }
+      .brand-logo { height: 30px; max-height: 30px; max-width: 170px; }
+      .topnav { gap: 4px; overflow-x: auto; scrollbar-width: none; }
+      .topnav::-webkit-scrollbar { display: none; }
+      .topnav a { white-space: nowrap; font-size: 0.84rem; padding: 8px 10px; }
+      .analysis-header { flex-direction: column; align-items: stretch; }
+      .tab-switch { width: 100%; justify-content: space-between; }
+      .toolbar-grid,
+      .summary-grid,
+      .side-kv,
+      .chart-grid,
+      .quick-plot-grid,
+      .download-grid,
+      .download-metric-grid { grid-template-columns: 1fr; }
+      .advanced-view-toolbar { align-items: stretch; flex-direction: column; }
+      .chart-span-2 { grid-column: span 1; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <a class="brand app-brand" href="/" aria-label="Go to homepage">
+        <img src="/static/img/maccess-logo.png" alt="Mubadala ACCESS Center logo" class="brand-logo" />
+        <span class="sr-only">Mubadala ACCESS Center</span>
+      </a>
+      <nav class="topnav" aria-label="Primary navigation">
+        <a href="/">Map</a>
+        <a href="/get-started">Get Started</a>
+        <a href="/status">Status</a>
+      </nav>
+    </header>
+
+    <main class="page station-page" data-transect-id="NYU-01">
+      <section class="analysis-column">
+        <section class="analysis-header">
+          <div class="analysis-heading">
+            <span class="eyebrow" id="transectEyebrow">Jaywun Cruise</span>
+            <h2 id="transectTitle">Jaywun Cruise Dashboard</h2>
+            <p id="transectSubtitle">Cruise campaign rollups by waypoint, depth, and instrument.</p>
+            <p id="transectFreshnessText">Monthly summary and advanced cruise analysis for Jaywun waypoints.</p>
+            <div class="pill-row header-pills">
+              <span class="status-pill">Active</span>
+              <span class="status-pill subtle" id="instrumentPill">Combined</span>
+            </div>
+          </div>
+
+          <div class="header-controls">
+            <div class="toolbar-grid" aria-label="Jaywun cruise controls">
+              <div class="toolbar-field">
+                <label for="transectSelect">Waypoint</label>
+                <select id="transectSelect"></select>
+              </div>
+              <div class="toolbar-field">
+                <label for="monthSelect">Campaign Month</label>
+                <select id="monthSelect"></select>
+              </div>
+              <div class="toolbar-field">
+                <label for="instrumentSelect">Instrument</label>
+                <select id="instrumentSelect">
+                  <option value="combined">Combined</option>
+                  <option value="ead_ctd">EAD CTD</option>
+                  <option value="rbr">RBR</option>
+                </select>
+              </div>
+              <div class="toolbar-field">
+                <label for="metricSelect">Advanced Focus</label>
+                <select id="metricSelect"></select>
+              </div>
+            </div>
+
+            <div class="tab-switch" id="viewTabs">
+              <button type="button" data-tab="quick" class="is-active">Quick View</button>
+              <button type="button" data-tab="advanced">Advanced</button>
+            </div>
+            <button class="primary-button" id="downloadCsvBtn" type="button">Download CSV</button>
+          </div>
+        </section>
+
+        <section id="quick-view" class="tab-panel is-active">
+          <div class="summary-grid" id="latestCards"></div>
+
+          <div class="chart-grid">
+            <article class="chart-card chart-span-2">
+              <header>
+                <div>
+                  <h3>Cruise Snapshot</h3>
+                  <p>Core parameters across Jaywun waypoints for the selected campaign, instrument, and depth.</p>
+                </div>
+                <div class="chart-mode-toggle" id="styleToggle" aria-label="Quick view display style">
+                  <button type="button" data-style="bar" class="is-active">Bars</button>
+                  <button type="button" data-style="line">Points</button>
+                  <button type="button" data-style="heatmap">Heatmap</button>
+                </div>
+              </header>
+              <div class="chart-depth-control">
+                <label for="publicTransectDepthRange">Depth <span id="publicTransectDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="publicTransect" id="publicTransectDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="publicTransect" class="chart-host"></div>
+            </article>
+
+            <article class="chart-card chart-span-2">
+              <header>
+                <div>
+                  <h3>Selected Waypoint Trends</h3>
+                  <p>Core parameters through campaign months for the selected waypoint.</p>
+                </div>
+              </header>
+              <div class="chart-depth-control">
+                <label for="publicTrendDepthRange">Depth <span id="publicTrendDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="publicTrend" id="publicTrendDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="publicTrend" class="chart-host"></div>
+            </article>
+          </div>
+        </section>
+
+        <section id="advanced-view" class="tab-panel">
+          <div class="advanced-view-toolbar">
+            <span>Display style</span>
+            <div class="chart-mode-toggle" id="advancedStyleToggle" aria-label="Advanced display style">
+              <button type="button" data-advanced-style="heatmap" class="is-active">Heatmap</button>
+              <button type="button" data-advanced-style="bar">Bars</button>
+              <button type="button" data-advanced-style="line">Points</button>
+            </div>
+          </div>
+          <div class="chart-grid">
+            <article class="chart-card">
+              <header><div><h3>Temperature</h3><p>Current campaign across Jaywun waypoints.</p></div></header>
+              <div class="chart-depth-control">
+                <label for="tempTransectDepthRange">Depth <span id="tempTransectDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="tempTransect" id="tempTransectDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="tempTransect" class="chart-host"></div>
+            </article>
+            <article class="chart-card">
+              <header><div><h3>Salinity</h3><p>Current campaign across Jaywun waypoints.</p></div></header>
+              <div class="chart-depth-control">
+                <label for="salTransectDepthRange">Depth <span id="salTransectDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="salTransect" id="salTransectDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="salTransect" class="chart-host"></div>
+            </article>
+            <article class="chart-card">
+              <header><div><h3>Dissolved Oxygen</h3><p>Current campaign across Jaywun waypoints.</p></div></header>
+              <div class="chart-depth-control">
+                <label for="oxyTransectDepthRange">Depth <span id="oxyTransectDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="oxyTransect" id="oxyTransectDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="oxyTransect" class="chart-host"></div>
+            </article>
+            <article class="chart-card">
+              <header><div><h3>Chlorophyll-A</h3><p>Current campaign across Jaywun waypoints.</p></div></header>
+              <div class="chart-depth-control">
+                <label for="chlTransectDepthRange">Depth <span id="chlTransectDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="chlTransect" id="chlTransectDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="chlTransect" class="chart-host"></div>
+            </article>
+
+            <article class="chart-card chart-span-2">
+              <header><div><h3>Selected Waypoint Vertical History</h3><p>Focused parameter by campaign month and sampled depth for the selected waypoint.</p></div></header>
+              <div class="chart-depth-control">
+                <label for="comparisonChartDepthRange">Depth <span id="comparisonChartDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="comparisonChart" id="comparisonChartDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="comparisonChart" class="chart-host"></div>
+            </article>
+
+            <article class="chart-card">
+              <header><div><h3>Campaign Heatmap</h3><p>Selected parameter by month and waypoint at the selected depth.</p></div></header>
+              <div class="chart-depth-control">
+                <label for="monthlyHeatmapDepthRange">Depth <span id="monthlyHeatmapDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="monthlyHeatmap" id="monthlyHeatmapDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="monthlyHeatmap" class="chart-host tall"></div>
+            </article>
+            <article class="chart-card">
+              <header>
+                <div>
+                  <h3>Parameter Cross-Plot Heatmap</h3>
+                  <p>Jaywun waypoint samples at the selected depth for the current campaign.</p>
+                </div>
+              </header>
+              <div class="chart-depth-control">
+                <label for="tsChartDepthRange">Depth <span id="tsChartDepthValueLabel">0 m</span></label>
+                <input class="plot-depth-range" data-depth-key="tsChart" id="tsChartDepthRange" type="range" min="0" max="10" step="1" value="0" />
+              </div>
+              <div id="tsChart" class="chart-host tall"></div>
+              <div class="chart-toolbar">
+                <div class="chart-mini-field">
+                  <label for="xMetricSelect">X Parameter</label>
+                  <select id="xMetricSelect"></select>
+                </div>
+                <div class="chart-mini-field">
+                  <label for="yMetricSelect">Y Parameter</label>
+                  <select id="yMetricSelect"></select>
+                </div>
+              </div>
+            </article>
+
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    const INITIAL_STATION = {{ station|default(none)|tojson }};
+    let METRICS = {
+      temp: { key: 'temp', label: 'Temperature', unit: 'Â°C', zmin: 20, zmax: 32 },
+      sal: { key: 'sal', label: 'Salinity', unit: 'PSU', zmin: 35.6, zmax: 37.3 },
+      oxygen: { key: 'oxygen', label: 'Dissolved Oxygen', unit: 'mg/L', zmin: 4.2, zmax: 7.2 },
+      chlorophyll: { key: 'chlorophyll', label: 'Chlorophyll-A', unit: 'Âµg/L', zmin: 0, zmax: 3.2 },
+      turbidity: { key: 'turbidity', label: 'Turbidity', unit: 'FNU/FTU', zmin: 0, zmax: 6.5 },
+      pH: { key: 'pH', label: 'pH', unit: '', zmin: 7.8, zmax: 8.3 },
+      par: { key: 'par', label: 'PAR', unit: 'rel.', zmin: 200, zmax: 1100 },
+      pe: { key: 'pe', label: 'Phycoerythrin', unit: 'Âµg/L', zmin: 0, zmax: 2.0 },
+      cond: { key: 'cond', label: 'Conductivity', unit: 'mS/cm', zmin: 51, zmax: 61 }
+    };
+
+    const COLORS = {
+      temp: '#ef7d43',
+      sal: '#3b82f6',
+      oxygen: '#06b6d4',
+      chlorophyll: '#16a34a',
+      turbidity: '#d97706',
+      pH: '#8b5cf6',
+      cond: '#0ea5e9',
+      current: '#5b21b6',
+      compare: ['#2563eb', '#16a34a', '#d97706', '#dc2626', '#0f766e']
+    };
+
+    const state = {
+      seed: 13,
+      transectId: 'NYU-01',
+      month: '2025-10',
+      compareMonths: [],
+      metric: 'oxygen',
+      instrument: 'combined',
+      style: 'bar',
+      advancedStyle: 'heatmap',
+      chartDepths: {
+        publicTransect: 0,
+        publicTrend: 0,
+        tempTransect: 0,
+        salTransect: 0,
+        oxyTransect: 0,
+        chlTransect: 0,
+        comparisonChart: 0,
+        monthlyHeatmap: 0,
+        tsChart: 0
+      },
+      xMetric: 'sal',
+      yMetric: 'temp',
+      dataset: null,
+      activeTab: 'quick',
+      map: null,
+      lineLayers: [],
+      markerLayers: [],
+      currentTileLayer: null
+    };
+
+    const ids = {
+      transectEyebrow: document.getElementById('transectEyebrow'),
+      transectTitle: document.getElementById('transectTitle'),
+      transectSubtitle: document.getElementById('transectSubtitle'),
+      transectStart: document.getElementById('transectStart'),
+      transectEnd: document.getElementById('transectEnd'),
+      instrumentPill: document.getElementById('instrumentPill'),
+      transectFreshnessText: document.getElementById('transectFreshnessText'),
+      transectSelect: document.getElementById('transectSelect'),
+      monthSelect: document.getElementById('monthSelect'),
+      metricSelect: document.getElementById('metricSelect'),
+      instrumentSelect: document.getElementById('instrumentSelect'),
+      styleSelect: document.getElementById('styleSelect'),
+      styleToggle: document.getElementById('styleToggle'),
+      advancedStyleToggle: document.getElementById('advancedStyleToggle'),
+      downloadCsvBtn: document.getElementById('downloadCsvBtn'),
+      xMetricSelect: document.getElementById('xMetricSelect'),
+      yMetricSelect: document.getElementById('yMetricSelect'),
+      compareBox: document.getElementById('compareBox'),
+      compareHelp: document.getElementById('compareHelp'),
+      clearCompareBtn: document.getElementById('clearCompareBtn'),
+      latestCards: document.getElementById('latestCards')
+    };
+
+    function mulberry32(a) {
+      return function() {
+        let t = a += 0x6D2B79F5;
+        t = Math.imul(t ^ t >>> 15, t | 1);
+        t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+        return ((t ^ t >>> 14) >>> 0) / 4294967296;
+      };
+    }
+
+    function hashCode(str) {
+      let h = 1779033703 ^ str.length;
+      for (let i = 0; i < str.length; i++) {
+        h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+        h = h << 13 | h >>> 19;
+      }
+      return () => {
+        h = Math.imul(h ^ (h >>> 16), 2246822507);
+        h = Math.imul(h ^ (h >>> 13), 3266489909);
+        return (h ^= h >>> 16) >>> 0;
+      };
+    }
+
+    function seededRandom(label) {
+      return mulberry32(hashCode(label + '-' + state.seed)());
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function mean(values) {
+      const valid = values.filter(v => v !== null && v !== undefined && !Number.isNaN(v));
+      if (!valid.length) return null;
+      return valid.reduce((a, b) => a + b, 0) / valid.length;
+    }
+
+    function formatNumber(value, digits = 2) {
+      if (value === null || value === undefined || Number.isNaN(value)) return 'N/A';
+      return Number(value).toFixed(digits);
+    }
+
+    function buildMonths() {
+      const months = [];
+      for (let year = 2024; year <= 2025; year++) {
+        for (let month = 1; month <= 12; month++) {
+          months.push(`${year}-${String(month).padStart(2, '0')}`);
+        }
+      }
+      return months;
+    }
+
+    function formatMonth(monthStr) {
+      const [year, month] = monthStr.split('-').map(Number);
+      return new Date(year, month - 1, 1).toLocaleString('en-US', { month: 'short', year: 'numeric' });
+    }
+
+    function buildTransects() {
+      const transects = [];
+      const startLat = 24.05;
+      const startLon = 56.05;
+      for (let i = 0; i < 20; i++) {
+        const id = `XT${String(i + 1).padStart(2, '0')}`;
+        const lat0 = startLat + i * 0.07;
+        const lon0 = startLon + i * 0.09;
+        const lat1 = lat0 + 0.56 + (i % 4) * 0.02;
+        const lon1 = lon0 + 1.0 + (i % 5) * 0.04;
+        transects.push({
+          id,
+          name: `Transect ${id}`,
+          startLat: lat0,
+          startLon: lon0,
+          endLat: lat1,
+          endLon: lon1,
+          offshoreFactor: 0.28 + i / 28
+        });
+      }
+      return transects;
+    }
+
+    function monthlySignal(monthStr) {
+      const month = Number(monthStr.split('-')[1]);
+      const phase = ((month - 1) / 12) * Math.PI * 2;
+      return {
+        tempBase: 26.6 + Math.sin(phase - Math.PI / 3) * 3.7,
+        oxygenBase: 6.2 - Math.sin(phase - Math.PI / 3) * 0.45,
+        chlorophyllBase: 0.8 + Math.cos(phase - Math.PI) * 0.35 + (month >= 3 && month <= 5 ? 0.25 : 0),
+        turbidityBase: 1.2 + Math.cos(phase - Math.PI / 2) * 0.25,
+        pHBase: 8.10 - Math.sin(phase - Math.PI / 3) * 0.03,
+        parBase: 760 + Math.sin(phase - Math.PI / 3) * 140,
+        salinityOffset: 0.08 + Math.sin(phase + Math.PI / 4) * 0.06
+      };
+    }
+
+    function buildDataset() {
+      const transects = buildTransects();
+      const months = buildMonths();
+      const depths = [0, 5, 10, 20, 30, 40, 50, 75, 100, 125, 150];
+      const data = { transects: {}, months, depths };
+
+      transects.forEach((transect, idx) => {
+        data.transects[transect.id] = {};
+        months.forEach((month, mIndex) => {
+          const common = generatePoint(transect, month, idx, mIndex);
+          const baseProfile = generateProfile(common, transect, month, idx, mIndex, depths);
+          const exo = applyInstrumentFlavor(common, 'exo', transect, month, 'surface');
+          const idronaut = applyInstrumentFlavor(common, 'idronaut', transect, month, 'surface');
+          const rbr = applyInstrumentFlavor(common, 'rbr', transect, month, 'surface');
+          const exoProfile = baseProfile.map(cell => applyInstrumentFlavor(cell, 'exo', transect, month, `depth-${cell.depth}`));
+          const idronautProfile = baseProfile.map(cell => applyInstrumentFlavor(cell, 'idronaut', transect, month, `depth-${cell.depth}`));
+          const rbrProfile = baseProfile.map(cell => applyInstrumentFlavor(cell, 'rbr', transect, month, `depth-${cell.depth}`));
+          data.transects[transect.id][month] = {
+            meta: { transect, month, dateText: formatMonth(month) },
+            exo, idronaut, rbr, exoProfile, idronautProfile, rbrProfile
+          };
+        });
+      });
+
+      return { transects, months, depths, data };
+    }
+
+    function generatePoint(transect, month, transectIndex, monthIndex) {
+      const rand = seededRandom(`${transect.id}-${month}-common`);
+      const signal = monthlySignal(month);
+      const o = transect.offshoreFactor;
+      const bloomCore = Math.exp(-Math.pow((transectIndex - 5) / 5.5, 2));
+      return {
+        temp: signal.tempBase - o * 2.2 + (monthIndex / 23) * 0.15 + (rand() - 0.5) * 0.22,
+        sal: 36.02 + o * 0.72 + signal.salinityOffset + (rand() - 0.5) * 0.04,
+        oxygen: clamp(signal.oxygenBase - o * 0.85 + bloomCore * 0.12 + (rand() - 0.5) * 0.10, 4.0, 7.4),
+        chlorophyll: clamp(signal.chlorophyllBase + bloomCore * 0.55 + (1 - o) * 0.18 + (rand() - 0.5) * 0.07, 0.05, 3.5),
+        turbidity: clamp(signal.turbidityBase + (1 - o) * 0.95 + (rand() - 0.5) * 0.10, 0.2, 6.5),
+        pH: clamp(signal.pHBase - o * 0.06 + (rand() - 0.5) * 0.01, 7.85, 8.24),
+        par: clamp(signal.parBase * (0.9 + o * 0.14) + (rand() - 0.5) * 18, 180, 1100),
+        pe: clamp((signal.chlorophyllBase + bloomCore * 0.45) * 0.45 + (rand() - 0.5) * 0.05, 0.02, 2.0),
+        cond: clamp(51 + (signal.tempBase - 20) * 0.72 + (36.02 + o * 0.72 - 35) * 1.12 + (rand() - 0.5) * 0.05, 50, 61)
+      };
+    }
+
+    function generateProfile(surfacePoint, transect, month, transectIndex, monthIndex, depths) {
+      return depths.map(depth => {
+        const rand = seededRandom(`${transect.id}-${month}-profile-${depth}`);
+        const o = transect.offshoreFactor;
+        const depthNorm = depth / 150;
+        const thermoclineDepth = 18 + o * 24;
+        const temp = surfacePoint.temp - (4.8 + o * 3.2) * (1 - Math.exp(-depth / thermoclineDepth)) + (rand() - 0.5) * 0.12;
+        const sal = surfacePoint.sal + depthNorm * (0.16 + o * 0.18) + (rand() - 0.5) * 0.02;
+        const oxygen = clamp(surfacePoint.oxygen - (1.3 + o * 1.4) * Math.pow(depthNorm, 0.7) + (rand() - 0.5) * 0.08, 1.6, 7.6);
+        const chlorophyllPeakDepth = 12 + (1 - o) * 12;
+        const chlorophyll = clamp(surfacePoint.chlorophyll * Math.exp(-Math.pow((depth - chlorophyllPeakDepth) / 20, 2)) + 0.05 * Math.exp(-depth / 40) + (rand() - 0.5) * 0.04, 0.01, 4.0);
+        const bottomBoost = depth > 110 ? ((depth - 110) / 40) * (0.25 + (1 - o) * 0.45) : 0;
+        const turbidity = clamp(surfacePoint.turbidity * Math.exp(-depth / 35) + bottomBoost + (rand() - 0.5) * 0.08, 0.05, 7.0);
+        const pH = clamp(surfacePoint.pH - depthNorm * 0.18 + (rand() - 0.5) * 0.006, 7.65, 8.24);
+        const par = clamp(surfacePoint.par * Math.exp(-depth / (10 + o * 6)) + (rand() - 0.5) * 8, 0, 1200);
+        const pe = clamp(chlorophyll * (0.35 + (1 - o) * 0.08) + (rand() - 0.5) * 0.03, 0.01, 2.2);
+        const cond = clamp(51 + (temp - 20) * 0.72 + (sal - 35) * 1.12 + (rand() - 0.5) * 0.04, 49, 62);
+        return { depth, temp, sal, oxygen, chlorophyll, turbidity, pH, par, pe, cond };
+      });
+    }
+
+    function applyInstrumentFlavor(point, instrument, transect, month, token = 'surface') {
+      const rand = seededRandom(`${transect.id}-${month}-${instrument}-${token}`);
+      const biases = {
+        exo:      { temp: 0.04, sal: 0.02, oxygen: -0.03, chlorophyll: 0.06, turbidity: 0.10, pH: 0.006, par: null, pe: null, cond: 0.04 },
+        idronaut: { temp: -0.01, sal: -0.01, oxygen: 0.03, chlorophyll: -0.02, turbidity: -0.06, pH: -0.003, par: 0, pe: 0, cond: -0.02 },
+        rbr:      { temp: 0.01, sal: 0.00, oxygen: 0.01, chlorophyll: 0.00, turbidity: 0.02, pH: 0.001, par: null, pe: null, cond: 0.02 }
+      };
+      const b = biases[instrument];
+      return {
+        temp: point.temp + b.temp + (rand() - 0.5) * 0.06,
+        sal: point.sal + b.sal + (rand() - 0.5) * 0.03,
+        oxygen: point.oxygen + b.oxygen + (rand() - 0.5) * 0.08,
+        chlorophyll: point.chlorophyll + b.chlorophyll + (rand() - 0.5) * 0.08,
+        turbidity: point.turbidity + b.turbidity + (rand() - 0.5) * 0.10,
+        pH: point.pH + b.pH + (rand() - 0.5) * 0.006,
+        par: b.par === null ? point.par : point.par + (rand() - 0.5) * 14,
+        pe: b.pe === null ? point.pe : point.pe + (rand() - 0.5) * 0.04,
+        cond: point.cond + b.cond + (rand() - 0.5) * 0.05,
+        source: instrument
+      };
+    }
+
+    function getTransectMonth(transectId, month) {
+      return state.dataset.data.transects[transectId][month];
+    }
+
+    function combineValues(items) {
+      const out = { source: 'combined' };
+      Object.keys(METRICS).forEach(key => {
+        out[key] = mean(items.map(item => item[key]));
+      });
+      return out;
+    }
+
+    function getRecord(transectId, month, instrument) {
+      const tm = getTransectMonth(transectId, month);
+      if (instrument === 'exo') return tm.exo;
+      if (instrument === 'idronaut') return tm.idronaut;
+      if (instrument === 'rbr') return tm.rbr;
+      return combineValues([tm.exo, tm.idronaut, tm.rbr]);
+    }
+
+    function combineProfileArrays(arrays) {
+      return arrays[0].map((cell, index) => {
+        const combined = { depth: cell.depth, source: 'combined' };
+        Object.keys(METRICS).forEach(key => {
+          combined[key] = mean(arrays.map(arr => arr[index][key]));
+        });
+        return combined;
+      });
+    }
+
+    function getProfile(transectId, month, instrument) {
+      const tm = getTransectMonth(transectId, month);
+      if (instrument === 'exo') return tm.exoProfile;
+      if (instrument === 'idronaut') return tm.idronautProfile;
+      if (instrument === 'rbr') return tm.rbrProfile;
+      return combineProfileArrays([tm.exoProfile, tm.idronautProfile, tm.rbrProfile]);
+    }
+
+    function profileSamplesForMonth(month, instrument) {
+      return state.dataset.transects.flatMap(transect => getProfile(transect.id, month, instrument).map(point => ({ transectId: transect.id, ...point })));
+    }
+
+    function recordsForMonth(month, instrument) {
+      return state.dataset.transects.map(transect => ({
+        transectId: transect.id,
+        ...getRecord(transect.id, month, instrument)
+      }));
+    }
+
+    function climatology(transectId, metricKey, instrument) {
+      return mean(state.dataset.months.map(month => getRecord(transectId, month, instrument)[metricKey]));
+    }
+
+    function selectedRecord() {
+      return getRecord(state.transectId, state.month, state.instrument);
+    }
+
+    function depthIndexFromValue(depth) {
+      const depths = activeDepths();
+      const idx = depths.indexOf(depth);
+      return idx >= 0 ? idx : 0;
+    }
+
+    function profilePointAtDepth(transectId, month, instrument, depth) {
+      return getProfile(transectId, month, instrument)[depthIndexFromValue(depth)];
+    }
+
+    function recordsForMonthAtDepth(month, instrument, depth) {
+      return state.dataset.transects.map(transect => ({
+        transectId: transect.id,
+        ...profilePointAtDepth(transect.id, month, instrument, depth)
+      }));
+    }
+
+    function transectDepthMatrix(month, instrument, metricKey) {
+      const x = state.dataset.transects.map(t => t.id);
+      const y = state.dataset.depths;
+      const z = y.map(depth => x.map(transectId => profilePointAtDepth(transectId, month, instrument, depth)[metricKey]));
+      return { x, y, z };
+    }
+
+    function transectMonthDepthMatrix(transectId, instrument, metricKey) {
+      const x = state.dataset.months.map(formatMonth);
+      const y = state.dataset.depths;
+      const z = y.map(depth => state.dataset.months.map(month => profilePointAtDepth(transectId, month, instrument, depth)[metricKey]));
+      return { x, y, z };
+    }
+
+    function depthMatrixComparison(metricKey) {
+      const current = transectDepthMatrix(state.month, state.instrument, metricKey);
+      if (!state.compareMonths.length) return { ...current, difference: false };
+      const z = current.z.map((row, depthIndex) => row.map((value, transectIndex) => {
+        const transectId = current.x[transectIndex];
+        const depth = current.y[depthIndex];
+        const compareMean = mean(state.compareMonths.map(month => profilePointAtDepth(transectId, month, state.instrument, depth)[metricKey]));
+        return value - compareMean;
+      }));
+      return { x: current.x, y: current.y, z, difference: true };
+    }
+
+    function depthSliderLabel(depth) {
+      return Number(depth) === 0 ? 'Surface (0 m)' : `${depth} m`;
+    }
+
+    function plotDepth(key) {
+      return state.chartDepths[key] ?? 0;
+    }
+
+    function activeDepths() {
+      const depths = state.validDepths?.length ? state.validDepths : (state.dataset?.depths || [0]);
+      const clean = depths
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value) && value >= 0)
+        .sort((a, b) => a - b);
+      return clean.length ? clean : [0];
+    }
+
+    function syncDepthSliders() {
+      const depths = activeDepths();
+      const maxIndex = Math.max(0, depths.length - 1);
+      document.querySelectorAll('.plot-depth-range').forEach(input => {
+        const key = input.dataset.depthKey;
+        if (!depths.includes(plotDepth(key))) {
+          state.chartDepths[key] = depths[0] ?? 0;
+        }
+        input.min = '0';
+        input.max = String(maxIndex);
+        input.step = '1';
+        input.value = String(depthIndexFromValue(plotDepth(key)));
+        const label = document.getElementById(`${key}DepthValueLabel`);
+        if (label) label.textContent = depthSliderLabel(plotDepth(key));
+      });
+    }
+
+    function updateDepthControlVisibility() {
+      document.querySelectorAll('.chart-depth-control').forEach(control => {
+        const key = control.querySelector('.plot-depth-range')?.dataset.depthKey;
+        const quickControl = key === 'publicTransect' || key === 'publicTrend';
+        const advancedTransectControl = ['tempTransect', 'salTransect', 'oxyTransect', 'chlTransect', 'comparisonChart'].includes(key);
+        const depthCellControl = key === 'monthlyHeatmap' || key === 'tsChart';
+        const showDepthControls = quickControl
+          ? state.style !== 'heatmap'
+          : advancedTransectControl
+            ? state.advancedStyle !== 'heatmap'
+            : depthCellControl;
+        control.style.display = showDepthControls ? 'grid' : 'none';
+      });
+    }
+
+    function populateControls() {
+      ids.transectSelect.innerHTML = state.dataset.transects.map(t => `<option value="${t.id}">${t.id}</option>`).join('');
+      ids.monthSelect.innerHTML = state.dataset.months.map(m => `<option value="${m}">${formatMonth(m)}</option>`).join('');
+      ids.metricSelect.innerHTML = Object.values(METRICS).map(metric => `<option value="${metric.key}">${metric.label} (${metric.unit || 'unitless'})</option>`).join('');
+      const crossPlotOptions = Object.values(METRICS).map(metric => `<option value="${metric.key}">${metric.label}</option>`).join('');
+      ids.xMetricSelect.innerHTML = crossPlotOptions;
+      ids.yMetricSelect.innerHTML = crossPlotOptions;
+      ids.transectSelect.value = state.transectId;
+      ids.monthSelect.value = state.month;
+      ids.metricSelect.value = state.metric;
+      ids.instrumentSelect.value = state.instrument;
+      if (ids.styleSelect) ids.styleSelect.value = state.style;
+      updateStyleToggle();
+      syncDepthSliders();
+      updateDepthControlVisibility();
+      ids.xMetricSelect.value = state.xMetric;
+      ids.yMetricSelect.value = state.yMetric;
+      populateCompareBox();
+    }
+
+    function populateCompareBox() {
+      if (!ids.compareBox || !ids.compareHelp) return;
+      const months = (state.validCompareMonths?.length ? state.validCompareMonths : state.dataset.months).slice().reverse();
+      ids.compareBox.innerHTML = months.map(month => {
+        const checked = state.compareMonths.includes(month) ? 'checked' : '';
+        const disabled = (!checked && state.compareMonths.length >= 5) ? 'disabled' : '';
+        return `
+          <label class="compare-option">
+            <input type="checkbox" value="${month}" ${checked} ${disabled}>
+            <span>${formatMonth(month)}</span>
+          </label>
+        `;
+      }).join('');
+      ids.compareHelp.textContent = state.compareMonths.length
+        ? `${state.compareMonths.length} comparison month${state.compareMonths.length > 1 ? 's' : ''} selected.`
+        : 'No comparison months selected.';
+    }
+
+    function updateStyleToggle() {
+      if (ids.styleToggle) {
+        ids.styleToggle.querySelectorAll('button[data-style]').forEach(button => {
+          button.classList.toggle('is-active', button.dataset.style === state.style);
+        });
+      }
+      if (ids.advancedStyleToggle) {
+        ids.advancedStyleToggle.querySelectorAll('button[data-advanced-style]').forEach(button => {
+          button.classList.toggle('is-active', button.dataset.advancedStyle === state.advancedStyle);
+        });
+      }
+    }
+
+    function syncSbnPanelText() {
+      const snapshotCard = document.getElementById('publicTransect')?.closest('.chart-card');
+      const snapshotText = snapshotCard?.querySelector('header p');
+      if (snapshotText) snapshotText.textContent = 'Core parameters across Jaywun waypoints for the selected campaign, instrument, and depth.';
+      const trendCard = document.getElementById('publicTrend')?.closest('.chart-card');
+      const trendText = trendCard?.querySelector('header p');
+      if (trendText) trendText.textContent = 'Core parameters through campaign months for the selected waypoint.';
+      const monthDepthCard = document.getElementById('comparisonChart')?.closest('.chart-card');
+      const monthDepthTitle = monthDepthCard?.querySelector('header h3');
+      const monthDepthText = monthDepthCard?.querySelector('header p');
+      const transect = selectedTransect();
+      const waypoint = transect?.label || transect?.id || 'Selected waypoint';
+      if (monthDepthTitle) monthDepthTitle.textContent = `${waypoint} Vertical History`;
+      if (monthDepthText) monthDepthText.textContent = `${metricLabel(state.metric)} by campaign month and sampled depth at the selected waypoint.`;
+    }
+
+    function baseLayout(titleX, titleY, overrides = {}) {
+      return {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 64, r: 24, t: 20, b: 56 },
+        font: { color: '#18212f', family: 'Inter, sans-serif' },
+        xaxis: { title: titleX, gridcolor: 'rgba(24,33,47,0.08)', zerolinecolor: 'rgba(24,33,47,0.12)' },
+        yaxis: { title: titleY, gridcolor: 'rgba(24,33,47,0.08)', zerolinecolor: 'rgba(24,33,47,0.12)' },
+        legend: { orientation: 'h', y: 1.1, x: 0 },
+        hovermode: 'closest',
+        ...overrides
+      };
+    }
+
+    function renderHeaderAndCards() {
+      const transect = state.dataset.transects.find(t => t.id === state.transectId);
+      const record = selectedRecord();
+      ids.transectEyebrow.textContent = `Transect ${transect.id}`;
+      ids.transectTitle.textContent = transect.name;
+      ids.transectSubtitle.textContent = `Monthly ${ids.instrumentSelect.options[ids.instrumentSelect.selectedIndex].text} observations for XT01â€“XT20.`;
+      ids.transectStart.textContent = `${transect.startLat.toFixed(4)}, ${transect.startLon.toFixed(4)}`;
+      ids.transectEnd.textContent = `${transect.endLat.toFixed(4)}, ${transect.endLon.toFixed(4)}`;
+      ids.instrumentPill.textContent = ids.instrumentSelect.options[ids.instrumentSelect.selectedIndex].text;
+      ids.transectFreshnessText.textContent = `${formatMonth(state.month)} Â· ${METRICS[state.metric].label} Â· ${ids.instrumentSelect.options[ids.instrumentSelect.selectedIndex].text}`;
+
+      const cards = [
+        {
+          label: 'Temperature',
+          value: `${formatNumber(record.temp, 1)} Â°C`,
+          detail: `${record.temp >= climatology(state.transectId, 'temp', state.instrument) ? 'Above' : 'Below'} the transect monthly baseline.`
+        },
+        {
+          label: 'Salinity',
+          value: `${formatNumber(record.sal, 2)} PSU`,
+          detail: `${record.sal >= climatology(state.transectId, 'sal', state.instrument) ? 'Above' : 'Below'} the transect monthly baseline.`
+        },
+        {
+          label: 'Dissolved Oxygen',
+          value: `${formatNumber(record.oxygen, 2)} mg/L`,
+          detail: `${record.oxygen < 5 ? 'Lower than preferred background range.' : 'Within the expected monthly range.'}`
+        },
+        {
+          label: 'Chlorophyll-A',
+          value: `${formatNumber(record.chlorophyll, 2)} Âµg/L`,
+          detail: `${record.chlorophyll >= climatology(state.transectId, 'chlorophyll', state.instrument) ? 'Higher' : 'Lower'} than the transect monthly baseline.`
+        }
+      ];
+
+      ids.latestCards.innerHTML = cards.map(card => `
+        <article class="metric-card">
+          <span>${card.label}</span>
+          <strong>${card.value}</strong>
+          <small>${card.detail}</small>
+        </article>
+      `).join('');
+    }
+
+    function drawSeriesChart(targetId, xLabels, yValues, color, yTitle, hoverSuffix) {
+      const trace = {
+        x: xLabels,
+        y: yValues,
+        mode: state.style === 'line' ? 'lines+markers' : undefined,
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        line: { color, width: 3 },
+        marker: { color, size: 8 },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + hoverSuffix + '<extra></extra>'
+      };
+      Plotly.newPlot(targetId, [trace], baseLayout('', yTitle, {
+        xaxis: { title: '', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function renderTransectDepthHeatmap(targetId, metricKey, month) {
+      const metric = METRICS[metricKey];
+      const matrix = transectDepthMatrix(month, state.instrument, metricKey);
+      Plotly.newPlot(targetId, [{
+        x: matrix.x,
+        y: matrix.y,
+        z: matrix.z,
+        type: 'heatmap',
+        colorscale: 'Viridis',
+        zmin: metric.zmin,
+        zmax: metric.zmax,
+        colorbar: { title: metric.unit ? `${metric.label}<br>${metric.unit}` : metric.label },
+        hovertemplate: 'Transect: %{x}<br>Depth: %{y} m<br>%{z:.2f} ' + metric.unit + '<extra></extra>'
+      }], baseLayout('Transect', 'Depth (m)', {
+        yaxis: { title: 'Depth (m)', autorange: 'reversed', gridcolor: 'rgba(24,33,47,0.08)' },
+        xaxis: { title: 'Transect', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function renderTransectMonthDepthHeatmap(targetId, metricKey, transectId) {
+      const metric = METRICS[metricKey];
+      const matrix = transectMonthDepthMatrix(transectId, state.instrument, metricKey);
+      Plotly.newPlot(targetId, [{
+        x: matrix.x,
+        y: matrix.y,
+        z: matrix.z,
+        type: 'heatmap',
+        colorscale: 'Viridis',
+        zmin: metric.zmin,
+        zmax: metric.zmax,
+        colorbar: { title: metric.unit ? `${metric.label}<br>${metric.unit}` : metric.label },
+        hovertemplate: 'Month: %{x}<br>Depth: %{y} m<br>%{z:.2f} ' + metric.unit + '<extra></extra>'
+      }], baseLayout('Month', 'Depth (m)', {
+        yaxis: { title: 'Depth (m)', autorange: 'reversed', gridcolor: 'rgba(24,33,47,0.08)' },
+        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function renderLatestTransect() {
+      if (state.style === 'heatmap') {
+        renderTransectDepthHeatmap('publicTransect', state.metric, state.month);
+        return;
+      }
+      const rows = recordsForMonthAtDepth(state.month, state.instrument, plotDepth('publicTransect'));
+      drawSeriesChart('publicTransect', rows.map(r => r.transectId), rows.map(r => r[state.metric]), COLORS.current, `${METRICS[state.metric].label} (${METRICS[state.metric].unit})`, METRICS[state.metric].unit);
+    }
+
+    function renderMonthlyTrend() {
+      const x = state.dataset.months.map(formatMonth);
+      const y = state.dataset.months.map(month => profilePointAtDepth(state.transectId, month, state.instrument, plotDepth('publicTrend'))[state.metric]);
+      const unit = METRICS[state.metric].unit;
+      if (state.style === 'heatmap') {
+        renderTransectMonthDepthHeatmap('publicTrend', state.metric, state.transectId);
+        return;
+      }
+      const trace = {
+        x,
+        y,
+        name: state.transectId,
+        mode: state.style === 'line' ? 'lines+markers' : undefined,
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        line: { color: COLORS.current, width: 3 },
+        marker: { color: COLORS.current, size: 7 },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + unit + '<extra></extra>'
+      };
+      Plotly.newPlot('publicTrend', [trace], baseLayout('Month', `${METRICS[state.metric].label} (${unit})`, {
+        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function renderMetricChart(targetId, metricKey, color) {
+      const unit = METRICS[metricKey].unit;
+      if (state.style === 'heatmap') {
+        renderTransectDepthHeatmap(targetId, metricKey, state.month);
+        return;
+      }
+      const rows = recordsForMonthAtDepth(state.month, state.instrument, plotDepth(targetId));
+      const x = rows.map(r => r.transectId);
+      const y = rows.map(r => r[metricKey]);
+      const trace = {
+        x, y,
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'lines+markers' : undefined,
+        line: { color, width: 3 },
+        marker: { color, size: 7 },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + unit + '<extra></extra>'
+      };
+      Plotly.newPlot(targetId, [trace], baseLayout('', `${METRICS[metricKey].label} (${unit})`, {
+        xaxis: { title: '', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function renderComparisonChart() {
+      const unit = METRICS[state.metric].unit;
+      const selectedMonths = [state.month, ...state.compareMonths];
+      if (state.style === 'heatmap') {
+        const matrix = depthMatrixComparison(state.metric);
+        Plotly.newPlot('comparisonChart', [{
+          x: matrix.x,
+          y: matrix.y,
+          z: matrix.z,
+          type: 'heatmap',
+          colorscale: matrix.difference ? 'RdBu' : 'Viridis',
+          reversescale: !!matrix.difference,
+          zmid: matrix.difference ? 0 : undefined,
+          colorbar: { title: matrix.difference ? `Delta ${METRICS[state.metric].label}<br>${unit}` : (unit ? `${METRICS[state.metric].label}<br>${unit}` : METRICS[state.metric].label) },
+          hovertemplate: 'Transect: %{x}<br>Depth: %{y} m<br>%{z:.2f} ' + unit + '<extra></extra>'
+        }], baseLayout('Transect', 'Depth (m)', {
+          yaxis: { title: 'Depth (m)', autorange: 'reversed', gridcolor: 'rgba(24,33,47,0.08)' },
+          xaxis: { title: 'Transect', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' }
+        }), { responsive: true, displayModeBar: false });
+        return;
+      }
+
+      const x = state.dataset.transects.map(t => t.id);
+      const traces = selectedMonths.map((month, idx) => ({
+        x,
+        y: recordsForMonthAtDepth(month, state.instrument, plotDepth('comparisonChart')).map(r => r[state.metric]),
+        name: formatMonth(month),
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'lines+markers' : undefined,
+        line: { color: idx === 0 ? COLORS.current : COLORS.compare[(idx - 1) % COLORS.compare.length], width: 3 },
+        marker: { color: idx === 0 ? COLORS.current : COLORS.compare[(idx - 1) % COLORS.compare.length], size: 7 },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + unit + '<extra></extra>'
+      }));
+
+      Plotly.newPlot('comparisonChart', traces, baseLayout('Transect', `${METRICS[state.metric].label} (${unit})`, {
+        barmode: state.style === 'bar' ? 'group' : undefined,
+        xaxis: { title: 'Transect', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function renderMonthlyHeatmap() {
+      const x = state.dataset.months.map(formatMonth);
+      const y = state.dataset.transects.map(t => t.id);
+      const z = y.map(transectId => state.dataset.months.map(month => profilePointAtDepth(transectId, month, state.instrument, plotDepth('monthlyHeatmap'))[state.metric]));
+      Plotly.newPlot('monthlyHeatmap', [{
+        x, y, z,
+        type: 'heatmap',
+        colorscale: 'Viridis',
+        zmin: METRICS[state.metric].zmin,
+        zmax: METRICS[state.metric].zmax,
+        colorbar: { title: METRICS[state.metric].unit ? `${METRICS[state.metric].label}<br>${METRICS[state.metric].unit}` : METRICS[state.metric].label },
+        hovertemplate: 'Transect: %{y}<br>Month: %{x}<br>Depth: ' + plotDepth('monthlyHeatmap') + ' m<br>%{z:.2f} ' + METRICS[state.metric].unit + '<extra></extra>'
+      }], baseLayout('Month', 'Transect', {
+        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function buildCrossPlotHeatmap(samples, xKey, yKey, xBins = 24, yBins = 24) {
+      const valid = samples.filter(sample => ![sample[xKey], sample[yKey]].some(value => value === null || value === undefined || Number.isNaN(value)));
+      if (!valid.length) return null;
+      const xValues = valid.map(sample => sample[xKey]);
+      const yValues = valid.map(sample => sample[yKey]);
+      const xMin = Math.min(...xValues);
+      const xMax = Math.max(...xValues);
+      const yMin = Math.min(...yValues);
+      const yMax = Math.max(...yValues);
+      const xPad = Math.max((xMax - xMin) * 0.08, 0.01);
+      const yPad = Math.max((yMax - yMin) * 0.08, 0.01);
+      const xStart = xMin - xPad;
+      const xEnd = xMax + xPad;
+      const yStart = yMin - yPad;
+      const yEnd = yMax + yPad;
+      const xStep = (xEnd - xStart) / xBins || 1;
+      const yStep = (yEnd - yStart) / yBins || 1;
+      const counts = Array.from({ length: yBins }, () => Array(xBins).fill(0));
+
+      valid.forEach(sample => {
+        let xIndex = Math.floor((sample[xKey] - xStart) / xStep);
+        let yIndex = Math.floor((sample[yKey] - yStart) / yStep);
+        xIndex = Math.max(0, Math.min(xBins - 1, xIndex));
+        yIndex = Math.max(0, Math.min(yBins - 1, yIndex));
+        counts[yIndex][xIndex] += 1;
+      });
+
+      const xCenters = Array.from({ length: xBins }, (_, index) => xStart + xStep * (index + 0.5));
+      const yCenters = Array.from({ length: yBins }, (_, index) => yStart + yStep * (index + 0.5));
+      return { xCenters, yCenters, z: counts };
+    }
+
+    function renderTSChart() {
+      if (state.xMetric === state.yMetric) {
+        Plotly.newPlot('tsChart', [], {
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          margin: { l: 40, r: 20, t: 20, b: 40 },
+          annotations: [{
+            text: 'Select different X and Y parameters.',
+            x: 0.5, y: 0.5, xref: 'paper', yref: 'paper',
+            showarrow: false, font: { size: 16, color: '#627084' }
+          }],
+          xaxis: { visible: false },
+          yaxis: { visible: false }
+        }, { responsive: true, displayModeBar: false });
+        return;
+      }
+
+      const samples = recordsForMonthAtDepth(state.month, state.instrument, plotDepth('tsChart'));
+      const heatmap = buildCrossPlotHeatmap(samples, state.xMetric, state.yMetric);
+      const xMetric = METRICS[state.xMetric];
+      const yMetric = METRICS[state.yMetric];
+
+      if (!heatmap) {
+        Plotly.newPlot('tsChart', [], {
+          paper_bgcolor: 'rgba(0,0,0,0)',
+          plot_bgcolor: 'rgba(0,0,0,0)',
+          margin: { l: 40, r: 20, t: 20, b: 40 },
+          annotations: [{
+            text: 'No valid samples available at the selected depth.',
+            x: 0.5, y: 0.5, xref: 'paper', yref: 'paper',
+            showarrow: false, font: { size: 16, color: '#627084' }
+          }],
+          xaxis: { visible: false },
+          yaxis: { visible: false }
+        }, { responsive: true, displayModeBar: false });
+        return;
+      }
+
+      Plotly.newPlot('tsChart', [{
+        x: heatmap.xCenters,
+        y: heatmap.yCenters,
+        z: heatmap.z,
+        type: 'heatmap',
+        colorscale: 'Viridis',
+        colorbar: { title: 'Count' },
+        hovertemplate:
+          `${xMetric.label}: %{x:.2f} ${xMetric.unit}<br>` +
+          `${yMetric.label}: %{y:.2f} ${yMetric.unit}<br>` +
+          `Depth: ${plotDepth('tsChart')} m<br>` +
+          `Count: %{z}<extra></extra>`
+      }], baseLayout(`${xMetric.label} (${xMetric.unit || 'unitless'})`, `${yMetric.label} (${yMetric.unit || 'unitless'})`), { responsive: true, displayModeBar: false });
+    }
+
+    function initMap() {
+      if (state.map) return;
+      state.map = L.map('transectMap', { zoomControl: true, scrollWheelZoom: true });
+      const carto = L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd',
+        maxZoom: 20,
+        attribution: '&copy; OpenStreetMap contributors &copy; CARTO'
+      });
+      const osmFallback = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      });
+      state.currentTileLayer = carto.addTo(state.map);
+      carto.on('tileerror', function() {
+        if (state.currentTileLayer !== osmFallback) {
+          state.map.removeLayer(state.currentTileLayer);
+          state.currentTileLayer = osmFallback.addTo(state.map);
+        }
+      });
+    }
+
+    function renderMap() {
+      initMap();
+      state.lineLayers.forEach(layer => state.map.removeLayer(layer));
+      state.markerLayers.forEach(layer => state.map.removeLayer(layer));
+      state.lineLayers = [];
+      state.markerLayers = [];
+
+      const bounds = [];
+      state.dataset.transects.forEach(transect => {
+        const selected = transect.id === state.transectId;
+        const polyline = L.polyline(
+          [[transect.startLat, transect.startLon], [transect.endLat, transect.endLon]],
+          {
+            color: selected ? '#5b21b6' : '#7c8aa5',
+            weight: selected ? 5 : 3,
+            opacity: selected ? 0.95 : 0.55
+          }
+        ).addTo(state.map);
+        polyline.bindPopup(`<strong>${transect.id}</strong><br>${formatMonth(state.month)}<br>${METRICS[state.metric].label}: ${formatNumber(getRecord(transect.id, state.month, state.instrument)[state.metric], 2)} ${METRICS[state.metric].unit}`);
+        polyline.on('click', () => {
+          state.transectId = transect.id;
+          ids.transectSelect.value = transect.id;
+          renderAll();
+        });
+        state.lineLayers.push(polyline);
+
+        const startMarker = L.circleMarker([transect.startLat, transect.startLon], {
+          radius: selected ? 6 : 4,
+          color: selected ? '#16a34a' : '#94a3b8',
+          fillColor: selected ? '#16a34a' : '#cbd5e1',
+          fillOpacity: 1,
+          weight: 1
+        }).addTo(state.map);
+        state.markerLayers.push(startMarker);
+
+        bounds.push([transect.startLat, transect.startLon], [transect.endLat, transect.endLon]);
+      });
+
+      state.map.fitBounds(bounds, { padding: [20, 20] });
+      setTimeout(() => state.map.invalidateSize(), 120);
+    }
+
+    function switchTab(tab) {
+      state.activeTab = tab;
+      document.querySelectorAll('#viewTabs button').forEach(button => {
+        button.classList.toggle('is-active', button.dataset.tab === tab);
+      });
+      document.querySelectorAll('.tab-panel').forEach(panel => {
+        panel.classList.toggle('is-active', panel.id === `${tab}-view`);
+      });
+      setTimeout(() => {
+        if (state.map) state.map.invalidateSize();
+        if (window.Plotly) {
+          ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+            .forEach(id => {
+              const el = document.getElementById(id);
+              if (el) Plotly.Plots.resize(el);
+            });
+        }
+      }, 120);
+    }
+
+    function renderAll() {
+      updateDepthControlVisibility();
+      renderHeaderAndCards();
+      renderMap();
+      renderLatestTransect();
+      renderMonthlyTrend();
+      renderMetricChart('tempTransect', 'temp', COLORS.temp);
+      renderMetricChart('salTransect', 'sal', COLORS.sal);
+      renderMetricChart('oxyTransect', 'oxygen', COLORS.oxygen);
+      renderMetricChart('chlTransect', 'chlorophyll', COLORS.chlorophyll);
+      renderComparisonChart();
+      renderMonthlyHeatmap();
+      renderTSChart();
+    }
+
+    function bindEvents() {
+      ids.transectSelect.addEventListener('change', event => {
+        state.transectId = event.target.value;
+        renderAll();
+      });
+      ids.monthSelect.addEventListener('change', event => {
+        state.month = event.target.value;
+        renderAll();
+      });
+      ids.metricSelect.addEventListener('change', event => {
+        state.metric = event.target.value;
+        renderAll();
+      });
+      ids.instrumentSelect.addEventListener('change', event => {
+        state.instrument = event.target.value;
+        renderAll();
+      });
+      ids.styleSelect.addEventListener('change', event => {
+        state.style = event.target.value;
+        renderAll();
+      });
+      document.querySelectorAll('.plot-depth-range').forEach(input => {
+        input.addEventListener('input', event => {
+          const key = event.target.dataset.depthKey;
+          state.chartDepths[key] = state.dataset.depths[Number(event.target.value)];
+          const label = document.getElementById(`${key}DepthValueLabel`);
+          if (label) label.textContent = depthSliderLabel(state.chartDepths[key]);
+          const renderers = {
+            publicTransect: () => renderLatestTransect(),
+            publicTrend: () => renderMonthlyTrend(),
+            tempTransect: () => renderMetricChart('tempTransect', 'temp', COLORS.temp),
+            salTransect: () => renderMetricChart('salTransect', 'sal', COLORS.sal),
+            oxyTransect: () => renderMetricChart('oxyTransect', 'oxygen', COLORS.oxygen),
+            chlTransect: () => renderMetricChart('chlTransect', 'chlorophyll', COLORS.chlorophyll),
+            comparisonChart: () => renderComparisonChart(),
+            monthlyHeatmap: () => renderMonthlyHeatmap(),
+            tsChart: () => renderTSChart()
+          };
+          if (renderers[key]) renderers[key]();
+        });
+      });
+      ids.xMetricSelect.addEventListener('change', event => {
+        state.xMetric = event.target.value;
+        renderTSChart();
+      });
+      ids.yMetricSelect.addEventListener('change', event => {
+        state.yMetric = event.target.value;
+        renderTSChart();
+      });
+      ids.compareBox.addEventListener('change', event => {
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        const month = target.value;
+        if (target.checked) {
+          if (state.compareMonths.length >= 5) {
+            target.checked = false;
+            return;
+          }
+          if (!state.compareMonths.includes(month)) state.compareMonths.push(month);
+        } else {
+          state.compareMonths = state.compareMonths.filter(m => m !== month);
+        }
+        populateCompareBox();
+        renderAll();
+      });
+      ids.clearCompareBtn.addEventListener('click', () => {
+        state.compareMonths = [];
+        populateCompareBox();
+        renderAll();
+      });
+      document.querySelectorAll('#viewTabs button').forEach(button => {
+        button.addEventListener('click', () => switchTab(button.dataset.tab));
+      });
+      window.addEventListener('resize', () => {
+        if (state.map) state.map.invalidateSize();
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+          .forEach(id => {
+            const el = document.getElementById(id);
+            if (el && window.Plotly) Plotly.Plots.resize(el);
+          });
+      });
+    }
+
+    const SBN_API_CACHE = new Map();
+    const SBN_DEFAULT_CHART_METRICS = ['temp_c', 'salinity_psu', 'do_mg_l', 'do_pct_sat', 'chlorophyll_ug_l'];
+    const SBN_QUICK_METRIC_PREFERENCES = ['temp_c', 'salinity_psu', 'do_mg_l', 'do_pct_sat', 'chlorophyll_ug_l', 'turbidity_fnu', 'ph'];
+    const SBN_COLOR_PALETTE = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#db2777', '#0891b2', '#7c3aed', '#64748b'];
+
+    function stationWaypointId() {
+      const name = INITIAL_STATION?.name || '';
+      const raw = INITIAL_STATION?.raw_id || INITIAL_STATION?.id || '';
+      const match = name.match(/NYU[-_\s]?(\d{1,2})/i) || name.match(/waypoint\s+(\d{1,2})/i) || raw.match(/NYU[_\s-]?(\d{1,2})/i);
+      return match ? `NYU-${String(Number(match[1])).padStart(2, '0')}` : null;
+    }
+
+    function apiUrl(path, params = {}) {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([key, value]) => {
+        if (value !== null && value !== undefined && value !== '') qs.set(key, String(value));
+      });
+      return qs.toString() ? `${path}?${qs.toString()}` : path;
+    }
+
+    async function sbnFetch(path, params = {}) {
+      const url = apiUrl(path, params);
+      if (SBN_API_CACHE.has(url)) return SBN_API_CACHE.get(url);
+      const request = fetch(url).then(async response => {
+        if (!response.ok) {
+          const text = await response.text().catch(() => '');
+          throw new Error(`${response.status} ${response.statusText}: ${text.slice(0, 160)}`);
+        }
+        return response.json();
+      });
+      SBN_API_CACHE.set(url, request);
+      return request;
+    }
+
+    function optionLabel(value) {
+      return String(value || '').replace(/^./, letter => letter.toUpperCase());
+    }
+
+    function instrumentLabel(value) {
+      const labels = { combined: 'Combined', ead_ctd: 'EAD CTD', rbr: 'RBR' };
+      return labels[value] || optionLabel(value);
+    }
+
+    function monthsForInstrument(instrument) {
+      if (state.validMonths?.length && state.validInstrument === instrument) return state.validMonths;
+      if (!state.dataset?.months?.length) return [];
+      if (instrument === 'combined') return state.dataset.months;
+      const months = state.dataset.monthsByInstrument?.[instrument] || [];
+      return months.length ? months : state.dataset.months;
+    }
+
+    function preferredInstrumentForMonth(month) {
+      const instruments = state.dataset?.instruments || [];
+      const priority = ['ead_ctd', 'rbr'];
+      const candidates = instruments.filter(instrument => (state.dataset.monthsByInstrument?.[instrument] || []).includes(month));
+      return priority.find(instrument => candidates.includes(instrument)) || candidates[0] || 'combined';
+    }
+
+    function syncMonthOptionsForInstrument() {
+      const allowed = new Set(monthsForInstrument(state.instrument));
+      ids.monthSelect.innerHTML = state.dataset.months.map(month => {
+        const disabled = allowed.has(month) ? '' : 'disabled';
+        return `<option value="${month}" ${disabled}>${formatMonth(month)}</option>`;
+      }).join('');
+      if (!allowed.has(state.month)) {
+        const values = Array.from(allowed);
+        state.month = values[values.length - 1] || state.dataset.months[state.dataset.months.length - 1] || '';
+      }
+      ids.monthSelect.value = state.month;
+    }
+
+    function metricColor(metricKey) {
+      if (COLORS[metricKey]) return COLORS[metricKey];
+      const keys = Object.keys(METRICS);
+      const index = Math.max(0, keys.indexOf(metricKey));
+      return SBN_COLOR_PALETTE[index % SBN_COLOR_PALETTE.length];
+    }
+
+    function metricLabel(metricKey) {
+      return METRICS[metricKey]?.label || metricKey;
+    }
+
+    function metricUnit(metricKey) {
+      return METRICS[metricKey]?.unit || '';
+    }
+
+    function metricAxisTitle(metricKey) {
+      const unit = metricUnit(metricKey);
+      return unit ? `${metricLabel(metricKey)} (${unit})` : metricLabel(metricKey);
+    }
+
+    function availableMetric(...keys) {
+      const valid = state.validMetricKeys?.length ? state.validMetricKeys : Object.keys(METRICS);
+      return keys.find(key => METRICS[key] && valid.includes(key)) || valid.find(key => METRICS[key]) || Object.keys(METRICS)[0];
+    }
+
+    function chartMetric(slot) {
+      const map = {
+        tempTransect: ['temp_c', 'temp2_c'],
+        salTransect: ['salinity_psu'],
+        oxyTransect: ['do_mg_l', 'do_pct_sat'],
+        chlTransect: ['chlorophyll_ug_l', 'chlorophyll_rfu'],
+      };
+      return availableMetric(...(map[slot] || [state.metric]));
+    }
+
+    function selectedTransect() {
+      return state.dataset?.transects?.find(item => item.id === state.transectId) || state.dataset?.transects?.[0] || null;
+    }
+
+    function defaultDepth(depths) {
+      const clean = (depths || [])
+        .map(value => Number(value))
+        .filter(value => Number.isFinite(value) && value >= 0)
+        .sort((a, b) => a - b);
+      return clean[0] ?? 0;
+    }
+
+    function plotEmpty(targetId, message) {
+      Plotly.newPlot(targetId, [], {
+        paper_bgcolor: 'rgba(0,0,0,0)',
+        plot_bgcolor: 'rgba(0,0,0,0)',
+        margin: { l: 40, r: 20, t: 20, b: 40 },
+        annotations: [{
+          text: message,
+          x: 0.5, y: 0.5, xref: 'paper', yref: 'paper',
+          showarrow: false,
+          font: { size: 15, color: '#627084' }
+        }],
+        xaxis: { visible: false },
+        yaxis: { visible: false }
+      }, { responsive: true, displayModeBar: false });
+    }
+
+    function rowsForPlot(rows) {
+      return (rows || []).slice().sort((a, b) => (a.waypoint_order || 0) - (b.waypoint_order || 0));
+    }
+
+    async function fetchSbnCells(month, instrument, depth, metric) {
+      return sbnFetch('/api/jw/cells', {
+        campaign_month: month,
+        instrument,
+        depth_bin_m: depth,
+        metric
+      });
+    }
+
+    function drawSbnSeriesChart(targetId, rows, metricKey, color, name, layoutOverrides = {}) {
+      const sorted = rowsForPlot(rows);
+      const x = sorted.map(row => row.waypoint_label || row.waypoint_id);
+      const y = sorted.map(row => row.value);
+      if (!y.some(value => value !== null && value !== undefined)) {
+        plotEmpty(targetId, 'No rollup cells are available for this selection.');
+        return;
+      }
+      const trace = {
+        x,
+        y,
+        name,
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'markers' : undefined,
+        line: { color, width: 0 },
+        marker: { color, size: state.style === 'line' ? 9 : 8 },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      };
+      Plotly.newPlot(targetId, [trace], baseLayout('', metricAxisTitle(metricKey), {
+        xaxis: { title: '', tickangle: -25, gridcolor: 'rgba(24,33,47,0.08)' },
+        ...layoutOverrides
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function drawSbnHeatmap(targetId, payload, xTitle, yTitle, options = {}) {
+      const hasValue = (payload?.z || []).some(row => (row || []).some(value => value !== null && value !== undefined && Number.isFinite(Number(value))));
+      if (!payload?.x?.length || !payload?.y?.length || !hasValue) {
+        plotEmpty(targetId, 'No heatmap cells are available for this selection.');
+        return;
+      }
+      const metric = payload.metric || METRICS[state.metric] || {};
+      Plotly.newPlot(targetId, [{
+        x: payload.x.map(value => value && /^\d{4}-\d{2}$/.test(value) ? formatMonth(value) : value),
+        y: payload.y,
+        z: payload.z,
+        type: 'heatmap',
+        colorscale: options.colorscale || 'Viridis',
+        reversescale: !!options.reversescale,
+        zmid: options.zmid,
+        zmin: options.zmin,
+        zmax: options.zmax,
+        colorbar: { title: metric.unit ? `${metric.label}<br>${metric.unit}` : metric.label },
+        hovertemplate: options.hovertemplate || '%{x}<br>%{y}<br>%{z:.2f}<extra></extra>'
+      }], baseLayout(xTitle, yTitle, {
+        yaxis: { title: yTitle, autorange: options.reverseY ? 'reversed' : true, gridcolor: 'rgba(24,33,47,0.08)' },
+        xaxis: { title: xTitle, tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' }
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function drawSbnAdvancedWaypointChart(targetId, rows, metricKey) {
+      const sorted = rowsForPlot(rows);
+      const x = sorted.map(row => row.waypoint_label || row.waypoint_id);
+      const y = sorted.map(row => row.value);
+      if (!y.some(value => value !== null && value !== undefined && Number.isFinite(Number(value)))) {
+        plotEmpty(targetId, 'No rollup cells are available for this depth.');
+        return;
+      }
+      Plotly.newPlot(targetId, [{
+        x,
+        y,
+        name: metricLabel(metricKey),
+        type: state.advancedStyle === 'bar' ? 'bar' : 'scatter',
+        mode: state.advancedStyle === 'line' ? 'markers' : undefined,
+        marker: {
+          color: metricColor(metricKey),
+          size: state.advancedStyle === 'line' ? 9 : undefined,
+          line: { color: 'rgba(24,33,47,0.16)', width: state.advancedStyle === 'bar' ? 0 : 1 }
+        },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('Waypoint', metricAxisTitle(metricKey), {
+        xaxis: { title: 'Waypoint', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function drawSbnAdvancedTrendChart(targetId, payload, metricKey) {
+      const rows = payload.data || [];
+      if (!rows.length || !rows.some(row => row.value !== null && row.value !== undefined && Number.isFinite(Number(row.value)))) {
+        plotEmpty(targetId, 'No campaign cells are available for this depth.');
+        return;
+      }
+      Plotly.newPlot(targetId, [{
+        x: rows.map(row => formatMonth(row.campaign_month)),
+        y: rows.map(row => row.value),
+        name: metricLabel(metricKey),
+        type: state.advancedStyle === 'bar' ? 'bar' : 'scatter',
+        mode: state.advancedStyle === 'line' ? 'markers' : undefined,
+        marker: {
+          color: metricColor(metricKey),
+          size: state.advancedStyle === 'line' ? 9 : undefined,
+          line: { color: 'rgba(24,33,47,0.16)', width: state.advancedStyle === 'bar' ? 0 : 1 }
+        },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('Campaign Month', metricAxisTitle(metricKey), {
+        xaxis: { title: 'Campaign Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    async function syncSbnSelection() {
+      if (!state.dataset) return;
+      const selection = await sbnFetch('/api/jw/selection', {
+        instrument: state.instrument,
+        campaign_month: state.month,
+        metric: state.metric,
+        depth_bin_m: plotDepth('publicTransect')
+      });
+      state.instrument = selection.instrument || state.instrument;
+      state.month = selection.campaign_month || state.month;
+      state.metric = selection.metric || state.metric;
+      state.validInstrument = state.instrument;
+      state.validMonths = selection.months || state.dataset.months || [];
+      state.validMetrics = selection.metrics?.length ? selection.metrics : Object.values(METRICS);
+      state.validMetricKeys = state.validMetrics.map(metric => metric.key);
+      state.validDepths = selection.depths?.length ? selection.depths : (state.dataset.depths || [0]);
+      state.validCompareMonths = selection.compare_months || state.validMonths;
+      const resolvedDepth = selection.depth_bin_m ?? state.validDepths[0] ?? 0;
+      Object.keys(state.chartDepths).forEach(key => {
+        if (!state.validDepths.includes(state.chartDepths[key])) {
+          state.chartDepths[key] = resolvedDepth;
+        }
+      });
+      state.compareMonths = [];
+      if (!state.validMetricKeys.includes(state.xMetric)) {
+        state.xMetric = availableMetric('salinity_psu', 'cond_ms_cm', state.metric);
+      }
+      if (!state.validMetricKeys.includes(state.yMetric) || state.yMetric === state.xMetric) {
+        state.yMetric = state.validMetricKeys.find(key => key !== state.xMetric) || state.xMetric;
+      }
+    }
+
+    async function loadSbnOptions() {
+      const options = await sbnFetch('/api/jw/options');
+      const metrics = (options.metrics || []).filter(metric => metric.key);
+      if (metrics.length) {
+        METRICS = Object.fromEntries(metrics.map(metric => [
+          metric.key,
+          {
+            key: metric.key,
+            label: metric.label || metric.key,
+            unit: metric.unit || '',
+            zmin: undefined,
+            zmax: undefined
+          }
+        ]));
+      }
+      state.dataset = {
+        transects: options.waypoints || [],
+        months: options.months || [],
+        monthsByInstrument: options.months_by_instrument || {},
+        depths: options.depths?.length ? options.depths : [0],
+        events: options.events || [],
+        instruments: options.instruments || [],
+        metrics
+      };
+      const depth = defaultDepth(state.dataset.depths);
+      Object.keys(state.chartDepths).forEach(key => { state.chartDepths[key] = depth; });
+      state.transectId = stationWaypointId() || state.dataset.transects[0]?.id || 'NYU-01';
+      state.month = state.dataset.months[state.dataset.months.length - 1] || '';
+      state.instrument = preferredInstrumentForMonth(state.month);
+      state.metric = availableMetric('do_mg_l', 'temp_c', 'salinity_psu') || Object.keys(METRICS)[0];
+      state.xMetric = availableMetric('salinity_psu', 'cond_ms_cm', state.metric) || state.metric;
+      state.yMetric = availableMetric('temp_c', 'do_mg_l') || state.metric;
+      if (state.xMetric === state.yMetric) {
+        state.yMetric = Object.keys(METRICS).find(key => key !== state.xMetric) || state.yMetric;
+      }
+      await syncSbnSelection();
+    }
+
+    function populateSbnControls() {
+      ids.transectSelect.innerHTML = state.dataset.transects.map(item => `<option value="${item.id}">${item.label || item.id}</option>`).join('');
+      const metricOptions = state.validMetrics?.length ? state.validMetrics : Object.values(METRICS);
+      ids.metricSelect.innerHTML = metricOptions.map(metric => `<option value="${metric.key}">${metric.label}${metric.unit ? ` (${metric.unit})` : ''}</option>`).join('');
+      ids.instrumentSelect.innerHTML = [
+        '<option value="combined">Combined</option>',
+        ...state.dataset.instruments.map(instrument => `<option value="${instrument}">${instrumentLabel(instrument)}</option>`)
+      ].join('');
+      const crossOptions = metricOptions.map(metric => `<option value="${metric.key}">${metric.label}</option>`).join('');
+      ids.xMetricSelect.innerHTML = crossOptions;
+      ids.yMetricSelect.innerHTML = crossOptions;
+      ids.transectSelect.value = state.transectId;
+      ids.metricSelect.value = state.metric;
+      ids.instrumentSelect.value = state.instrument;
+      syncMonthOptionsForInstrument();
+      if (ids.styleSelect) ids.styleSelect.value = state.style;
+      updateStyleToggle();
+      ids.xMetricSelect.value = state.xMetric;
+      ids.yMetricSelect.value = state.yMetric;
+      syncDepthSliders();
+      updateDepthControlVisibility();
+      populateCompareBox();
+    }
+
+    async function renderSbnHeaderAndCards() {
+      const transect = selectedTransect();
+      const first = state.dataset.transects[0];
+      const last = state.dataset.transects[state.dataset.transects.length - 1];
+      if (!transect) return;
+      ids.transectEyebrow.textContent = 'Jaywun Cruise';
+      ids.transectTitle.textContent = transect.name || transect.label || transect.id;
+      ids.transectSubtitle.textContent = `${formatMonth(state.month)} campaign rollups by waypoint, depth, and instrument.`;
+      if (ids.transectStart) ids.transectStart.textContent = first?.lat && first?.lon ? `${Number(first.lat).toFixed(4)}, ${Number(first.lon).toFixed(4)}` : 'N/A';
+      if (ids.transectEnd) ids.transectEnd.textContent = last?.lat && last?.lon ? `${Number(last.lat).toFixed(4)}, ${Number(last.lon).toFixed(4)}` : 'N/A';
+      ids.instrumentPill.textContent = instrumentLabel(state.instrument);
+      syncSbnPanelText();
+      ids.transectFreshnessText.textContent = `${formatMonth(state.month)} - ${metricLabel(state.metric)} - ${instrumentLabel(state.instrument)} - ${plotDepth('publicTransect')} m`;
+
+      const cardMetrics = SBN_QUICK_METRIC_PREFERENCES.map(key => availableMetric(key)).filter(Boolean);
+      const uniqueMetrics = [...new Set(cardMetrics)].slice(0, 6);
+      const cards = await Promise.all(uniqueMetrics.map(async metricKey => {
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('publicTransect'), metricKey);
+        const rows = rowsForPlot(payload.data);
+        const row = rows.find(item => item.waypoint_id === state.transectId);
+        const valid = rows.map(item => item.value).filter(value => value !== null && value !== undefined && !Number.isNaN(value));
+        const transectMean = mean(valid);
+        const value = row?.value;
+        const delta = value !== null && value !== undefined && transectMean !== null ? value - transectMean : null;
+        const ranked = valid.slice().sort((a, b) => b - a);
+        const rank = value !== null && value !== undefined ? ranked.findIndex(item => item === value) + 1 : 0;
+        const sampleCount = row?.stats?.n ?? row?.n ?? null;
+        return {
+          label: metricLabel(metricKey),
+          unit: metricUnit(metricKey),
+          value,
+          mean: transectMean,
+          delta,
+          rank,
+          total: valid.length,
+          sampleCount,
+          detail: transectMean === null ? 'No matching rollup cells at this depth.' : `Transect mean ${formatNumber(transectMean, 2)}${metricUnit(metricKey) ? ` ${metricUnit(metricKey)}` : ''}.`
+        };
+      }));
+      ids.latestCards.innerHTML = cards.map(card => `
+        <article class="metric-card">
+          <span>${card.label}</span>
+          <strong>${formatNumber(card.value, 2)}${card.unit ? ` ${card.unit}` : ''}</strong>
+          <small>${card.detail}</small>
+          <div class="metric-card-details">
+            <div><b>Delta</b><span>${card.delta === null ? 'N/A' : `${card.delta > 0 ? '+' : ''}${formatNumber(card.delta, 2)}`}</span></div>
+            <div><b>Rank</b><span>${card.rank ? `${card.rank}/${card.total}` : 'N/A'}</span></div>
+            <div><b>Depth</b><span>${depthSliderLabel(plotDepth('publicTransect'))}</span></div>
+            <div><b>Samples</b><span>${card.sampleCount ?? 'N/A'}</span></div>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    function quickMetricKeys(limit = 4) {
+      const preferred = SBN_QUICK_METRIC_PREFERENCES.map(key => availableMetric(key)).filter(Boolean);
+      return [...new Set(preferred)].slice(0, limit);
+    }
+
+    function prepareQuickPlotGrid(targetId, metrics) {
+      const container = document.getElementById(targetId);
+      if (!container) return [];
+      container.classList.add('quick-plot-grid');
+      container.innerHTML = metrics.map(metricKey => `
+        <div class="quick-plot-card">
+          <div id="${targetId}-${metricKey}" class="quick-plot"></div>
+        </div>
+      `).join('');
+      return metrics.map(metricKey => `${targetId}-${metricKey}`);
+    }
+
+    function drawSbnMiniWaypointChart(targetId, rows, metricKey) {
+      const sorted = rowsForPlot(rows);
+      const x = sorted.map(row => row.waypoint_label || row.waypoint_id);
+      const y = sorted.map(row => row.value);
+      if (!y.some(value => value !== null && value !== undefined)) {
+        plotEmpty(targetId, `No ${metricLabel(metricKey)} cells are available.`);
+        return;
+      }
+      const selectedIndex = sorted.findIndex(row => row.waypoint_id === state.transectId);
+      const color = metricColor(metricKey);
+      const markerColors = sorted.map((row, index) => index === selectedIndex ? COLORS.current : color);
+      Plotly.newPlot(targetId, [{
+        x,
+        y,
+        name: metricLabel(metricKey),
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'markers' : undefined,
+        marker: {
+          color: markerColors,
+          size: state.style === 'line' ? 8 : undefined,
+          line: { color: 'rgba(24,33,47,0.16)', width: state.style === 'bar' ? 0 : 1 }
+        },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('', metricAxisTitle(metricKey), {
+        margin: { l: 54, r: 16, t: 32, b: 48 },
+        title: { text: metricLabel(metricKey), x: 0, xanchor: 'left', font: { size: 15 } },
+        xaxis: { title: '', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    function drawSbnMiniTrendChart(targetId, payload, metricKey) {
+      const rows = payload.data || [];
+      if (!rows.length) {
+        plotEmpty(targetId, `No ${metricLabel(metricKey)} trend cells are available.`);
+        return;
+      }
+      Plotly.newPlot(targetId, [{
+        x: rows.map(row => formatMonth(row.campaign_month)),
+        y: rows.map(row => row.value),
+        name: metricLabel(metricKey),
+        type: state.style === 'bar' ? 'bar' : 'scatter',
+        mode: state.style === 'line' ? 'markers' : undefined,
+        marker: { color: metricColor(metricKey), size: state.style === 'line' ? 8 : undefined },
+        hovertemplate: '%{x}<br>%{y:.2f} ' + metricUnit(metricKey) + '<extra></extra>'
+      }], baseLayout('Month', metricAxisTitle(metricKey), {
+        margin: { l: 54, r: 16, t: 32, b: 56 },
+        title: { text: metricLabel(metricKey), x: 0, xanchor: 'left', font: { size: 15 } },
+        xaxis: { title: 'Month', tickangle: -35, gridcolor: 'rgba(24,33,47,0.08)' },
+        showlegend: false
+      }), { responsive: true, displayModeBar: false });
+    }
+
+    async function renderSbnLatestTransect() {
+      const metrics = quickMetricKeys(4);
+      if (!metrics.length) {
+        plotEmpty('publicTransect', 'No SBN parameters are available for this selection.');
+        return;
+      }
+      const plotIds = prepareQuickPlotGrid('publicTransect', metrics);
+      await Promise.all(metrics.map(async (metricKey, index) => {
+        if (state.style === 'heatmap') {
+          const payload = await sbnFetch('/api/jw/heatmap/depth-waypoint', {
+            campaign_month: state.month,
+            instrument: state.instrument,
+            metric: metricKey
+          });
+          drawSbnHeatmap(plotIds[index], payload, 'Waypoint', 'Depth (m)', { reverseY: true });
+          return;
+        }
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('publicTransect'), metricKey);
+        drawSbnMiniWaypointChart(plotIds[index], payload.data, metricKey);
+      }));
+    }
+
+    async function renderSbnMonthlyTrend() {
+      const metrics = quickMetricKeys(4);
+      if (!metrics.length) {
+        plotEmpty('publicTrend', 'No SBN parameters are available for this selection.');
+        return;
+      }
+      const plotIds = prepareQuickPlotGrid('publicTrend', metrics);
+      await Promise.all(metrics.map(async (metricKey, index) => {
+        if (state.style === 'heatmap') {
+          const payload = await sbnFetch('/api/jw/heatmap/month-depth', {
+            waypoint_id: state.transectId,
+            instrument: state.instrument,
+            metric: metricKey
+          });
+          drawSbnHeatmap(plotIds[index], payload, 'Month', 'Depth (m)', { reverseY: true });
+          return;
+        }
+        const payload = await sbnFetch('/api/jw/trend', {
+          waypoint_id: state.transectId,
+          instrument: state.instrument,
+          depth_bin_m: plotDepth('publicTrend'),
+          metric: metricKey
+        });
+        drawSbnMiniTrendChart(plotIds[index], payload, metricKey);
+      }));
+    }
+
+    async function renderSbnMetricChart(targetId, metricKey) {
+      if (!metricKey) {
+        plotEmpty(targetId, 'This parameter is not available in the SBN rollup cells.');
+        return;
+      }
+      if (state.advancedStyle !== 'heatmap') {
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth(targetId), metricKey);
+        drawSbnAdvancedWaypointChart(targetId, payload.data, metricKey);
+        return;
+      }
+      const payload = await sbnFetch('/api/jw/heatmap/depth-waypoint', {
+        campaign_month: state.month,
+        instrument: state.instrument,
+        metric: metricKey
+      });
+      drawSbnHeatmap(targetId, payload, 'Waypoint', 'Depth (m)', { reverseY: true });
+    }
+
+    async function renderSbnComparisonChart() {
+      if (state.advancedStyle !== 'heatmap') {
+        const payload = await sbnFetch('/api/jw/trend', {
+          waypoint_id: state.transectId,
+          instrument: state.instrument,
+          depth_bin_m: plotDepth('comparisonChart'),
+          metric: state.metric
+        });
+        drawSbnAdvancedTrendChart('comparisonChart', payload, state.metric);
+        return;
+      }
+      const payload = await sbnFetch('/api/jw/heatmap/month-depth', {
+        waypoint_id: state.transectId,
+        instrument: state.instrument,
+        metric: state.metric
+      });
+      drawSbnHeatmap('comparisonChart', payload, 'Campaign Month', 'Depth (m)', {
+        reverseY: true,
+        hovertemplate: 'Campaign: %{x}<br>Depth: %{y} m<br>%{z:.2f}<extra></extra>'
+      });
+    }
+
+    async function renderSbnMonthlyHeatmap() {
+      if (state.advancedStyle !== 'heatmap') {
+        const payload = await fetchSbnCells(state.month, state.instrument, plotDepth('monthlyHeatmap'), state.metric);
+        drawSbnAdvancedWaypointChart('monthlyHeatmap', payload.data, state.metric);
+        return;
+      }
+      const payload = await sbnFetch('/api/jw/heatmap/month-waypoint', {
+        instrument: state.instrument,
+        depth_bin_m: plotDepth('monthlyHeatmap'),
+        metric: state.metric
+      });
+      drawSbnHeatmap('monthlyHeatmap', payload, 'Month', 'Waypoint', {
+        hovertemplate: 'Month: %{x}<br>Waypoint: %{y}<br>%{z:.2f}<extra></extra>'
+      });
+    }
+
+    async function renderSbnCrossPlot() {
+      if (state.xMetric === state.yMetric) {
+        plotEmpty('tsChart', 'Select different X and Y parameters.');
+        return;
+      }
+      const payload = await sbnFetch('/api/jw/crossplot', {
+        campaign_month: state.month,
+        instrument: state.instrument,
+        depth_bin_m: plotDepth('tsChart'),
+        x_metric: state.xMetric,
+        y_metric: state.yMetric
+      });
+      const rows = payload.data || [];
+      if (!rows.length) {
+        plotEmpty('tsChart', 'No paired metric cells are available for this selection.');
+        return;
+      }
+      const xValues = rows.map(row => row.x);
+      const yValues = rows.map(row => row.y);
+      const binCount = Math.max(4, Math.min(12, Math.ceil(Math.sqrt(rows.length) * 1.6)));
+      Plotly.newPlot('tsChart', [
+        {
+          x: xValues,
+          y: yValues,
+          type: 'histogram2d',
+          nbinsx: binCount,
+          nbinsy: binCount,
+          colorscale: [
+            [0, 'rgba(91,33,182,0.06)'],
+            [0.25, 'rgba(91,33,182,0.28)'],
+            [0.55, 'rgba(20,184,166,0.62)'],
+            [1, 'rgba(14,116,144,0.92)']
+          ],
+          colorbar: { title: 'Waypoint<br>count' },
+          hovertemplate:
+            `${payload.x_metric.label}: %{x}<br>` +
+            `${payload.y_metric.label}: %{y}<br>` +
+            'Waypoints: %{z}<extra></extra>'
+        },
+        {
+          x: xValues,
+          y: yValues,
+          text: rows.map(row => row.waypoint_id),
+          mode: 'markers+text',
+          type: 'scatter',
+          textposition: 'top center',
+          marker: {
+            color: '#ffffff',
+            size: 8,
+            opacity: 0.95,
+            line: { color: COLORS.current, width: 2 }
+          },
+          hovertemplate:
+            'Waypoint: %{text}<br>' +
+            `${payload.x_metric.label}: %{x:.2f} ${payload.x_metric.unit || ''}<br>` +
+            `${payload.y_metric.label}: %{y:.2f} ${payload.y_metric.unit || ''}<extra></extra>`
+        }
+      ], baseLayout(
+        `${payload.x_metric.label} (${payload.x_metric.unit || 'unitless'})`,
+        `${payload.y_metric.label} (${payload.y_metric.unit || 'unitless'})`
+      ), { responsive: true, displayModeBar: false });
+    }
+
+    function renderSbnMap() {
+      initMap();
+      state.lineLayers.forEach(layer => state.map.removeLayer(layer));
+      state.markerLayers.forEach(layer => state.map.removeLayer(layer));
+      state.lineLayers = [];
+      state.markerLayers = [];
+      const waypoints = state.dataset.transects.filter(item => item.lat !== null && item.lon !== null && item.lat !== undefined && item.lon !== undefined);
+      const coords = waypoints.map(item => [Number(item.lat), Number(item.lon)]);
+      if (coords.length > 1) {
+        const line = L.polyline(coords, { color: '#5b21b6', weight: 4, opacity: 0.75 }).addTo(state.map);
+        state.lineLayers.push(line);
+      }
+      waypoints.forEach(item => {
+        const selected = item.id === state.transectId;
+        const marker = L.circleMarker([Number(item.lat), Number(item.lon)], {
+          radius: selected ? 7 : 5,
+          color: selected ? '#5b21b6' : '#64748b',
+          fillColor: selected ? '#7c3aed' : '#cbd5e1',
+          fillOpacity: selected ? 0.95 : 0.78,
+          weight: selected ? 3 : 1
+        }).addTo(state.map);
+        marker.bindPopup(`<strong>${item.label || item.id}</strong><br>${item.name || ''}<br>${formatMonth(state.month)} - ${instrumentLabel(state.instrument)}`);
+        marker.on('click', () => {
+          state.transectId = item.id;
+          ids.transectSelect.value = item.id;
+          renderSbnAll();
+        });
+        state.markerLayers.push(marker);
+      });
+      if (coords.length) state.map.fitBounds(coords, { padding: [24, 24], maxZoom: 11 });
+      setTimeout(() => state.map.invalidateSize(), 120);
+    }
+
+    function buildSbnDownloadModal() {
+      const metricOptions = state.validMetrics?.length ? state.validMetrics : (state.dataset?.metrics || Object.values(METRICS));
+      const instruments = ['combined', ...(state.dataset?.instruments || [])];
+      const uniqueInstruments = [...new Set(instruments)];
+      const metricRows = metricOptions.map(metric => `
+        <label class="download-option">
+          <input type="checkbox" name="metric" value="${metric.key}" checked />
+          <span>
+            <strong>${metric.label || metric.key}</strong>
+            <small>${metric.unit || 'unitless'}</small>
+          </span>
+        </label>
+      `).join('');
+      return `
+        <div class="download-overlay" id="sbnDownloadOverlay" role="presentation">
+          <article class="download-modal" role="dialog" aria-modal="true" aria-labelledby="sbnDownloadTitle">
+            <header>
+              <div>
+                <span class="eyebrow">Download CSV</span>
+                <h3 id="sbnDownloadTitle">Jaywun cruise rollups</h3>
+                <p>Export waypoint-depth rollups for one instrument family or a sample-weighted combined view.</p>
+              </div>
+              <button class="ghost-button" type="button" data-download-close>Close</button>
+            </header>
+            <form id="sbnDownloadForm" class="download-form">
+              <div class="download-grid">
+                <label>
+                  <span>Instrument</span>
+                  <select name="instrument">
+                    ${uniqueInstruments.map(instrument => `<option value="${instrument}" ${instrument === state.instrument ? 'selected' : ''}>${instrumentLabel(instrument)}</option>`).join('')}
+                  </select>
+                </label>
+                <label>
+                  <span>Campaign scope</span>
+                  <select name="campaign_scope">
+                    <option value="current">Current month (${formatMonth(state.month)})</option>
+                    <option value="all">All campaign months</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Depth scope</span>
+                  <select name="depth_scope">
+                    <option value="current">Current depth (${depthSliderLabel(plotDepth(state.activeTab === 'advanced' ? 'monthlyHeatmap' : 'publicTransect'))})</option>
+                    <option value="all">All sampled depths</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Location</span>
+                  <select name="append_location">
+                    <option value="false">Do not append coordinates</option>
+                    <option value="true">Append latitude and longitude</option>
+                  </select>
+                </label>
+              </div>
+              <label class="download-toggle">
+                <input type="checkbox" id="sbnDownloadAllMetrics" checked />
+                <span>Include all listed parameters</span>
+              </label>
+              <div class="download-parameter-head">
+                <span>Parameters</span>
+              </div>
+              <div class="download-metric-grid">${metricRows}</div>
+              <div class="download-actions">
+                <button class="ghost-button" type="button" data-download-close>Cancel</button>
+                <button class="primary-button" type="submit">Download CSV</button>
+              </div>
+            </form>
+          </article>
+        </div>
+      `;
+    }
+
+    function showSbnDownloadOptions() {
+      document.getElementById('sbnDownloadOverlay')?.remove();
+      document.body.insertAdjacentHTML('beforeend', buildSbnDownloadModal());
+      const overlay = document.getElementById('sbnDownloadOverlay');
+      const form = document.getElementById('sbnDownloadForm');
+      const allMetrics = document.getElementById('sbnDownloadAllMetrics');
+      const metricInputs = Array.from(form.querySelectorAll('input[name="metric"]'));
+      const close = () => overlay?.remove();
+      overlay.querySelectorAll('[data-download-close]').forEach(button => button.addEventListener('click', close));
+      overlay.addEventListener('click', event => {
+        if (event.target === overlay) close();
+      });
+      allMetrics?.addEventListener('change', () => {
+        metricInputs.forEach(input => { input.checked = allMetrics.checked; });
+      });
+      metricInputs.forEach(input => {
+        input.addEventListener('change', () => {
+          allMetrics.checked = metricInputs.every(item => item.checked);
+        });
+      });
+      form.addEventListener('submit', event => {
+        event.preventDefault();
+        const data = new FormData(form);
+        const selectedMetrics = metricInputs.filter(input => input.checked).map(input => input.value);
+        if (!selectedMetrics.length) return;
+        const depthKey = state.activeTab === 'advanced' ? 'monthlyHeatmap' : 'publicTransect';
+        const url = new URL('/api/jw/export.csv', window.location.origin);
+        url.searchParams.set('instrument', data.get('instrument') || state.instrument);
+        url.searchParams.set('campaign_month', data.get('campaign_scope') === 'all' ? 'all' : state.month);
+        url.searchParams.set('depth_bin_m', String(plotDepth(depthKey)));
+        url.searchParams.set('all_depths', data.get('depth_scope') === 'all' ? 'true' : 'false');
+        url.searchParams.set('append_location', data.get('append_location') === 'true' ? 'true' : 'false');
+        url.searchParams.set('metrics', selectedMetrics.join('|'));
+        window.location.href = url.toString();
+        close();
+      });
+    }
+
+    async function renderSbnAll() {
+      const token = (state.renderToken || 0) + 1;
+      state.renderToken = token;
+      updateDepthControlVisibility();
+      try {
+        await syncSbnSelection();
+        if (token !== state.renderToken) return;
+        populateSbnControls();
+        await renderSbnHeaderAndCards();
+        if (token !== state.renderToken) return;
+        await Promise.all([
+          renderSbnLatestTransect(),
+          renderSbnMonthlyTrend(),
+          renderSbnMetricChart('tempTransect', chartMetric('tempTransect')),
+          renderSbnMetricChart('salTransect', chartMetric('salTransect')),
+          renderSbnMetricChart('oxyTransect', chartMetric('oxyTransect')),
+          renderSbnMetricChart('chlTransect', chartMetric('chlTransect')),
+          renderSbnComparisonChart(),
+          renderSbnMonthlyHeatmap(),
+          renderSbnCrossPlot()
+        ]);
+      } catch (error) {
+        console.error('Jaywun render failed', error);
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+          .forEach(id => plotEmpty(id, 'Jaywun data could not be loaded for this selection.'));
+      }
+    }
+
+    function bindSbnEvents() {
+      ids.transectSelect.addEventListener('change', event => {
+        state.transectId = event.target.value;
+        renderSbnAll();
+      });
+      ids.monthSelect.addEventListener('change', event => {
+        state.month = event.target.value;
+        renderSbnAll();
+      });
+      ids.metricSelect.addEventListener('change', event => {
+        state.metric = event.target.value;
+        renderSbnAll();
+      });
+      ids.instrumentSelect.addEventListener('change', event => {
+        state.instrument = event.target.value;
+        renderSbnAll();
+      });
+      if (ids.styleSelect) {
+        ids.styleSelect.addEventListener('change', event => {
+          state.style = event.target.value;
+          updateStyleToggle();
+          renderSbnAll();
+        });
+      }
+      if (ids.styleToggle) {
+        ids.styleToggle.querySelectorAll('button[data-style]').forEach(button => {
+          button.addEventListener('click', () => {
+            state.style = button.dataset.style;
+            updateStyleToggle();
+            renderSbnAll();
+          });
+        });
+      }
+      if (ids.advancedStyleToggle) {
+        ids.advancedStyleToggle.querySelectorAll('button[data-advanced-style]').forEach(button => {
+          button.addEventListener('click', () => {
+            state.advancedStyle = button.dataset.advancedStyle;
+            updateStyleToggle();
+            updateDepthControlVisibility();
+            renderSbnAll();
+          });
+        });
+      }
+      document.querySelectorAll('.plot-depth-range').forEach(input => {
+        input.addEventListener('input', event => {
+          const key = event.target.dataset.depthKey;
+          const depths = activeDepths();
+          state.chartDepths[key] = depths[Number(event.target.value)] ?? depths[0] ?? 0;
+          const label = document.getElementById(`${key}DepthValueLabel`);
+          if (label) label.textContent = depthSliderLabel(state.chartDepths[key]);
+          renderSbnAll();
+        });
+      });
+      ids.xMetricSelect.addEventListener('change', event => {
+        state.xMetric = event.target.value;
+        renderSbnCrossPlot();
+      });
+      ids.yMetricSelect.addEventListener('change', event => {
+        state.yMetric = event.target.value;
+        renderSbnCrossPlot();
+      });
+      if (ids.compareBox) {
+        ids.compareBox.addEventListener('change', event => {
+          const target = event.target;
+          if (!(target instanceof HTMLInputElement)) return;
+          state.compareMonths = target.checked ? [target.value] : [];
+          populateCompareBox();
+          renderSbnComparisonChart();
+        });
+      }
+      if (ids.clearCompareBtn) {
+        ids.clearCompareBtn.addEventListener('click', () => {
+          state.compareMonths = [];
+          populateCompareBox();
+          renderSbnComparisonChart();
+        });
+      }
+      document.querySelectorAll('#viewTabs button').forEach(button => {
+        button.addEventListener('click', () => switchTab(button.dataset.tab));
+      });
+      ids.downloadCsvBtn?.addEventListener('click', () => showSbnDownloadOptions());
+      window.addEventListener('resize', () => {
+        if (state.map) state.map.invalidateSize();
+        const resizePlot = el => {
+          if (!el || !window.Plotly || !el._fullLayout) return;
+          Plotly.Plots.resize(el);
+        };
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+          .forEach(id => {
+            const el = document.getElementById(id);
+            resizePlot(el);
+          });
+        document.querySelectorAll('.quick-plot').forEach(el => {
+          resizePlot(el);
+        });
+      });
+    }
+
+    async function initSbnMongoDashboard() {
+      try {
+        await loadSbnOptions();
+        populateSbnControls();
+        bindSbnEvents();
+        await renderSbnAll();
+        switchTab('quick');
+      } catch (error) {
+        console.error('Jaywun initialization failed', error);
+        ids.latestCards.innerHTML = '<article class="metric-card"><span>Jaywun data</span><strong>N/A</strong><small>The Jaywun collections are unavailable or empty.</small></article>';
+        ['publicTransect','publicTrend','tempTransect','salTransect','oxyTransect','chlTransect','comparisonChart','monthlyHeatmap','tsChart']
+          .forEach(id => plotEmpty(id, 'Jaywun data could not be loaded.'));
+      }
+    }
+
+    initSbnMongoDashboard();
+  </script>
+</body>
+</html>
+

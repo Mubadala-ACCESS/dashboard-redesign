@@ -247,6 +247,62 @@ class MongoDashboardRepository:
         'pressure_dbar',
     ]
     SBN_INSTRUMENT_ORDER = ['exo', 'idronaut', 'rbr']
+    JW_COLLECTIONS = {
+        'events': 'jw_cruise_events',
+        'profiles': 'jw_cruise_profiles',
+        'samples': 'jw_cruise_samples',
+        'cells': 'jw_cruise_cells',
+        'registry': 'jw_cruise_column_registry',
+    }
+    JW_METRIC_LABELS = {
+        'temp_c': 'Temperature',
+        'salinity_psu': 'Salinity',
+        'do_mg_l': 'Dissolved Oxygen',
+        'do_pct_sat': 'Dissolved Oxygen Saturation',
+        'oxygen_ml_l': 'Dissolved Oxygen',
+        'chlorophyll_ug_l': 'Chlorophyll-A',
+        'turbidity_fnu': 'Turbidity',
+        'ph': 'pH',
+        'cond_ms_cm': 'Conductivity',
+        'pressure_dbar': 'Pressure',
+        'density': 'Density',
+        'density_anomaly': 'Density Anomaly',
+        'speed_of_sound': 'Speed of Sound',
+        'par': 'PAR',
+    }
+    JW_METRIC_UNITS = {
+        'temp_c': 'deg C',
+        'salinity_psu': 'PSU',
+        'do_mg_l': 'mg/L',
+        'do_pct_sat': '%',
+        'oxygen_ml_l': 'mL/L',
+        'chlorophyll_ug_l': 'ug/L',
+        'turbidity_fnu': 'FNU',
+        'ph': '',
+        'cond_ms_cm': 'mS/cm',
+        'pressure_dbar': 'dbar',
+        'density': 'kg/m3',
+        'density_anomaly': 'kg/m3',
+        'speed_of_sound': 'm/s',
+        'par': 'rel.',
+    }
+    JW_METRIC_PRIORITY = [
+        'temp_c',
+        'salinity_psu',
+        'do_mg_l',
+        'do_pct_sat',
+        'oxygen_ml_l',
+        'chlorophyll_ug_l',
+        'turbidity_fnu',
+        'ph',
+        'cond_ms_cm',
+        'pressure_dbar',
+        'density',
+        'density_anomaly',
+        'speed_of_sound',
+        'par',
+    ]
+    JW_INSTRUMENT_ORDER = ['ead_ctd', 'rbr']
 
     def __init__(self, settings: Settings, metadata_service: MetadataService):
         self.settings = settings
@@ -267,6 +323,7 @@ class MongoDashboardRepository:
         self.special_availability = self.metadata_service.special_availability()
         self._ensure_station_indexes()
         self._ensure_sbn_indexes()
+        self._ensure_jw_indexes()
         self.station_projection = {
             '_id': 1,
             'id': 1,
@@ -325,6 +382,33 @@ class MongoDashboardRepository:
             )
             self.db[self.SBN_COLLECTIONS['cells']].create_index(
                 [('waypoint_id', ASCENDING), ('instrument', ASCENDING), ('depth_bin_m', ASCENDING), ('campaign_month', ASCENDING)],
+                background=True,
+            )
+        except Exception:
+            return
+
+    def _ensure_jw_indexes(self) -> None:
+        try:
+            self.db[self.JW_COLLECTIONS['events']].create_index([('campaign_month', ASCENDING)], background=True)
+            self.db[self.JW_COLLECTIONS['profiles']].create_index(
+                [('campaign_month', ASCENDING), ('instrument', ASCENDING), ('waypoint_order', ASCENDING)],
+                background=True,
+            )
+            self.db[self.JW_COLLECTIONS['profiles']].create_index([('waypoint_id', ASCENDING), ('campaign_month', ASCENDING)], background=True)
+            self.db[self.JW_COLLECTIONS['cells']].create_index(
+                [('campaign_month', ASCENDING), ('instrument', ASCENDING), ('depth_bin_m', ASCENDING), ('waypoint_order', ASCENDING)],
+                background=True,
+            )
+            self.db[self.JW_COLLECTIONS['cells']].create_index(
+                [('waypoint_id', ASCENDING), ('instrument', ASCENDING), ('depth_bin_m', ASCENDING), ('campaign_month', ASCENDING)],
+                background=True,
+            )
+            self.db[self.JW_COLLECTIONS['samples']].create_index(
+                [('meta.campaign_month', ASCENDING), ('meta.instrument', ASCENDING), ('meta.waypoint_order', ASCENDING), ('depth_m', ASCENDING)],
+                background=True,
+            )
+            self.db[self.JW_COLLECTIONS['samples']].create_index(
+                [('meta.waypoint_id', ASCENDING), ('meta.instrument', ASCENDING), ('depth_m', ASCENDING), ('meta.campaign_month', ASCENDING)],
                 background=True,
             )
         except Exception:
@@ -2864,6 +2948,980 @@ class MongoDashboardRepository:
                     stats = self._sbn_metric_stats_from_doc(doc, metric)
                     if stats:
                         yield row_for_doc(doc, metric, stats, str(doc.get('instrument') or instrument))
+
+        return self._csv_chunk_writer(rows())
+
+    # ------------------------------------------------------------------
+    # Jaywun cruise rollup API
+    # ------------------------------------------------------------------
+    def _jw_cells_ready(self) -> bool:
+        cache_key = 'jw_cells_ready'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return bool(cached)
+        ready = False
+        if self._collection_exists(self.JW_COLLECTIONS['cells']):
+            try:
+                ready = self.db[self.JW_COLLECTIONS['cells']].count_documents({}, limit=1) > 0
+            except Exception:
+                ready = False
+        self.cache.set(cache_key, ready, ttl_seconds=300)
+        return ready
+
+    def _jw_waypoint_order(self, value: str | None) -> Optional[int]:
+        if not value:
+            return None
+        text = str(value)
+        match = re.search(r'(?:JW[_\s-]*)?NYU[_\s-]?(\d{1,2})', text, flags=re.IGNORECASE)
+        if not match:
+            match = re.search(r'waypoint[_\s-]*(\d{1,2})', text, flags=re.IGNORECASE)
+        if not match:
+            return None
+        order = int(match.group(1))
+        return order if 1 <= order <= 99 else None
+
+    def _jw_canonical_waypoint(self, value: str | None) -> Optional[str]:
+        order = self._jw_waypoint_order(value)
+        if order is None:
+            return None
+        return f'JW_NYU_{order:02d}'
+
+    def _jw_public_waypoint(self, value: str | None) -> Optional[str]:
+        order = self._jw_waypoint_order(value)
+        if order is None:
+            return None
+        return f'NYU-{order:02d}'
+
+    def _jw_metric_label(self, metric: str) -> str:
+        return self.JW_METRIC_LABELS.get(metric, self._sbn_metric_label(metric))
+
+    def _jw_metric_unit(self, metric: str) -> str:
+        return self.JW_METRIC_UNITS.get(metric, self._sbn_metric_unit(metric))
+
+    def _jw_source_metric_fields(self, metric: str) -> List[str]:
+        aliases = {
+            'do_mg_l': ['do_mg_l', 'sbeox0mg_per_l', 'sbeox0mg_l'],
+            'density': ['density', 'density00'],
+            'salinity_psu': ['salinity_psu', 'sal00'],
+            'temp_c': ['temp_c', 't090c'],
+            'pressure_dbar': ['pressure_dbar', 'prdm'],
+            'oxygen_ml_l': ['oxygen_ml_l', 'sbeox0ml_l'],
+            'par': ['par', 'par_per_sat_per_log'],
+        }
+        return aliases.get(metric, [metric])
+
+    def _jw_depth_value_expr(self) -> Any:
+        return {'$ifNull': ['$depth_m', {'$ifNull': ['$depsm', '$prdm']}]}
+
+    def _jw_depth_match_clause(self, depth_bin_m: Optional[int] = None) -> Dict[str, Any]:
+        fields = ['depth_m', 'depsm', 'prdm']
+        if depth_bin_m is None:
+            clauses = [{field: {'$gte': 0, '$lte': 250}} for field in fields]
+        else:
+            depth = self._sbn_normalized_depth(depth_bin_m)
+            depth = depth if depth is not None else 0
+            clauses = [{field: {'$gte': depth - 0.5, '$lt': depth + 0.5}} for field in fields]
+        return {'$or': clauses}
+
+    def _jw_valid_depths(self, values: Iterable[Any]) -> List[int]:
+        return [
+            depth
+            for depth in self._sbn_valid_depths(values)
+            if 0 <= depth <= 250
+        ]
+
+    def _jw_metric_value_expr(self, metric: str) -> Any:
+        fields = self._jw_source_metric_fields(metric)
+        if len(fields) == 1:
+            return f'${fields[0]}'
+        expr: Any = f'${fields[-1]}'
+        for field in reversed(fields[:-1]):
+            expr = {'$ifNull': [f'${field}', expr]}
+        return expr
+
+    def _jw_metric_match_clause(self, metric: str) -> Dict[str, Any]:
+        fields = self._jw_source_metric_fields(metric)
+        clauses = [{field: {'$type': 'number'}} for field in fields]
+        return clauses[0] if len(clauses) == 1 else {'$or': clauses}
+
+    def _jw_add_metric_match(self, match: Dict[str, Any], metric: str) -> None:
+        clause = self._jw_metric_match_clause(metric)
+        if '$or' in clause:
+            match.setdefault('$and', []).append(clause)
+        else:
+            match.update(clause)
+
+    def _jw_waypoint_docs(self) -> List[Dict[str, Any]]:
+        cache_key = 'jw_waypoints'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        docs = list(
+            self.db[self.settings.mongo_stations_info_collection].find(
+                {'type': 'JWCruise'},
+                {'_id': 0, 'id': 1, 'name': 1, 'lat': 1, 'long': 1, 'status': 1, 'public': 1},
+            )
+        )
+        waypoints: List[Dict[str, Any]] = []
+        for doc in docs:
+            canonical = self._jw_canonical_waypoint(str(doc.get('id') or doc.get('name') or ''))
+            label = self._jw_public_waypoint(canonical)
+            order = self._jw_waypoint_order(canonical)
+            if not canonical or not label or order is None:
+                continue
+            try:
+                lat = float(doc.get('lat')) if doc.get('lat') is not None else None
+                lon = float(doc.get('long')) if doc.get('long') is not None else None
+            except Exception:
+                lat = None
+                lon = None
+            waypoints.append(
+                {
+                    'id': label,
+                    'label': label,
+                    'name': doc.get('name') or f'Jaywun Cruise Waypoint NYU-{order:02d}',
+                    'order': order,
+                    'lat': lat,
+                    'lon': lon,
+                    'status': doc.get('status') or 'Active',
+                    'privacy': 'Public' if doc.get('public', True) else 'Private',
+                }
+            )
+        if not waypoints:
+            source = self.JW_COLLECTIONS['cells'] if self._jw_cells_ready() else self.JW_COLLECTIONS['samples']
+            pipeline = [
+                {
+                    '$group': {
+                        '_id': '$waypoint_id' if source == self.JW_COLLECTIONS['cells'] else '$meta.waypoint_id',
+                        'order': {'$first': '$waypoint_order' if source == self.JW_COLLECTIONS['cells'] else '$meta.waypoint_order'},
+                        'lat': {'$first': '$lat'},
+                        'lon': {'$first': '$long'},
+                    }
+                },
+                {'$sort': {'order': ASCENDING}},
+            ]
+            for doc in self.db[source].aggregate(pipeline):
+                label = self._jw_public_waypoint(doc.get('_id'))
+                if not label:
+                    continue
+                order = int(doc.get('order') or self._jw_waypoint_order(label) or 0)
+                waypoints.append(
+                    {
+                        'id': label,
+                        'label': label,
+                        'name': f'Jaywun Cruise Waypoint NYU-{order:02d}',
+                        'order': order,
+                        'lat': doc.get('lat'),
+                        'lon': doc.get('lon'),
+                        'status': 'Active',
+                        'privacy': 'Public',
+                    }
+                )
+        waypoints.sort(key=lambda item: item['order'])
+        self.cache.set(cache_key, waypoints, ttl_seconds=300)
+        return waypoints
+
+    def _jw_metric_exists(self, metric: str, match: Optional[Dict[str, Any]] = None) -> bool:
+        query = dict(match or {})
+        self._jw_add_metric_match(query, metric)
+        try:
+            return self.db[self.JW_COLLECTIONS['samples']].find_one(query, {'_id': 1}) is not None
+        except Exception:
+            return False
+
+    def _jw_available_metrics(self) -> List[Dict[str, Any]]:
+        cache_key = 'jw_available_metrics'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        if self._jw_cells_ready():
+            pipeline = [
+                {'$match': {'depth_bin_m': {'$gte': 0}}},
+                {'$project': {'pairs': {'$objectToArray': '$metrics'}}},
+                {'$unwind': '$pairs'},
+                {'$group': {'_id': '$pairs.k', 'cells': {'$sum': 1}, 'samples': {'$sum': {'$ifNull': ['$pairs.v.n', 0]}}}},
+            ]
+            raw_keys = {doc['_id'] for doc in self.db[self.JW_COLLECTIONS['cells']].aggregate(pipeline, allowDiskUse=True) if doc.get('_id')}
+        else:
+            raw_keys = set(self.JW_METRIC_PRIORITY)
+            if self._collection_exists(self.JW_COLLECTIONS['profiles']):
+                for fields in self.db[self.JW_COLLECTIONS['profiles']].distinct('fields'):
+                    if isinstance(fields, list):
+                        raw_keys.update(str(field) for field in fields if field)
+            if self._collection_exists(self.JW_COLLECTIONS['registry']):
+                for key_name in ('field', 'canonical_name', 'safe_field'):
+                    raw_keys.update(str(value) for value in self.db[self.JW_COLLECTIONS['registry']].distinct(key_name) if value)
+        mapped = {
+            'sbeox0mg_per_l': 'do_mg_l',
+            'sbeox0mg_l': 'do_mg_l',
+            'sbeox0ml_l': 'oxygen_ml_l',
+            'sal00': 'salinity_psu',
+            't090c': 'temp_c',
+            'prdm': 'pressure_dbar',
+            'density00': 'density',
+            'par_per_sat_per_log': 'par',
+        }
+        excluded = {'timestamp', 'time', 'times', 'ts', 'date', 'lat', 'long', 'depth_m', 'depsm', 'flag', 'scan', 'pumps', 'nbf', 'bct', 'sfdsm'}
+        candidates = {mapped.get(key, key) for key in raw_keys if key and str(key).lower() not in excluded}
+        metric_keys = []
+        for key in candidates:
+            if key in self.JW_METRIC_PRIORITY or key in self.JW_METRIC_LABELS:
+                metric_keys.append(key)
+        rank = {key: index for index, key in enumerate(self.JW_METRIC_PRIORITY)}
+        metrics = [
+            {
+                'key': key,
+                'label': self._jw_metric_label(key),
+                'unit': self._jw_metric_unit(key),
+                'cells': 0,
+                'samples': 0,
+            }
+            for key in sorted(set(metric_keys), key=lambda item: (rank.get(item, len(rank)), self._jw_metric_label(item).lower(), item))
+        ]
+        self.cache.set(cache_key, metrics, ttl_seconds=300)
+        return metrics
+
+    def _jw_available_instruments(self) -> List[str]:
+        cache_key = 'jw_available_instruments'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        allowed = set(self.JW_INSTRUMENT_ORDER)
+        seen = set(self.JW_INSTRUMENT_ORDER)
+        if self._jw_cells_ready():
+            seen.update(str(value).lower() for value in self.db[self.JW_COLLECTIONS['cells']].distinct('instrument') if value)
+        profile_has_rows = self._collection_exists(self.JW_COLLECTIONS['profiles']) and self.db[self.JW_COLLECTIONS['profiles']].count_documents({}, limit=1) > 0
+        if profile_has_rows:
+            seen.update(str(value).lower() for value in self.db[self.JW_COLLECTIONS['profiles']].distinct('instrument') if value)
+        elif self._collection_exists(self.JW_COLLECTIONS['samples']):
+            seen.update(str(value).lower() for value in self.db[self.JW_COLLECTIONS['samples']].distinct('meta.instrument') if value)
+        if self._collection_exists(self.JW_COLLECTIONS['events']):
+            for value in self.db[self.JW_COLLECTIONS['events']].distinct('instruments'):
+                if isinstance(value, list):
+                    seen.update(str(item).lower() for item in value if item)
+                elif value:
+                    seen.add(str(value).lower())
+        seen = {instrument for instrument in seen if instrument in allowed}
+        rank = {name: index for index, name in enumerate(self.JW_INSTRUMENT_ORDER)}
+        instruments = sorted(seen, key=lambda name: (rank.get(name, len(rank)), name))
+        self.cache.set(cache_key, instruments, ttl_seconds=300)
+        return instruments
+
+    def _jw_distinct_months(self, instrument: str = 'combined') -> List[str]:
+        cache_key = f'jw_months:{instrument}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        if self._jw_cells_ready():
+            query: Dict[str, Any] = {'depth_bin_m': {'$gte': 0}}
+            if instrument != 'combined':
+                query['instrument'] = instrument
+            months = sorted(month for month in self.db[self.JW_COLLECTIONS['cells']].distinct('campaign_month', query) if month)
+        else:
+            query = {}
+            if instrument != 'combined':
+                query['instrument'] = instrument
+            if self._collection_exists(self.JW_COLLECTIONS['profiles']) and self.db[self.JW_COLLECTIONS['profiles']].count_documents({}, limit=1) > 0:
+                months = sorted(month for month in self.db[self.JW_COLLECTIONS['profiles']].distinct('campaign_month', query) if month)
+            else:
+                sample_query = {}
+                if instrument != 'combined':
+                    sample_query['meta.instrument'] = instrument
+                months = sorted(month for month in self.db[self.JW_COLLECTIONS['samples']].distinct('meta.campaign_month', sample_query) if month)
+        self.cache.set(cache_key, months, ttl_seconds=300)
+        return months
+
+    def _jw_distinct_metrics(self, instrument: str, campaign_month: str) -> List[str]:
+        cache_key = f'jw_metric_keys:{instrument}:{campaign_month}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        if self._jw_cells_ready():
+            query: Dict[str, Any] = {'campaign_month': campaign_month, 'depth_bin_m': {'$gte': 0}}
+            if instrument != 'combined':
+                query['instrument'] = instrument
+            pipeline = [
+                {'$match': query},
+                {'$project': {'pairs': {'$objectToArray': '$metrics'}}},
+                {'$unwind': '$pairs'},
+                {'$group': {'_id': '$pairs.k'}},
+            ]
+            metric_keys = [doc['_id'] for doc in self.db[self.JW_COLLECTIONS['cells']].aggregate(pipeline, allowDiskUse=True) if doc.get('_id')]
+        else:
+            field_map = {
+                'sbeox0mg_per_l': 'do_mg_l',
+                'sbeox0mg_l': 'do_mg_l',
+                'sbeox0ml_l': 'oxygen_ml_l',
+                'sal00': 'salinity_psu',
+                't090c': 'temp_c',
+                'prdm': 'pressure_dbar',
+                'density00': 'density',
+                'par_per_sat_per_log': 'par',
+            }
+            query: Dict[str, Any] = {'campaign_month': campaign_month}
+            if instrument != 'combined':
+                query['instrument'] = instrument
+            profile_fields = set()
+            for fields in self.db[self.JW_COLLECTIONS['profiles']].distinct('fields', query):
+                if isinstance(fields, list):
+                    profile_fields.update(field_map.get(str(field), str(field)) for field in fields if field)
+            available = {metric['key'] for metric in self._jw_available_metrics()}
+            metric_keys = [key for key in profile_fields if key in available]
+        rank = {key: index for index, key in enumerate(self.JW_METRIC_PRIORITY)}
+        ordered = sorted(set(metric_keys), key=lambda key: (rank.get(key, len(rank)), self._jw_metric_label(key).lower(), key))
+        self.cache.set(cache_key, ordered, ttl_seconds=180)
+        return ordered
+
+    def _jw_distinct_depths(self, instrument: str, campaign_month: str, metric: str) -> List[int]:
+        cache_key = f'jw_depths:{instrument}:{campaign_month}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        if self._jw_cells_ready():
+            query: Dict[str, Any] = {
+                'campaign_month': campaign_month,
+                'depth_bin_m': {'$gte': 0},
+                f'metrics.{metric}.avg': {'$exists': True},
+            }
+            if instrument != 'combined':
+                query['instrument'] = instrument
+            depths = self._jw_valid_depths(self.db[self.JW_COLLECTIONS['cells']].distinct('depth_bin_m', query))
+        else:
+            profile_query: Dict[str, Any] = {'campaign_month': campaign_month}
+            if instrument != 'combined':
+                profile_query['instrument'] = instrument
+            profile_maxes = []
+            for doc in self.db[self.JW_COLLECTIONS['profiles']].find(profile_query, {'_id': 0, 'depth_min_m': 1, 'depth_max_m': 1}):
+                max_depth = doc.get('depth_max_m')
+                if self._is_numeric_scalar(max_depth) and 0 <= float(max_depth) <= 250:
+                    profile_maxes.append(float(max_depth))
+            if profile_maxes:
+                max_depth = int(math.ceil(max(profile_maxes)))
+                depths = list(range(0, max_depth + 1))
+                self.cache.set(cache_key, depths, ttl_seconds=180)
+                return depths
+            match: Dict[str, Any] = {'meta.campaign_month': campaign_month}
+            if instrument != 'combined':
+                match['meta.instrument'] = instrument
+            match.setdefault('$and', []).append(self._jw_depth_match_clause())
+            self._jw_add_metric_match(match, metric)
+            pipeline = [
+                {'$match': match},
+                {'$project': {'depth_bin_m': {'$toInt': {'$round': [self._jw_depth_value_expr(), 0]}}}},
+                {'$match': {'depth_bin_m': {'$gte': 0, '$lte': 250}}},
+                {'$group': {'_id': '$depth_bin_m'}},
+                {'$sort': {'_id': ASCENDING}},
+            ]
+            depths = self._jw_valid_depths(doc.get('_id') for doc in self.db[self.JW_COLLECTIONS['samples']].aggregate(pipeline, allowDiskUse=True))
+        self.cache.set(cache_key, depths, ttl_seconds=180)
+        return depths
+
+    def _jw_sample_rollup_docs(
+        self,
+        metric: str,
+        instrument: str = 'combined',
+        campaign_month: Optional[str] = None,
+        waypoint_id: Optional[str] = None,
+        depth_bin_m: Optional[int] = None,
+        group_fields: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        group_fields = group_fields or ['campaign_month', 'waypoint_id', 'waypoint_order', 'depth_bin_m']
+        match: Dict[str, Any] = {}
+        if campaign_month and str(campaign_month).lower() != 'all':
+            match['meta.campaign_month'] = campaign_month
+        if instrument != 'combined':
+            match['meta.instrument'] = instrument
+        canonical = self._jw_canonical_waypoint(waypoint_id) if waypoint_id else None
+        if canonical:
+            match['meta.waypoint_id'] = canonical
+        normalized_depth = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            match.setdefault('$and', []).append(self._jw_depth_match_clause())
+        else:
+            match.setdefault('$and', []).append(self._jw_depth_match_clause(normalized_depth if normalized_depth is not None else 0))
+        self._jw_add_metric_match(match, metric)
+        group_id = {field: f'${field}' for field in group_fields}
+        pipeline = [
+            {'$match': match},
+            {
+                '$project': {
+                    'campaign_month': '$meta.campaign_month',
+                    'waypoint_id': '$meta.waypoint_id',
+                    'waypoint_order': '$meta.waypoint_order',
+                    'instrument': '$meta.instrument',
+                    'depth_bin_m': {'$toInt': {'$round': [self._jw_depth_value_expr(), 0]}},
+                    'lat': 1,
+                    'long': 1,
+                    'value': self._jw_metric_value_expr(metric),
+                }
+            },
+            {'$match': {'depth_bin_m': {'$gte': 0, '$lte': 250}, 'value': {'$type': 'number'}}},
+        ]
+        if depth_bin_m is not None:
+            pipeline.append({'$match': {'depth_bin_m': normalized_depth if normalized_depth is not None else 0}})
+        pipeline.extend(
+            [
+                {
+                    '$group': {
+                        '_id': group_id,
+                        'campaign_month': {'$first': '$campaign_month'},
+                        'waypoint_id': {'$first': '$waypoint_id'},
+                        'waypoint_order': {'$first': '$waypoint_order'},
+                        'instrument': {'$first': '$instrument'},
+                        'source_instruments': {'$addToSet': '$instrument'},
+                        'depth_bin_m': {'$first': '$depth_bin_m'},
+                        'lat': {'$first': '$lat'},
+                        'long': {'$first': '$long'},
+                        'avg': {'$avg': '$value'},
+                        'min': {'$min': '$value'},
+                        'max': {'$max': '$value'},
+                        'n': {'$sum': 1},
+                    }
+                },
+                {'$sort': {'campaign_month': ASCENDING, 'waypoint_order': ASCENDING, 'depth_bin_m': ASCENDING, 'instrument': ASCENDING}},
+            ]
+        )
+        docs = []
+        for doc in self.db[self.JW_COLLECTIONS['samples']].aggregate(pipeline, allowDiskUse=True):
+            stats = {'avg': doc.get('avg'), 'min': doc.get('min'), 'max': doc.get('max'), 'n': doc.get('n')}
+            docs.append(
+                {
+                    'campaign_month': doc.get('campaign_month'),
+                    'waypoint_id': doc.get('waypoint_id'),
+                    'waypoint_order': int(doc.get('waypoint_order') or self._jw_waypoint_order(doc.get('waypoint_id')) or 0),
+                    'instrument': 'combined' if instrument == 'combined' and 'instrument' not in group_fields else doc.get('instrument'),
+                    'source_instruments': sorted({str(item) for item in doc.get('source_instruments', []) if item}),
+                    'depth_bin_m': self._sbn_normalized_depth(doc.get('depth_bin_m')),
+                    'lat': doc.get('lat'),
+                    'long': doc.get('long'),
+                    'metrics': {metric: stats},
+                }
+            )
+        return docs
+
+    def _jw_rollup_docs(
+        self,
+        metric: str,
+        instrument: str = 'combined',
+        campaign_month: Optional[str] = None,
+        waypoint_id: Optional[str] = None,
+        depth_bin_m: Optional[int] = None,
+        group_fields: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        group_fields = group_fields or ['campaign_month', 'waypoint_id', 'waypoint_order', 'depth_bin_m']
+        if not self._jw_cells_ready():
+            return self._jw_sample_rollup_docs(metric, instrument, campaign_month, waypoint_id, depth_bin_m, group_fields)
+        query: Dict[str, Any] = {f'metrics.{metric}.avg': {'$exists': True}}
+        if campaign_month and str(campaign_month).lower() != 'all':
+            query['campaign_month'] = campaign_month
+        if instrument != 'combined':
+            query['instrument'] = instrument
+        canonical = self._jw_canonical_waypoint(waypoint_id) if waypoint_id else None
+        if canonical:
+            query['waypoint_id'] = canonical
+        if depth_bin_m is None:
+            query['depth_bin_m'] = {'$gte': 0}
+        else:
+            normalized_depth = self._sbn_normalized_depth(depth_bin_m)
+            query['depth_bin_m'] = normalized_depth if normalized_depth is not None else 0
+        projection = {
+            '_id': 0,
+            'campaign_month': 1,
+            'waypoint_id': 1,
+            'waypoint_order': 1,
+            'instrument': 1,
+            'depth_bin_m': 1,
+            'lat': 1,
+            'long': 1,
+            f'metrics.{metric}': 1,
+        }
+        docs = list(self.db[self.JW_COLLECTIONS['cells']].find(query, projection))
+        if instrument != 'combined':
+            return docs
+        grouped: Dict[Tuple[Any, ...], List[Dict[str, Any]]] = {}
+        for doc in docs:
+            key = tuple(doc.get(field) for field in group_fields)
+            grouped.setdefault(key, []).append(doc)
+        combined = []
+        for group in grouped.values():
+            combined_doc = self._sbn_combined_doc(group, metric)
+            if combined_doc:
+                combined.append(combined_doc)
+        return combined
+
+    def _jw_format_cell(self, doc: Dict[str, Any], metric: str, instrument: Optional[str] = None) -> Dict[str, Any]:
+        stats = self._sbn_metric_stats_from_doc(doc, metric)
+        label = self._jw_public_waypoint(doc.get('waypoint_id')) or str(doc.get('waypoint_id') or '')
+        return {
+            'campaign_month': doc.get('campaign_month'),
+            'waypoint_id': label,
+            'waypoint_label': label,
+            'waypoint_order': int(doc.get('waypoint_order') or self._jw_waypoint_order(label) or 0),
+            'instrument': instrument or doc.get('instrument'),
+            'source_instruments': doc.get('source_instruments'),
+            'depth_bin_m': doc.get('depth_bin_m'),
+            'lat': doc.get('lat'),
+            'lon': doc.get('long'),
+            'metric': metric,
+            'value': stats.get('avg') if stats else None,
+            'stats': stats,
+            'metrics': {metric: stats} if stats else {},
+        }
+
+    def _jw_missing_cell(self, waypoint: Dict[str, Any], campaign_month: Optional[str], instrument: str, depth_bin_m: Optional[int], metric: str) -> Dict[str, Any]:
+        return {
+            'campaign_month': campaign_month,
+            'waypoint_id': waypoint['id'],
+            'waypoint_label': waypoint['label'],
+            'waypoint_order': waypoint['order'],
+            'instrument': instrument,
+            'source_instruments': [],
+            'depth_bin_m': depth_bin_m,
+            'lat': waypoint.get('lat'),
+            'lon': waypoint.get('lon'),
+            'metric': metric,
+            'value': None,
+            'stats': None,
+            'metrics': {},
+        }
+
+    def get_jw_options(self) -> Dict[str, Any]:
+        cache_key = 'jw_options'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        events = []
+        if self._collection_exists(self.JW_COLLECTIONS['events']) and self.db[self.JW_COLLECTIONS['events']].count_documents({}, limit=1):
+            events = list(
+                self.db[self.JW_COLLECTIONS['events']].find(
+                    {},
+                    {'_id': 0, 'campaign_id': 1, 'campaign_month': 1, 'status': 1, 'profile_count': 1, 'row_count': 1, 'instruments': 1, 'complete_instruments': 1},
+                ).sort('campaign_month', ASCENDING)
+            )
+        elif self._collection_exists(self.JW_COLLECTIONS['profiles']):
+            pipeline = [
+                {
+                    '$group': {
+                        '_id': '$campaign_month',
+                        'campaign_id': {'$first': '$campaign_id'},
+                        'instruments': {'$addToSet': '$instrument'},
+                        'profile_count': {'$sum': 1},
+                        'row_count': {'$sum': {'$ifNull': ['$row_count', 0]}},
+                    }
+                },
+                {'$sort': {'_id': ASCENDING}},
+            ]
+            events = [
+                {
+                    'campaign_id': doc.get('campaign_id'),
+                    'campaign_month': doc.get('_id'),
+                    'status': 'loaded',
+                    'profile_count': int(doc.get('profile_count') or 0),
+                    'row_count': int(doc.get('row_count') or 0),
+                    'instruments': sorted(str(item).lower() for item in doc.get('instruments', []) if item),
+                    'complete_instruments': [],
+                }
+                for doc in self.db[self.JW_COLLECTIONS['profiles']].aggregate(pipeline)
+                if doc.get('_id')
+            ]
+        instruments = self._jw_available_instruments()
+        allowed_instruments = set(instruments)
+        for event in events:
+            event['instruments'] = [
+                str(instrument).lower()
+                for instrument in event.get('instruments', [])
+                if str(instrument).lower() in allowed_instruments
+            ]
+            event['complete_instruments'] = [
+                str(instrument).lower()
+                for instrument in event.get('complete_instruments', [])
+                if str(instrument).lower() in allowed_instruments
+            ]
+        months = self._jw_distinct_months('combined') or [event['campaign_month'] for event in events if event.get('campaign_month')]
+        months_by_instrument = {instrument: self._jw_distinct_months(instrument) for instrument in instruments}
+        depths = self._jw_valid_depths(
+            self.db[self.JW_COLLECTIONS['cells']].distinct('depth_bin_m') if self._jw_cells_ready() else []
+        )
+        if not depths:
+            profile_maxes = []
+            for doc in self.db[self.JW_COLLECTIONS['profiles']].find({}, {'_id': 0, 'depth_max_m': 1}):
+                max_depth = doc.get('depth_max_m')
+                if self._is_numeric_scalar(max_depth) and 0 <= float(max_depth) <= 250:
+                    profile_maxes.append(float(max_depth))
+            if profile_maxes:
+                depths = list(range(0, int(math.ceil(max(profile_maxes))) + 1))
+            else:
+                depths = [0]
+        payload = {
+            'months': months,
+            'events': events,
+            'instruments': instruments,
+            'months_by_instrument': months_by_instrument,
+            'waypoints': self._jw_waypoint_docs(),
+            'depths': depths,
+            'metrics': self._jw_available_metrics(),
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=300)
+        return payload
+
+    def get_jw_selection(
+        self,
+        instrument: str = 'combined',
+        campaign_month: Optional[str] = None,
+        metric: Optional[str] = None,
+        depth_bin_m: int = 0,
+    ) -> Dict[str, Any]:
+        valid_instruments = ['combined'] + self.get_jw_options().get('instruments', [])
+        if instrument not in valid_instruments:
+            instrument = 'combined'
+        months = self._jw_distinct_months(instrument)
+        all_months = self.get_jw_options().get('months', [])
+        if not months and instrument != 'combined':
+            campaign_month = campaign_month if campaign_month in all_months else (all_months[-1] if all_months else campaign_month)
+            available_metrics = self._jw_available_metrics()
+            available_depths = self.get_jw_options().get('depths', [])
+            return {
+                'instrument': instrument,
+                'campaign_month': campaign_month,
+                'metric': metric,
+                'depth_bin_m': int(depth_bin_m or 0),
+                'available_months': all_months,
+                'available_metrics': available_metrics,
+                'available_depths': available_depths,
+                'months': all_months,
+                'metrics': available_metrics,
+                'depths': available_depths,
+                'compare_months': [],
+                'has_data': False,
+            }
+        if campaign_month not in months:
+            campaign_month = months[-1] if months else (all_months[-1] if all_months else campaign_month)
+        metrics = self._jw_distinct_metrics(instrument, campaign_month) if campaign_month else []
+        if not metrics and instrument != 'combined':
+            available_metrics = self._jw_available_metrics()
+            available_depths = self.get_jw_options().get('depths', [])
+            return {
+                'instrument': instrument,
+                'campaign_month': campaign_month,
+                'metric': metric,
+                'depth_bin_m': int(depth_bin_m or 0),
+                'available_months': months,
+                'available_metrics': available_metrics,
+                'available_depths': available_depths,
+                'months': months,
+                'metrics': available_metrics,
+                'depths': available_depths,
+                'compare_months': [],
+                'has_data': False,
+            }
+        if not metrics:
+            metrics = [item['key'] for item in self._jw_available_metrics()]
+        if metric not in metrics:
+            metric = metrics[0] if metrics else metric
+        depths = self._jw_distinct_depths(instrument, campaign_month, metric) if campaign_month and metric else []
+        requested_depth = self._sbn_normalized_depth(depth_bin_m)
+        resolved_depth = self._sbn_closest_depth(requested_depth if requested_depth is not None else self._sbn_surface_depth(depths), depths)
+        compare_months = sorted(month for month in self._jw_distinct_months(instrument) if month and month != campaign_month)
+        metric_docs = [
+            {'key': key, 'label': self._jw_metric_label(key), 'unit': self._jw_metric_unit(key)} for key in metrics
+        ]
+        return {
+            'instrument': instrument,
+            'campaign_month': campaign_month,
+            'metric': metric,
+            'depth_bin_m': resolved_depth,
+            'available_months': months,
+            'available_metrics': metric_docs,
+            'available_depths': depths,
+            'months': months,
+            'metrics': metric_docs,
+            'depths': depths,
+            'compare_months': compare_months,
+            'has_data': bool(months and metrics and depths),
+        }
+
+    def get_jw_cells(self, campaign_month: str, instrument: str, depth_bin_m: int, metric: str) -> Dict[str, Any]:
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        cache_key = f'jw_cells:{campaign_month}:{instrument}:{depth_bin_m}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        docs = self._jw_rollup_docs(metric, instrument, campaign_month=campaign_month, depth_bin_m=depth_bin_m)
+        by_waypoint = {self._jw_public_waypoint(doc.get('waypoint_id')): self._jw_format_cell(doc, metric, instrument) for doc in docs}
+        rows = [
+            by_waypoint.get(waypoint['label'])
+            or self._jw_missing_cell(waypoint, campaign_month, instrument, depth_bin_m, metric)
+            for waypoint in self._jw_waypoint_docs()
+        ]
+        payload = {
+            'campaign_month': campaign_month,
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'metric': {'key': metric, 'label': self._jw_metric_label(metric), 'unit': self._jw_metric_unit(metric)},
+            'data': rows,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_jw_trend(self, waypoint_id: str, instrument: str, depth_bin_m: int, metric: str) -> Dict[str, Any]:
+        canonical = self._jw_canonical_waypoint(waypoint_id)
+        if not canonical:
+            raise KeyError('Waypoint not found.')
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        cache_key = f'jw_trend:{canonical}:{instrument}:{depth_bin_m}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        docs = self._jw_rollup_docs(metric, instrument, waypoint_id=canonical, depth_bin_m=depth_bin_m, group_fields=['campaign_month', 'waypoint_id', 'depth_bin_m'])
+        rows = [self._jw_format_cell(doc, metric, instrument) for doc in sorted(docs, key=lambda item: item.get('campaign_month') or '')]
+        payload = {
+            'waypoint_id': self._jw_public_waypoint(canonical),
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'metric': {'key': metric, 'label': self._jw_metric_label(metric), 'unit': self._jw_metric_unit(metric)},
+            'data': rows,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_jw_depth_waypoint_heatmap(self, campaign_month: str, instrument: str, metric: str) -> Dict[str, Any]:
+        cache_key = f'jw_depth_waypoint_heatmap:{campaign_month}:{instrument}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        docs = self._jw_rollup_docs(metric, instrument, campaign_month=campaign_month, depth_bin_m=None)
+        depths = self._sbn_valid_depths(doc.get('depth_bin_m') for doc in docs)
+        waypoints = self._jw_waypoint_docs()
+        values = {}
+        for doc in docs:
+            label = self._jw_public_waypoint(doc.get('waypoint_id'))
+            stats = self._sbn_metric_stats_from_doc(doc, metric)
+            depth = self._sbn_normalized_depth(doc.get('depth_bin_m'))
+            if label and stats and depth is not None:
+                values[(label, depth)] = stats['avg']
+        payload = {
+            'campaign_month': campaign_month,
+            'instrument': instrument,
+            'metric': {'key': metric, 'label': self._jw_metric_label(metric), 'unit': self._jw_metric_unit(metric)},
+            'x': [waypoint['label'] for waypoint in waypoints],
+            'y': depths,
+            'z': [[values.get((waypoint['label'], depth)) for waypoint in waypoints] for depth in depths],
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_jw_month_depth_heatmap(self, waypoint_id: str, instrument: str, metric: str) -> Dict[str, Any]:
+        canonical = self._jw_canonical_waypoint(waypoint_id)
+        if not canonical:
+            raise KeyError('Waypoint not found.')
+        cache_key = f'jw_month_depth_heatmap:{canonical}:{instrument}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        docs = self._jw_rollup_docs(metric, instrument, waypoint_id=canonical, depth_bin_m=None, group_fields=['campaign_month', 'waypoint_id', 'depth_bin_m'])
+        months = sorted({doc.get('campaign_month') for doc in docs if doc.get('campaign_month')})
+        depths = self._sbn_valid_depths(doc.get('depth_bin_m') for doc in docs)
+        values = {}
+        for doc in docs:
+            stats = self._sbn_metric_stats_from_doc(doc, metric)
+            depth = self._sbn_normalized_depth(doc.get('depth_bin_m'))
+            if stats and depth is not None:
+                values[(doc.get('campaign_month'), depth)] = stats['avg']
+        payload = {
+            'waypoint_id': self._jw_public_waypoint(canonical),
+            'instrument': instrument,
+            'metric': {'key': metric, 'label': self._jw_metric_label(metric), 'unit': self._jw_metric_unit(metric)},
+            'x': months,
+            'y': depths,
+            'z': [[values.get((month, depth)) for month in months] for depth in depths],
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_jw_month_waypoint_heatmap(self, instrument: str, depth_bin_m: int, metric: str) -> Dict[str, Any]:
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        cache_key = f'jw_month_waypoint_heatmap:{instrument}:{depth_bin_m}:{metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        docs = self._jw_rollup_docs(metric, instrument, depth_bin_m=depth_bin_m, group_fields=['campaign_month', 'waypoint_id', 'waypoint_order', 'depth_bin_m'])
+        months = sorted({doc.get('campaign_month') for doc in docs if doc.get('campaign_month')})
+        waypoints = self._jw_waypoint_docs()
+        values = {}
+        for doc in docs:
+            label = self._jw_public_waypoint(doc.get('waypoint_id'))
+            stats = self._sbn_metric_stats_from_doc(doc, metric)
+            if label and stats:
+                values[(label, doc.get('campaign_month'))] = stats['avg']
+        payload = {
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'metric': {'key': metric, 'label': self._jw_metric_label(metric), 'unit': self._jw_metric_unit(metric)},
+            'x': months,
+            'y': [waypoint['label'] for waypoint in waypoints],
+            'z': [[values.get((waypoint['label'], month)) for month in months] for waypoint in waypoints],
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_jw_crossplot(self, campaign_month: str, instrument: str, depth_bin_m: int, x_metric: str, y_metric: str) -> Dict[str, Any]:
+        depth_bin_m = self._sbn_normalized_depth(depth_bin_m)
+        if depth_bin_m is None:
+            depth_bin_m = 0
+        cache_key = f'jw_crossplot:{campaign_month}:{instrument}:{depth_bin_m}:{x_metric}:{y_metric}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        x_docs = self._jw_rollup_docs(x_metric, instrument, campaign_month=campaign_month, depth_bin_m=depth_bin_m)
+        y_docs = self._jw_rollup_docs(y_metric, instrument, campaign_month=campaign_month, depth_bin_m=depth_bin_m)
+        y_by_waypoint = {doc.get('waypoint_id'): doc for doc in y_docs}
+        rows = []
+        for x_doc in x_docs:
+            y_doc = y_by_waypoint.get(x_doc.get('waypoint_id'))
+            if not y_doc:
+                continue
+            x_stats = self._sbn_metric_stats_from_doc(x_doc, x_metric)
+            y_stats = self._sbn_metric_stats_from_doc(y_doc, y_metric)
+            if not x_stats or not y_stats:
+                continue
+            rows.append(
+                {
+                    'waypoint_id': self._jw_public_waypoint(x_doc.get('waypoint_id')),
+                    'waypoint_order': int(x_doc.get('waypoint_order') or 0),
+                    'instrument': instrument,
+                    'x': x_stats['avg'],
+                    'y': y_stats['avg'],
+                }
+            )
+        rows.sort(key=lambda item: item['waypoint_order'])
+        payload = {
+            'campaign_month': campaign_month,
+            'instrument': instrument,
+            'depth_bin_m': depth_bin_m,
+            'x_metric': {'key': x_metric, 'label': self._jw_metric_label(x_metric), 'unit': self._jw_metric_unit(x_metric)},
+            'y_metric': {'key': y_metric, 'label': self._jw_metric_label(y_metric), 'unit': self._jw_metric_unit(y_metric)},
+            'data': rows,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=60)
+        return payload
+
+    def get_jw_profiles(self, campaign_month: Optional[str] = None, instrument: Optional[str] = None, waypoint_id: Optional[str] = None) -> Dict[str, Any]:
+        cache_key = f'jw_profiles:{campaign_month or ""}:{instrument or ""}:{waypoint_id or ""}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        query: Dict[str, Any] = {}
+        if campaign_month:
+            query['campaign_month'] = campaign_month
+        if instrument and instrument != 'combined':
+            query['instrument'] = instrument
+        canonical = self._jw_canonical_waypoint(waypoint_id) if waypoint_id else None
+        if canonical:
+            query['waypoint_id'] = canonical
+        cursor = self.db[self.JW_COLLECTIONS['profiles']].find(
+            query,
+            {
+                '_id': 0,
+                'campaign_month': 1,
+                'waypoint_id': 1,
+                'waypoint_order': 1,
+                'site': 1,
+                'instrument': 1,
+                'row_count': 1,
+                'duplicate_rows': 1,
+                'depth_min_m': 1,
+                'depth_max_m': 1,
+                'ts_min': 1,
+                'ts_max': 1,
+                'fields': 1,
+                'status': 1,
+            },
+        ).sort([('campaign_month', ASCENDING), ('waypoint_order', ASCENDING), ('instrument', ASCENDING)])
+        rows = []
+        for doc in cursor.limit(1500):
+            rows.append(
+                {
+                    **doc,
+                    'waypoint_id': self._jw_public_waypoint(doc.get('waypoint_id')),
+                    'ts_min': self._dt_string(doc.get('ts_min')) if doc.get('ts_min') else None,
+                    'ts_max': self._dt_string(doc.get('ts_max')) if doc.get('ts_max') else None,
+                }
+            )
+        payload = {'data': rows}
+        self.cache.set(cache_key, payload, ttl_seconds=120)
+        return payload
+
+    def export_jw_csv_iter(
+        self,
+        campaign_month: Optional[str] = None,
+        instrument: str = 'combined',
+        depth_bin_m: Optional[int] = None,
+        metrics: Optional[List[str]] = None,
+        all_depths: bool = False,
+        append_location: bool = False,
+    ) -> Iterable[str]:
+        metric_keys = [metric for metric in (metrics or []) if metric]
+        if not metric_keys:
+            metric_keys = [item['key'] for item in self._jw_available_metrics()]
+        header = [
+            'campaign_month',
+            'instrument',
+            'source_instruments',
+            'waypoint',
+            'waypoint_order',
+            'depth_bin_m',
+            'metric',
+            'metric_label',
+            'unit',
+            'avg',
+            'min',
+            'max',
+            'n',
+        ]
+        if append_location:
+            header.extend(['latitude', 'longitude'])
+        if not metric_keys:
+            return self._csv_chunk_writer([header])
+
+        def rows() -> Iterable[List[Any]]:
+            yield header
+            for metric in metric_keys:
+                docs = self._jw_rollup_docs(
+                    metric,
+                    instrument,
+                    campaign_month=campaign_month,
+                    depth_bin_m=None if all_depths else depth_bin_m,
+                    group_fields=['campaign_month', 'waypoint_id', 'waypoint_order', 'depth_bin_m'],
+                )
+                for doc in sorted(docs, key=lambda item: (item.get('campaign_month') or '', int(item.get('waypoint_order') or 0), int(item.get('depth_bin_m') or 0))):
+                    stats = self._sbn_metric_stats_from_doc(doc, metric)
+                    if not stats:
+                        continue
+                    source_instruments = doc.get('source_instruments') or ([doc.get('instrument')] if doc.get('instrument') else [])
+                    row: List[Any] = [
+                        doc.get('campaign_month'),
+                        instrument if instrument == 'combined' else doc.get('instrument'),
+                        ';'.join(str(item) for item in source_instruments if item),
+                        self._jw_public_waypoint(doc.get('waypoint_id')) or doc.get('waypoint_id'),
+                        int(doc.get('waypoint_order') or self._jw_waypoint_order(doc.get('waypoint_id')) or 0),
+                        doc.get('depth_bin_m'),
+                        metric,
+                        self._jw_metric_label(metric),
+                        self._jw_metric_unit(metric),
+                        stats.get('avg'),
+                        stats.get('min'),
+                        stats.get('max'),
+                        stats.get('n'),
+                    ]
+                    if append_location:
+                        row.extend([doc.get('lat'), doc.get('long')])
+                    yield row
 
         return self._csv_chunk_writer(rows())
 
