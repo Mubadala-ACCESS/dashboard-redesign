@@ -113,9 +113,9 @@
           </span>
         </span>
       `,
-      iconSize: [24, 30],
-      iconAnchor: [12, 28],
-      popupAnchor: [0, -24],
+      iconSize: [16, 20],
+      iconAnchor: [8, 18],
+      popupAnchor: [0, -18],
     });
   }
 

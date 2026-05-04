@@ -264,9 +264,9 @@ img { max-width: 100%; }
   max-width: min(245px, calc(100% - 92px));
   padding: 8px 12px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(255, 255, 255, 0.52);
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  background: rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  box-shadow: 0 10px 24px rgba(76, 29, 149, 0.08);
   color: rgba(24, 33, 47, 0.72);
   font-size: 0.84rem;
   line-height: 1.35;
@@ -281,16 +281,16 @@ img { max-width: 100%; }
   width: min(250px, calc(100% - 40px));
   padding: 18px;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.7);
-  box-shadow: 0 22px 48px rgba(15, 23, 42, 0.2);
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 22px 48px rgba(76, 29, 149, 0.12);
   backdrop-filter: blur(16px);
 }
 .map-type-card h2 {
   margin: 0 0 14px;
   font-size: 1rem;
   line-height: 1.2;
-  color: var(--text);
+  color: var(--primary-strong);
 }
 .map-footer {
   position: absolute;
@@ -317,7 +317,7 @@ img { max-width: 100%; }
   grid-template-columns: 18px minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  color: var(--text);
+  color: var(--primary-strong);
   font-size: 0.85rem;
 }
 .station-type-row span {
@@ -333,8 +333,9 @@ img { max-width: 100%; }
 }
 .legend-pin {
   --legend-color: #64748b;
-  width: 13px;
-  height: 13px;
+  position: relative;
+  width: 15px;
+  height: 15px;
   border-radius: 50% 50% 50% 3px;
   display: inline-block;
   background: var(--legend-color);
@@ -352,15 +353,15 @@ img { max-width: 100%; }
   gap: 18px;
   padding: 12px 18px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(255, 255, 255, 0.76);
-  box-shadow: 0 18px 44px rgba(15, 23, 42, 0.2);
+  background: rgba(255, 255, 255, 0.34);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  box-shadow: 0 18px 44px rgba(76, 29, 149, 0.12);
   backdrop-filter: blur(18px);
 }
 .overview-label {
   padding-right: 18px;
-  border-right: 1px solid rgba(24, 33, 47, 0.12);
-  color: var(--text);
+  border-right: 1px solid rgba(91, 33, 182, 0.18);
+  color: var(--primary-strong);
   font-size: 0.76rem;
   font-weight: 800;
 }
@@ -370,7 +371,7 @@ img { max-width: 100%; }
   grid-template-rows: auto auto;
   column-gap: 8px;
   align-items: center;
-  color: var(--muted);
+  color: var(--primary-strong);
 }
 .overview-item em {
   grid-row: 1 / 3;
@@ -379,24 +380,24 @@ img { max-width: 100%; }
   border-radius: 50% 50% 50% 4px;
   display: inline-block;
   transform: rotate(-45deg);
-  background: var(--primary);
-  box-shadow: 0 4px 12px rgba(15,23,42,.18), inset 0 0 0 3px rgba(255,255,255,.45);
+  background: var(--primary-strong);
+  box-shadow: 0 4px 12px rgba(91,33,182,.18), inset 0 0 0 3px rgba(255,255,255,.45);
 }
 .overview-item strong {
-  color: var(--text);
+  color: var(--primary-strong);
   font-size: 1.08rem;
   line-height: 1;
   font-weight: 900;
 }
 .overview-item small {
   display: block;
-  color: var(--muted);
+  color: var(--primary-strong);
   font-size: 0.72rem;
   line-height: 1.1;
 }
-.overview-active em { background: var(--success); }
-.overview-maintenance em { background: var(--warning); }
-.overview-decommissioned em { background: #be185d; }
+.overview-active em,
+.overview-maintenance em,
+.overview-decommissioned em { background: var(--primary-strong); }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.active { background: var(--success); }
 .dot.maintenance { background: var(--warning); }
@@ -412,36 +413,27 @@ img { max-width: 100%; }
   --station-type: #64748b;
   --station-status: #94a3b8;
   --station-privacy: #ffffff;
-  width: 18px;
-  height: 18px;
+  width: 12px;
+  height: 12px;
   display: grid;
   place-items: center;
   border-radius: 50% 50% 50% 4px;
-  background: var(--station-status);
-  border: 2px solid var(--station-privacy);
-  box-shadow: 0 5px 14px rgba(15, 23, 42, 0.26), 0 0 0 1px rgba(15, 23, 42, 0.16);
+  background: var(--station-type);
+  border: 1.4px solid rgba(255, 255, 255, 0.96);
+  box-shadow: 0 3px 9px rgba(15, 23, 42, 0.24), 0 0 0 1px rgba(15, 23, 42, 0.14);
   transform: rotate(-45deg);
   transition: transform 0.16s ease, box-shadow 0.16s ease;
 }
 .station-marker__status {
-  width: 9px;
-  height: 9px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
-  background: rgba(255,255,255,.68);
+  display: none;
 }
 .station-marker__type {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--station-type);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.38);
+  display: none;
 }
 .leaflet-marker-icon:hover .station-marker,
 .leaflet-marker-icon:focus .station-marker {
-  transform: rotate(-45deg) scale(1.22);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.34), 0 0 0 3px rgba(255, 255, 255, 0.85);
+  transform: rotate(-45deg) scale(1.28);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.3), 0 0 0 2px rgba(255, 255, 255, 0.85);
 }
 .station-legend {
   display: grid;
@@ -920,13 +912,11 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .date-range-control, .date-range-fields { width: 100%; }
   .date-field-button { min-width: 0; flex: 1; }
   .date-calendar-popover { left: 0; right: auto; width: min(360px, 100%); }
-  .station-marker { width: 16px; height: 16px; }
-  .station-marker__status { width: 8px; height: 8px; }
-  .station-marker__type { width: 5px; height: 5px; }
+  .station-marker { width: 11px; height: 11px; }
   .map-help { max-width: calc(100% - 28px); font-size: 0.78rem; }
   .map-type-card { display: none; }
   .map-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); width: calc(100% - 28px); gap: 10px; padding: 12px; }
-  .overview-label { grid-column: 1 / -1; padding: 0 0 8px; border-right: 0; border-bottom: 1px solid rgba(24, 33, 47, 0.12); }
+  .overview-label { grid-column: 1 / -1; padding: 0 0 8px; border-right: 0; border-bottom: 1px solid rgba(91, 33, 182, 0.18); }
   .station-legend { justify-content: flex-start; }
   .legend-group { grid-template-columns: 1fr; row-gap: 5px; }
   .drawer-kv.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
