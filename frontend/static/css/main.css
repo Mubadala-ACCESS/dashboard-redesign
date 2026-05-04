@@ -397,7 +397,7 @@ img { max-width: 100%; }
 }
 .overview-active em,
 .overview-maintenance em,
-.overview-decommissioned em { background: var(--primary-strong); }
+.overview-disabled em { background: var(--primary-strong); }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.active { background: var(--success); }
 .dot.maintenance { background: var(--warning); }
@@ -547,6 +547,7 @@ img { max-width: 100%; }
 .status-pill.private { background: rgba(220, 38, 38, 0.1); color: var(--danger); }
 .status-pill.warning { background: rgba(217, 119, 6, 0.12); color: var(--warning); }
 .status-pill.subtle { background: rgba(98, 112, 132, 0.12); color: var(--muted); }
+.status-pill.disabled { background: rgba(91, 33, 182, 0.1); color: var(--primary-strong); }
 .side-kv { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 18px 0; }
 .side-kv div, .report-meta div, .report-kv-grid div { padding: 12px; border-radius: 14px; background: rgba(91, 33, 182, 0.06); }
 .side-kv span, .report-meta span, .report-kv-grid span { display: block; color: var(--muted); font-size: 0.8rem; margin-bottom: 4px; }

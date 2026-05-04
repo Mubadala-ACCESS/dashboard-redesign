@@ -78,7 +78,7 @@
     document.getElementById('status-total').textContent = summary.total;
     document.getElementById('status-healthy').textContent = summary.healthy;
     document.getElementById('status-maintenance').textContent = summary.maintenance;
-    document.getElementById('status-decommissioned').textContent = summary.decommissioned;
+    document.getElementById('status-disabled').textContent = summary.disabled;
   }
 
   async function refreshStatus() {

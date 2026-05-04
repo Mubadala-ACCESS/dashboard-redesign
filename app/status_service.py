@@ -9,14 +9,14 @@ from .mongo_service import MongoDashboardRepository
 class StatusService:
     TS_CANDIDATES = ['datetime', 'Timestamp', 'ts', 'time', 'created_at']
     TYPE_ORDER = [
-        'IoTBox',
+        'SBNTransect',
+        'underwater_probe',
         'Fidas_Palas',
         'Meteorological',
         'Buoy',
-        'SBNTransect',
-        'underwater_probe',
-        'coral_reef',
+        'IoTBox',
         'JWCruise',
+        'coral_reef',
     ]
     TYPE_LABELS = {
         'IoTBox': 'IoT Boxes',
@@ -188,13 +188,13 @@ class StatusService:
     def _status_class(self, status: str) -> str:
         if status == 'Maintenance':
             return 'maintenance'
-        if status == 'Decommissioned':
-            return 'subtle'
+        if status == 'Disabled':
+            return 'disabled'
         return ''
 
     def _summary_status(self, row_status: str, issues: List[str]) -> str:
-        if row_status == 'Decommissioned':
-            return 'decommissioned'
+        if row_status == 'Disabled':
+            return 'disabled'
         if row_status == 'Maintenance' or issues:
             return 'maintenance'
         return 'healthy'
@@ -202,7 +202,7 @@ class StatusService:
     def _campaign_row(self, station: Dict[str, Any]) -> Dict[str, Any]:
         extent = self.repo.get_time_extent(station)
         status = station.get('status') or 'Available'
-        if status not in {'Active', 'Maintenance', 'Decommissioned'}:
+        if status not in {'Active', 'Maintenance', 'Disabled'}:
             status = 'Active'
         if status == 'Maintenance':
             issues = ['Marked for maintenance in station metadata']
@@ -224,7 +224,8 @@ class StatusService:
         }
 
     def _live_row(self, station: Dict[str, Any]) -> Dict[str, Any]:
-        if station.get('status') == 'Decommissioned':
+        if station.get('status') == 'Disabled':
+            extent = self.repo.get_time_extent(station)
             return {
                 'station_id': station['public_id'],
                 'public_id': station['public_id'],
@@ -233,9 +234,9 @@ class StatusService:
                 'device_label': station['device_label'],
                 'group_order': self._type_rank(station['device_type']),
                 'group_label': self._type_label(station['device_type']),
-                'status': 'Decommissioned',
-                'status_class': 'subtle',
-                'last_update': 'N/A',
+                'status': 'Disabled',
+                'status_class': 'disabled',
+                'last_update': extent.get('latest') or 'N/A',
                 'issues': [],
                 'issue_count': 0,
             }
@@ -262,15 +263,20 @@ class StatusService:
         }
 
     def network_status(self) -> Dict[str, Any]:
-        cache_key = 'network_status_all_types_v1'
+        cache_key = 'network_status_all_types_v2'
         cached = self.repo.cache.get(cache_key)
         if cached:
             return cached
 
-        docs = list(self.db[self.settings.mongo_stations_info_collection].find({}, self.repo.station_projection))
+        docs = list(
+            self.db[self.settings.mongo_stations_info_collection].find(
+                {'status': {'$ne': self.repo.HIDDEN_STATION_STATUS}},
+                self.repo.station_projection,
+            )
+        )
         stations = [self.repo._normalize_station(doc) for doc in docs]
         rows: List[Dict[str, Any]] = []
-        summary = {'total': 0, 'healthy': 0, 'maintenance': 0, 'decommissioned': 0}
+        summary = {'total': 0, 'healthy': 0, 'maintenance': 0, 'disabled': 0}
 
         for station in stations:
             summary['total'] += 1

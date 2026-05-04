@@ -26,6 +26,8 @@ class MongoDashboardRepository:
     LOOKBACK = 50
     MAX_CHART_POINTS = 720
     MAX_TABLE_ROWS = 100
+    HIDDEN_STATION_STATUS = 'Decommissioned'
+    DASHBOARD_STATUS_ORDER = ['Active', 'Maintenance', 'Disabled']
     EXCLUDE_DISCOVERY_KEYS = {'index', 'sensor', 'type', 'sensor_T', 'sensor_RH', 'diagnostics'}
     PM_COUNT_RE = re.compile(r'^pm(?:\d+(?:[.,]\d+)?)?count$', re.IGNORECASE)
     DEFAULT_METRIC_PRIORITY = [
@@ -547,6 +549,9 @@ class MongoDashboardRepository:
             'last_calibration': doc.get('last_calibration'),
         }
 
+    def _is_hidden_station_doc(self, doc: Optional[Dict[str, Any]]) -> bool:
+        return str((doc or {}).get('status') or '').strip().lower() == self.HIDDEN_STATION_STATUS.lower()
+
     def _station_query(self, station_id: str) -> Dict[str, Any]:
         queries: List[Dict[str, Any]] = [{'id': station_id}]
         if station_id.isdigit():
@@ -556,22 +561,27 @@ class MongoDashboardRepository:
         return {'$or': queries}
 
     def _public_station_lookup(self) -> Dict[str, Dict[str, Any]]:
-        cached = self.cache.get('public_station_lookup')
+        cached = self.cache.get('public_station_lookup:v2')
         if cached is not None:
             return cached
         lookup: Dict[str, Dict[str, Any]] = {}
-        cursor = self.db[self.settings.mongo_stations_info_collection].find({}, self.station_projection)
+        cursor = self.db[self.settings.mongo_stations_info_collection].find(
+            {'status': {'$ne': self.HIDDEN_STATION_STATUS}},
+            self.station_projection,
+        )
         for doc in cursor:
             raw_id = str(doc.get('id') or doc.get('_id'))
             public_id = self._public_station_id(raw_id, doc.get('name') or 'Monitoring station')
             lookup[public_id] = doc
-        self.cache.set('public_station_lookup', lookup, ttl_seconds=300)
+        self.cache.set('public_station_lookup:v2', lookup, ttl_seconds=300)
         return lookup
 
     def _find_station_by_public_id(self, public_id: str) -> Optional[Dict[str, Any]]:
         cache_key = f'public_station_doc:{public_id}'
         cached = self.cache.get(cache_key)
         if cached is not None:
+            if self._is_hidden_station_doc(cached):
+                return None
             return cached
         doc = self._public_station_lookup().get(public_id)
         if doc:
@@ -581,7 +591,10 @@ class MongoDashboardRepository:
         return None
 
     def _find_station_by_public_id_fresh(self, public_id: str) -> Optional[Dict[str, Any]]:
-        cursor = self.db[self.settings.mongo_stations_info_collection].find({}, self.station_projection)
+        cursor = self.db[self.settings.mongo_stations_info_collection].find(
+            {'status': {'$ne': self.HIDDEN_STATION_STATUS}},
+            self.station_projection,
+        )
         for doc in cursor:
             raw_id = str(doc.get('id') or doc.get('_id'))
             if self._public_station_id(raw_id, doc.get('name') or 'Monitoring station') == public_id:
@@ -591,6 +604,8 @@ class MongoDashboardRepository:
     def resolve_station(self, station_id: str) -> Dict[str, Any]:
         cached = self.cache.get(self._station_cache_key(station_id))
         if cached:
+            if cached.get('status') == self.HIDDEN_STATION_STATUS:
+                raise KeyError(f'Station not found: {station_id}')
             return cached
         looks_public = '-' in station_id and not station_id.isdigit() and not ObjectId.is_valid(station_id)
         doc = self._find_station_by_public_id(station_id) if looks_public else None
@@ -598,7 +613,7 @@ class MongoDashboardRepository:
             doc = self.db[self.settings.mongo_stations_info_collection].find_one(self._station_query(station_id), self.station_projection)
         if not doc and not looks_public:
             doc = self._find_station_by_public_id(station_id)
-        if not doc:
+        if not doc or self._is_hidden_station_doc(doc):
             raise KeyError(f'Station not found: {station_id}')
         station = self._normalize_station(doc)
         self.cache.set(self._station_cache_key(station_id), station, ttl_seconds=300)
@@ -613,7 +628,7 @@ class MongoDashboardRepository:
             doc = self.db[self.settings.mongo_stations_info_collection].find_one(self._station_query(station_id), self.station_projection)
         if not doc and not looks_public:
             doc = self._find_station_by_public_id_fresh(station_id)
-        if not doc:
+        if not doc or self._is_hidden_station_doc(doc):
             raise KeyError(f'Station not found: {station_id}')
         station = self._normalize_station(doc)
         self.cache.set(self._station_cache_key(station_id), station, ttl_seconds=20)
@@ -622,11 +637,16 @@ class MongoDashboardRepository:
         return station
 
     def get_filters(self) -> Dict[str, Any]:
-        cache_key = 'filters'
+        cache_key = 'filters:v2'
         cached = self.cache.get(cache_key)
         if cached:
             return cached
-        docs = list(self.db[self.settings.mongo_stations_info_collection].find({}, {'type': 1, 'status': 1, 'public': 1}))
+        docs = list(
+            self.db[self.settings.mongo_stations_info_collection].find(
+                {'status': {'$ne': self.HIDDEN_STATION_STATUS}},
+                {'type': 1, 'status': 1, 'public': 1},
+            )
+        )
         filters = {
             'privacy': [
                 {'value': 'all', 'label': 'All'},
@@ -637,9 +657,12 @@ class MongoDashboardRepository:
             'statuses': [{'value': 'all', 'label': 'All'}],
         }
         types = sorted({doc.get('type') for doc in docs if doc.get('type')})
-        statuses = sorted({doc.get('status') for doc in docs if doc.get('status')})
+        statuses = {doc.get('status') for doc in docs if doc.get('status') and doc.get('status') != self.HIDDEN_STATION_STATUS}
+        statuses.add('Disabled')
         filters['device_types'].extend([{'value': item, 'label': self.DEVICE_LABELS.get(item, item)} for item in types])
-        filters['statuses'].extend([{'value': item, 'label': item} for item in statuses])
+        ordered_statuses = [item for item in self.DASHBOARD_STATUS_ORDER if item in statuses]
+        ordered_statuses.extend(sorted(statuses.difference(ordered_statuses)))
+        filters['statuses'].extend([{'value': item, 'label': item} for item in ordered_statuses])
         self.cache.set(cache_key, filters, ttl_seconds=30)
         return filters
 
@@ -651,12 +674,26 @@ class MongoDashboardRepository:
         search: str = '',
     ) -> Dict[str, Any]:
         normalized_search = (search or '').strip()
-        cache_key = f'list_stations:{privacy}:{device_type}:{status}:{normalized_search.lower()}'
+        cache_key = f'list_stations:v2:{privacy}:{device_type}:{status}:{normalized_search.lower()}'
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
 
-        query: Dict[str, Any] = {'lat': {'$ne': None}, 'long': {'$ne': None}}
+        if status == self.HIDDEN_STATION_STATUS:
+            empty_summary = {
+                'total_stations': 0,
+                'active_stations': 0,
+                'maintenance_stations': 0,
+                'disabled_stations': 0,
+                'public_stations': 0,
+                'device_breakdown': {},
+                'status_breakdown': {},
+            }
+            payload = {'summary': empty_summary, 'stations': [], 'filters': self.get_filters()}
+            self.cache.set(cache_key, payload, ttl_seconds=10)
+            return payload
+
+        query: Dict[str, Any] = {'lat': {'$ne': None}, 'long': {'$ne': None}, 'status': {'$ne': self.HIDDEN_STATION_STATUS}}
         if privacy == 'public':
             query['public'] = True
         elif privacy == 'private':
@@ -683,6 +720,7 @@ class MongoDashboardRepository:
             'total_stations': len(stations),
             'active_stations': status_counter.get('Active', 0),
             'maintenance_stations': status_counter.get('Maintenance', 0),
+            'disabled_stations': status_counter.get('Disabled', 0),
             'public_stations': public_counter.get('Public', 0),
             'device_breakdown': dict(type_counter),
             'status_breakdown': dict(status_counter),
@@ -4251,11 +4289,16 @@ class MongoDashboardRepository:
         return payload
 
     def get_network_summary(self) -> Dict[str, Any]:
-        cache_key = 'network_summary'
+        cache_key = 'network_summary:v2'
         cached = self.cache.get(cache_key)
         if cached:
             return cached
-        docs = list(self.db[self.settings.mongo_stations_info_collection].find({'lat': {'$ne': None}, 'long': {'$ne': None}}, self.station_projection))
+        docs = list(
+            self.db[self.settings.mongo_stations_info_collection].find(
+                {'lat': {'$ne': None}, 'long': {'$ne': None}, 'status': {'$ne': self.HIDDEN_STATION_STATUS}},
+                self.station_projection,
+            )
+        )
         stations = [self._normalize_station(doc) for doc in docs]
         payload = {
             'station_count': len(stations),

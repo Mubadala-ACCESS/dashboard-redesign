@@ -48,6 +48,9 @@ class StationAccessDenied(Exception):
 
 
 def require_public_station_ref(repo: MongoDashboardRepository, station_id: str) -> dict:
+    fresh_station = repo.resolve_station_fresh(station_id)
+    if station_id != fresh_station.get('public_id'):
+        raise KeyError('Station not found.')
     summary = repo.get_station_summary(station_id)
     if station_id != summary.get('public_id'):
         raise KeyError('Station not found.')
@@ -55,7 +58,7 @@ def require_public_station_ref(repo: MongoDashboardRepository, station_id: str) 
 
 
 def require_public_station(repo: MongoDashboardRepository, station_id: str) -> dict:
-    station = repo.resolve_station(station_id)
+    station = repo.resolve_station_fresh(station_id)
     if station_id != station.get('public_id'):
         raise KeyError('Station not found.')
     return station
@@ -511,7 +514,7 @@ def create_app() -> FastAPI:
         search: str = Query(default=''),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
-        key = f'map_stations:{privacy}:{device_type}:{status}:{search.strip().lower()}'
+        key = f'map_stations:v2:{privacy}:{device_type}:{status}:{search.strip().lower()}'
         return cached_json_response(repo, key, lambda: repo.list_stations(privacy=privacy, device_type=device_type, status=status, search=search), ttl_seconds=10)
 
     @app.get('/api/status')

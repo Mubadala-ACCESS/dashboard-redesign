@@ -41,7 +41,7 @@
   const STATUS_COLORS = {
     Active: '#0f766e',
     Maintenance: '#d97706',
-    Decommissioned: '#64748b',
+    Disabled: '#64748b',
     Unknown: '#94a3b8',
   };
 
@@ -151,7 +151,7 @@
     setCount('overview-total', stations.length);
     setCount('overview-active', stations.filter((station) => station.status === 'Active').length);
     setCount('overview-maintenance', stations.filter((station) => station.status === 'Maintenance').length);
-    setCount('overview-decommissioned', stations.filter((station) => station.status === 'Decommissioned').length);
+    setCount('overview-disabled', stations.filter((station) => station.status === 'Disabled').length);
   }
 
   function jitterStations(stations) {
