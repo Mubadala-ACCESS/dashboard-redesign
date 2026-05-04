@@ -1,9 +1,10 @@
 const App = (() => {
-  async function fetchJSON(url) {
+  async function fetchJSON(url, options = {}) {
+    const redirectOnAuth = options.redirectOnAuth !== false;
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!response.ok) {
       const detail = await response.text();
-      if (response.status === 401) {
+      if (response.status === 401 && redirectOnAuth) {
         try {
           const payload = JSON.parse(detail);
           if (payload.login_url) {

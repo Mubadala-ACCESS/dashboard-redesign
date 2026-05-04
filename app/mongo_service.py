@@ -790,6 +790,44 @@ class MongoDashboardRepository:
         self.cache.set(cache_key, payload, ttl_seconds=300)
         return payload
 
+    def _jw_time_extent(self, waypoint_id: Optional[str] = None) -> Dict[str, Optional[str]]:
+        canonical = self._jw_canonical_waypoint(waypoint_id) if waypoint_id else None
+        cache_key = f'jw_time_extent:{canonical or "all"}'
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+        query: Dict[str, Any] = {}
+        if canonical:
+            query['waypoint_id'] = canonical
+
+        first_dt = None
+        last_dt = None
+        if self._collection_exists(self.JW_COLLECTIONS['profiles']):
+            projection = {'ts_min': 1, 'ts_max': 1}
+            profiles = self.db[self.JW_COLLECTIONS['profiles']]
+            first = profiles.find_one({**query, 'ts_min': {'$exists': True}}, projection=projection, sort=[('ts_min', ASCENDING)])
+            last = profiles.find_one({**query, 'ts_max': {'$exists': True}}, projection=projection, sort=[('ts_max', DESCENDING)])
+            first_dt = first.get('ts_min') if first else None
+            last_dt = last.get('ts_max') if last else None
+
+        if (first_dt is None or last_dt is None) and self._collection_exists(self.JW_COLLECTIONS['samples']):
+            sample_query: Dict[str, Any] = {}
+            if canonical:
+                sample_query['meta.waypoint_id'] = canonical
+            samples = self.db[self.JW_COLLECTIONS['samples']]
+            first_sample = samples.find_one({**sample_query, 'ts': {'$exists': True}}, projection={'ts': 1}, sort=[('ts', ASCENDING)])
+            last_sample = samples.find_one({**sample_query, 'ts': {'$exists': True}}, projection={'ts': 1}, sort=[('ts', DESCENDING)])
+            first_dt = first_dt or (first_sample.get('ts') if first_sample else None)
+            last_dt = last_dt or (last_sample.get('ts') if last_sample else None)
+
+        payload = {
+            'earliest': self._human_dt(first_dt) if first_dt else None,
+            'latest': self._human_dt(last_dt) if last_dt else None,
+            'latest_iso': self._dt_string(last_dt) if last_dt else None,
+        }
+        self.cache.set(cache_key, payload, ttl_seconds=300)
+        return payload
+
     def _station_has_collection(self, station: Dict[str, Any]) -> bool:
         collection_name, _ = self._collection_for_station(station)
         return self._collection_exists(collection_name)
@@ -802,6 +840,11 @@ class MongoDashboardRepository:
 
         if station.get('device_type') == 'SBNTransect':
             payload = self._sbn_time_extent(str(station.get('station_id') or ''))
+            self.cache.set(cache_key, payload, ttl_seconds=300)
+            return payload
+
+        if station.get('device_type') == 'JWCruise':
+            payload = self._jw_time_extent(str(station.get('station_id') or ''))
             self.cache.set(cache_key, payload, ttl_seconds=300)
             return payload
 

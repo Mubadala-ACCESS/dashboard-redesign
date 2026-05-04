@@ -313,13 +313,17 @@
     const liveCurrent = hasCurrentReadings(summary.device_type);
     setDrawerCurrentVisibility(liveCurrent);
     if (!liveCurrent) currentEl.innerHTML = '';
-    const latest = liveCurrent ? await App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/latest`) : { cards: [] };
+    const latest = liveCurrent
+      ? await App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/latest`, { redirectOnAuth: false }).catch(() => ({ cards: [], authRequired: true }))
+      : { cards: [] };
     if (state.selectedStationId !== stationId) return;
 
     drawerTitle.textContent = summary.name;
     drawerSubtitle.textContent = `${summary.device_label} · ${summary.status} · ${summary.location_text}`;
 
-    if (liveCurrent && !latest.cards?.length) {
+    if (liveCurrent && latest.authRequired) {
+      currentEl.innerHTML = '<article class="drawer-card"><h3>Current Readings</h3><p>Sign in to view private station readings.</p></article>';
+    } else if (liveCurrent && !latest.cards?.length) {
       currentEl.innerHTML = '<article class="drawer-card"><h3>Current Readings</h3><p>No live readings are available for this station view.</p></article>';
     } else if (liveCurrent) {
       currentEl.innerHTML = `
