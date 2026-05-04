@@ -413,15 +413,16 @@ img { max-width: 100%; }
   --station-type: #64748b;
   --station-status: #94a3b8;
   --station-privacy: #ffffff;
-  width: 12px;
-  height: 12px;
+  width: 9px;
+  height: 9px;
   display: grid;
   place-items: center;
-  border-radius: 50% 50% 50% 4px;
+  border-radius: 50% 50% 50% 0;
   background: var(--station-type);
-  border: 1.4px solid rgba(255, 255, 255, 0.96);
-  box-shadow: 0 3px 9px rgba(15, 23, 42, 0.24), 0 0 0 1px rgba(15, 23, 42, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.96);
+  box-shadow: 0 2px 7px rgba(15, 23, 42, 0.26), 0 0 0 1px rgba(15, 23, 42, 0.12);
   transform: rotate(-45deg);
+  transform-origin: 50% 70%;
   transition: transform 0.16s ease, box-shadow 0.16s ease;
 }
 .station-marker__status {
@@ -432,8 +433,8 @@ img { max-width: 100%; }
 }
 .leaflet-marker-icon:hover .station-marker,
 .leaflet-marker-icon:focus .station-marker {
-  transform: rotate(-45deg) scale(1.28);
-  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.3), 0 0 0 2px rgba(255, 255, 255, 0.85);
+  transform: rotate(-45deg) scale(1.35);
+  box-shadow: 0 4px 11px rgba(15, 23, 42, 0.32), 0 0 0 2px rgba(255, 255, 255, 0.82);
 }
 .station-legend {
   display: grid;
@@ -912,7 +913,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .date-range-control, .date-range-fields { width: 100%; }
   .date-field-button { min-width: 0; flex: 1; }
   .date-calendar-popover { left: 0; right: auto; width: min(360px, 100%); }
-  .station-marker { width: 11px; height: 11px; }
+  .station-marker { width: 8px; height: 8px; }
   .map-help { max-width: calc(100% - 28px); font-size: 0.78rem; }
   .map-type-card { display: none; }
   .map-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); width: calc(100% - 28px); gap: 10px; padding: 12px; }
