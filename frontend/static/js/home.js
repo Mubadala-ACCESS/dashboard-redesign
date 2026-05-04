@@ -14,7 +14,7 @@
   const state = {
     privacy: 'all',
     device_type: 'all',
-    status: 'all',
+    status: 'Active',
     search: '',
     filters: null,
     markers: null,
@@ -34,7 +34,7 @@
     JWCruise: { label: 'Jaywun Cruise', color: '#16a34a' },
     SBNTransect: { label: 'SBN Transect', color: '#7c3aed' },
     coral_reef: { label: 'Coral Reef', color: '#db2777' },
-    underwater_probe: { label: 'Underwater Probe', color: '#0e7490' },
+    underwater_probe: { label: 'Underwater Probes', color: '#0e7490' },
     Unknown: { label: 'Unknown', color: '#64748b' },
   };
 
@@ -113,42 +113,45 @@
           </span>
         </span>
       `,
-      iconSize: [18, 18],
-      iconAnchor: [9, 9],
-      popupAnchor: [0, -7],
+      iconSize: [24, 30],
+      iconAnchor: [12, 28],
+      popupAnchor: [0, -24],
     });
   }
 
   function renderLegend() {
-    if (!legendEl || !state.filters) return;
-    const typeItems = (state.filters.device_types || []).filter((item) => item.value !== 'all');
-    const statusItems = (state.filters.statuses || []).filter((item) => item.value !== 'all');
-    const privacyItems = (state.filters.privacy || []).filter((item) => item.value !== 'all');
+    if (!legendEl) return;
+    const counts = new Map();
+    state.allStations.forEach((station) => {
+      const style = stationTypeStyle(station);
+      const existing = counts.get(style.key) || { ...style, count: 0 };
+      existing.count += 1;
+      counts.set(style.key, existing);
+    });
 
-    legendEl.classList.add('station-legend');
-    legendEl.innerHTML = `
-      <span class="legend-group">
-        <strong>Center: station type</strong>
-        <span class="legend-items">
-          ${typeItems.map((item) => {
-            const style = stationTypeStyle(item.value);
-            return `<span class="legend-key"><em class="legend-dot" style="--legend-color:${style.color}"></em>${App.escapeHtml(item.label)}</span>`;
-          }).join('')}
+    const items = Array.from(counts.values()).sort((a, b) => a.label.localeCompare(b.label));
+    legendEl.className = 'legend-inline station-type-list';
+    legendEl.innerHTML = items.length
+      ? items.map((item) => `
+        <span class="station-type-row">
+          <em class="legend-pin" style="--legend-color:${item.color}"></em>
+          <span>${App.escapeHtml(item.label)}</span>
+          <strong>${item.count}</strong>
         </span>
-      </span>
-      <span class="legend-group">
-        <strong>Middle ring: status</strong>
-        <span class="legend-items">
-          ${statusItems.map((item) => `<span class="legend-key"><em class="legend-ring" style="--legend-color:${statusColor(item.value)}"></em>${App.escapeHtml(item.label)}</span>`).join('')}
-        </span>
-      </span>
-      <span class="legend-group">
-        <strong>Outer ring: privacy</strong>
-        <span class="legend-items">
-          ${privacyItems.map((item) => `<span class="legend-key"><em class="legend-ring legend-ring--outer" style="--legend-color:${privacyColor(item.value)}"></em>${App.escapeHtml(item.label)}</span>`).join('')}
-        </span>
-      </span>
-    `;
+      `).join('')
+      : '<span class="station-type-empty">No stations available</span>';
+  }
+
+  function updateOverview() {
+    const stations = state.allStations || [];
+    const setCount = (id, value) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(value);
+    };
+    setCount('overview-total', stations.length);
+    setCount('overview-active', stations.filter((station) => station.status === 'Active').length);
+    setCount('overview-maintenance', stations.filter((station) => station.status === 'Maintenance').length);
+    setCount('overview-decommissioned', stations.filter((station) => station.status === 'Decommissioned').length);
   }
 
   function jitterStations(stations) {
@@ -364,6 +367,7 @@
     const payload = await App.fetchJSON(url.toString());
     if (requestId !== state.loadRequestId) return;
     state.allStations = payload.stations || [];
+    updateOverview();
     applyStationFilters();
   }
 
@@ -408,7 +412,7 @@
     document.getElementById('reset-filters')?.addEventListener('click', () => {
       state.privacy = 'all';
       state.device_type = 'all';
-      state.status = 'all';
+      state.status = 'Active';
       state.search = '';
       const desktop = document.getElementById('station-search');
       if (desktop) desktop.value = '';
@@ -433,7 +437,7 @@
     document.getElementById('reset-filters-mobile')?.addEventListener('click', () => {
       state.privacy = 'all';
       state.device_type = 'all';
-      state.status = 'all';
+      state.status = 'Active';
       renderFilterSelects();
     });
 

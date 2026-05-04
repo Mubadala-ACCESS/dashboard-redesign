@@ -48,13 +48,19 @@
 
       <div id="map"></div>
       <div class="map-help">Drag, zoom, and tap markers to open station views.</div>
+      <aside class="map-type-card" aria-label="Station type counts">
+        <h2>Station Types</h2>
+        <div class="legend-inline"></div>
+      </aside>
 
       <footer class="map-footer">
-        <span class="legend-inline">
-          <em class="dot active"></em> Active
-          <em class="dot maintenance"></em> Maintenance
-          <em class="dot private"></em> Private
-        </span>
+        <div class="map-overview" aria-label="Network overview">
+          <span class="overview-label">Overview</span>
+          <span class="overview-item overview-total"><em></em><strong id="overview-total">0</strong><small>Total Stations</small></span>
+          <span class="overview-item overview-active"><em></em><strong id="overview-active">0</strong><small>Active</small></span>
+          <span class="overview-item overview-maintenance"><em></em><strong id="overview-maintenance">0</strong><small>Under Maintenance</small></span>
+          <span class="overview-item overview-decommissioned"><em></em><strong id="overview-decommissioned">0</strong><small>Decommissioned</small></span>
+        </div>
       </footer>
     </section>
   </section>
