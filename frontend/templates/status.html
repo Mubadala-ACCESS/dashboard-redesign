@@ -16,7 +16,6 @@
     <article class="metric-card"><span>Total stations</span><strong id="status-total">{{ status_summary.total }}</strong><small>Stations in the monitored network.</small></article>
     <article class="metric-card"><span>Healthy</span><strong id="status-healthy">{{ status_summary.healthy }}</strong><small>No active issues in live checks or metadata status.</small></article>
     <article class="metric-card"><span>Maintenance</span><strong id="status-maintenance">{{ status_summary.maintenance }}</strong><small>Stations with stale data or detected issues.</small></article>
-    <article class="metric-card"><span>Disabled</span><strong id="status-disabled">{{ status_summary.disabled }}</strong><small>Hidden from default operational views without removing the station record.</small></article>
   </section>
 
   <section class="table-card status-table-card">
@@ -45,5 +44,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/status.js?v=status-visibility-1"></script>
+<script src="/static/js/status.js?v=hidden-statuses-1"></script>
 {% endblock %}

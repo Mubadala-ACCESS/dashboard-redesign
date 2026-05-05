@@ -41,7 +41,6 @@
   const STATUS_COLORS = {
     Active: '#0f766e',
     Maintenance: '#d97706',
-    Disabled: '#64748b',
     Unknown: '#94a3b8',
   };
 
@@ -151,7 +150,6 @@
     setCount('overview-total', stations.length);
     setCount('overview-active', stations.filter((station) => station.status === 'Active').length);
     setCount('overview-maintenance', stations.filter((station) => station.status === 'Maintenance').length);
-    setCount('overview-disabled', stations.filter((station) => station.status === 'Disabled').length);
   }
 
   function jitterStations(stations) {

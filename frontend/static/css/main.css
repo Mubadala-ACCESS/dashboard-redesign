@@ -348,7 +348,7 @@ img { max-width: 100%; }
   width: min(780px, calc(100% - 48px));
   min-height: 66px;
   display: grid;
-  grid-template-columns: max-content repeat(4, minmax(104px, 1fr));
+  grid-template-columns: max-content repeat(3, minmax(104px, 1fr));
   align-items: center;
   gap: 18px;
   padding: 12px 18px;
@@ -396,8 +396,7 @@ img { max-width: 100%; }
   line-height: 1.1;
 }
 .overview-active em,
-.overview-maintenance em,
-.overview-disabled em { background: var(--primary-strong); }
+.overview-maintenance em { background: var(--primary-strong); }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
 .dot.active { background: var(--success); }
 .dot.maintenance { background: var(--warning); }
@@ -547,7 +546,6 @@ img { max-width: 100%; }
 .status-pill.private { background: rgba(220, 38, 38, 0.1); color: var(--danger); }
 .status-pill.warning { background: rgba(217, 119, 6, 0.12); color: var(--warning); }
 .status-pill.subtle { background: rgba(98, 112, 132, 0.12); color: var(--muted); }
-.status-pill.disabled { background: rgba(91, 33, 182, 0.1); color: var(--primary-strong); }
 .side-kv { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); margin: 18px 0; }
 .side-kv div, .report-meta div, .report-kv-grid div { padding: 12px; border-radius: 14px; background: rgba(91, 33, 182, 0.06); }
 .side-kv span, .report-meta span, .report-kv-grid span { display: block; color: var(--muted); font-size: 0.8rem; margin-bottom: 4px; }
@@ -614,7 +612,8 @@ img { max-width: 100%; }
 .station-toolbar .fidas-clean-toggle input { accent-color: var(--primary); }
 .tab-panel { display: none; gap: 20px; }
 .tab-panel.is-active { display: grid; }
-.summary-grid, .status-summary-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.summary-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.status-summary-grid { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .station-page .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .quick-period-strip { display: flex; justify-content: space-between; align-items: center; gap: 14px; box-shadow: var(--shadow-sm); }
 .quick-period-strip span { color: var(--muted); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }

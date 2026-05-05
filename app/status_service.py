@@ -188,13 +188,9 @@ class StatusService:
     def _status_class(self, status: str) -> str:
         if status == 'Maintenance':
             return 'maintenance'
-        if status == 'Disabled':
-            return 'disabled'
         return ''
 
     def _summary_status(self, row_status: str, issues: List[str]) -> str:
-        if row_status == 'Disabled':
-            return 'disabled'
         if row_status == 'Maintenance' or issues:
             return 'maintenance'
         return 'healthy'
@@ -202,7 +198,7 @@ class StatusService:
     def _campaign_row(self, station: Dict[str, Any]) -> Dict[str, Any]:
         extent = self.repo.get_time_extent(station)
         status = station.get('status') or 'Available'
-        if status not in {'Active', 'Maintenance', 'Disabled'}:
+        if status not in {'Active', 'Maintenance'}:
             status = 'Active'
         if status == 'Maintenance':
             issues = ['Marked for maintenance in station metadata']
@@ -224,23 +220,6 @@ class StatusService:
         }
 
     def _live_row(self, station: Dict[str, Any]) -> Dict[str, Any]:
-        if station.get('status') == 'Disabled':
-            extent = self.repo.get_time_extent(station)
-            return {
-                'station_id': station['public_id'],
-                'public_id': station['public_id'],
-                'name': station['name'],
-                'device_type': station['device_type'],
-                'device_label': station['device_label'],
-                'group_order': self._type_rank(station['device_type']),
-                'group_label': self._type_label(station['device_type']),
-                'status': 'Disabled',
-                'status_class': 'disabled',
-                'last_update': extent.get('latest') or 'N/A',
-                'issues': [],
-                'issue_count': 0,
-            }
-
         collection_name, _ = self.repo._collection_for_station(station)
         record, _ = self._latest_record(collection_name) if collection_name else (None, None)
         record_ts, issues = self._issues_for_record(record, station)
@@ -263,20 +242,20 @@ class StatusService:
         }
 
     def network_status(self) -> Dict[str, Any]:
-        cache_key = 'network_status_all_types_v2'
+        cache_key = 'network_status_all_types_v3'
         cached = self.repo.cache.get(cache_key)
         if cached:
             return cached
 
         docs = list(
             self.db[self.settings.mongo_stations_info_collection].find(
-                {'status': {'$ne': self.repo.HIDDEN_STATION_STATUS}},
+                self.repo._visible_station_filter(),
                 self.repo.station_projection,
             )
         )
-        stations = [self.repo._normalize_station(doc) for doc in docs]
+        stations = [self.repo._normalize_station(doc) for doc in docs if not self.repo._is_hidden_station_doc(doc)]
         rows: List[Dict[str, Any]] = []
-        summary = {'total': 0, 'healthy': 0, 'maintenance': 0, 'disabled': 0}
+        summary = {'total': 0, 'healthy': 0, 'maintenance': 0}
 
         for station in stations:
             summary['total'] += 1

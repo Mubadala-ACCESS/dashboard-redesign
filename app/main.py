@@ -514,7 +514,7 @@ def create_app() -> FastAPI:
         search: str = Query(default=''),
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
-        key = f'map_stations:v2:{privacy}:{device_type}:{status}:{search.strip().lower()}'
+        key = f'map_stations:v3:{privacy}:{device_type}:{status}:{search.strip().lower()}'
         return cached_json_response(repo, key, lambda: repo.list_stations(privacy=privacy, device_type=device_type, status=status, search=search), ttl_seconds=10)
 
     @app.get('/api/status')
