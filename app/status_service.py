@@ -29,6 +29,15 @@ class StatusService:
         'JWCruise': 'Jaywun Cruises',
     }
     LIVE_TYPES = {'IoTBox', 'Meteorological', 'Fidas_Palas', 'Buoy'}
+    IOT_EXPECTED_SENSORS = {'air_sensor': 2, 'co2_sensor': 2, 'particulate_matter': 2}
+    AIR_FIELDS = ['humidity', 'temperature', 'pressure']
+    CO2_FIELDS = ['co2']
+    PM_FIELDS = ['PM1mass', 'PM2,5mass', 'PM10mass']
+    AIR_RANGES = {
+        'humidity': (0, 100, '%'),
+        'temperature': (-40, 85, 'deg C'),
+        'pressure': (300, 1100, 'hPa'),
+    }
 
     def __init__(self, repo: MongoDashboardRepository):
         self.repo = repo
@@ -110,21 +119,141 @@ class StatusService:
         except Exception:
             return None
 
+    def _format_list(self, values: List[str], connector: str = 'and') -> str:
+        if not values:
+            return ''
+        if len(values) == 1:
+            return values[0]
+        if len(values) == 2:
+            return f'{values[0]} {connector} {values[1]}'
+        return f'{", ".join(values[:-1])}, {connector} {values[-1]}'
+
+    def _field_label(self, key: str) -> str:
+        return {
+            'humidity': 'humidity',
+            'temperature': 'temperature',
+            'pressure': 'pressure',
+            'co2': 'CO2',
+            'PM1mass': 'PM1 mass',
+            'PM2,5mass': 'PM2.5 mass',
+            'PM10mass': 'PM10 mass',
+        }.get(key, key)
+
+    def _sensor_numbers(self, indices: List[int]) -> str:
+        return self._format_list([str(index + 1) for index in sorted(indices)])
+
+    def _sensor_value(self, record: Dict[str, Any], sensor_key: str, index: int, field: str) -> Any:
+        node = record.get(f'{sensor_key}+{index}')
+        if not isinstance(node, dict):
+            return None
+        return node.get(field)
+
+    def _missing_sensor_fields(self, record: Dict[str, Any], sensor_key: str, fields: List[str], count: int) -> Dict[int, List[str]]:
+        missing: Dict[int, List[str]] = {}
+        for index in range(count):
+            node = record.get(f'{sensor_key}+{index}')
+            if not isinstance(node, dict):
+                missing[index] = list(fields)
+                continue
+            fields_missing = [field for field in fields if self._value_missing(node.get(field))]
+            if fields_missing:
+                missing[index] = fields_missing
+        return missing
+
+    def _expected_sensor_count(self, station: Dict[str, Any], sensor_key: str) -> int:
+        try:
+            configured = int((station.get('sensors') or {}).get(sensor_key) or 0)
+        except Exception:
+            configured = 0
+        return max(configured, self.IOT_EXPECTED_SENSORS.get(sensor_key, 0))
+
+    def _co2_sensor_issues(self, record: Dict[str, Any], station: Dict[str, Any]) -> List[str]:
+        count = self._expected_sensor_count(station, 'co2_sensor')
+        if count <= 0:
+            return []
+        missing = self._missing_sensor_fields(record, 'co2_sensor', self.CO2_FIELDS, count)
+        missing_indices = [index for index, fields in missing.items() if set(fields) == set(self.CO2_FIELDS)]
+        if not missing_indices:
+            return []
+        plural = 's' if len(missing_indices) > 1 else ''
+        verb = 'are' if len(missing_indices) > 1 else 'is'
+        return [f'CO2 sensor{plural} {self._sensor_numbers(missing_indices)} {verb} not sending data.']
+
+    def _air_sensor_issues(self, record: Dict[str, Any], station: Dict[str, Any]) -> List[str]:
+        count = self._expected_sensor_count(station, 'air_sensor')
+        if count <= 0:
+            return []
+
+        issues: List[str] = []
+        missing = self._missing_sensor_fields(record, 'air_sensor', self.AIR_FIELDS, count)
+        fully_missing = [index for index, fields in missing.items() if set(fields) == set(self.AIR_FIELDS)]
+        partial_missing = {index: fields for index, fields in missing.items() if index not in fully_missing}
+        if fully_missing:
+            fields_text = self._format_list([self._field_label(field) for field in self.AIR_FIELDS], connector='or')
+            if len(fully_missing) == count:
+                issues.append(f'Air sensors {self._sensor_numbers(fully_missing)} are not sending {fields_text} data; both BME280 sensors are not reporting.')
+            else:
+                number_text = self._sensor_numbers(fully_missing)
+                if len(fully_missing) > 1:
+                    issues.append(f'Air sensors {number_text} are not sending {fields_text} data.')
+                else:
+                    issues.append(f'Air sensor {number_text} is not sending {fields_text} data.')
+        for index, fields in sorted(partial_missing.items()):
+            fields_text = self._format_list([self._field_label(field) for field in fields])
+            issues.append(f'Air sensor {index + 1} is not sending {fields_text} data.')
+
+        invalids: Dict[int, List[str]] = {}
+        for index in range(count):
+            if index in fully_missing:
+                continue
+            for field, (low, high, unit) in self.AIR_RANGES.items():
+                value = self._sensor_value(record, 'air_sensor', index, field)
+                if self._value_missing(value):
+                    continue
+                try:
+                    numeric = float(value)
+                except Exception:
+                    invalids.setdefault(index, []).append(f'{self._field_label(field)} is not numeric')
+                    continue
+                if numeric < low or numeric > high:
+                    invalids.setdefault(index, []).append(f'{self._field_label(field)} {numeric:g} {unit}')
+        for index, values in sorted(invalids.items()):
+            issues.append(f'Air sensor {index + 1} is reporting impossible values: {self._format_list(values)}.')
+        return issues
+
+    def _pm_sensor_issues(self, record: Dict[str, Any], station: Dict[str, Any]) -> List[str]:
+        count = self._expected_sensor_count(station, 'particulate_matter')
+        if count <= 0:
+            return []
+        missing = self._missing_sensor_fields(record, 'particulate_matter', self.PM_FIELDS, count)
+        issues: List[str] = []
+        for index, fields in sorted(missing.items()):
+            fields_text = self._format_list([self._field_label(field) for field in fields])
+            issues.append(f'Particulate matter sensor {index + 1} is not sending {fields_text} data.')
+        return issues
+
+    def _iot_sensor_issues(self, record: Dict[str, Any], station: Dict[str, Any]) -> List[str]:
+        return [
+            *self._co2_sensor_issues(record, station),
+            *self._air_sensor_issues(record, station),
+            *self._pm_sensor_issues(record, station),
+        ]
+
     def _check_drift(self, record: Dict[str, Any], station: Dict[str, Any], issues: List[str]) -> None:
         if station['device_type'] != 'IoTBox':
             return
         threshold = 5.0
-        air = record.get('air_sensor')
-        if isinstance(air, list) and len(air) >= 2 and isinstance(air[0], dict) and isinstance(air[1], dict):
+        air = [record.get('air_sensor+0'), record.get('air_sensor+1')]
+        if isinstance(air[0], dict) and isinstance(air[1], dict):
             for key in ('humidity', 'temperature', 'pressure'):
                 diff = self._percent_diff(air[0].get(key), air[1].get(key))
                 if diff is not None and diff > threshold:
-                    issues.append(f'Drift in {key}: {diff:.1f}%')
-        co2 = record.get('co2_sensor')
-        if isinstance(co2, list) and len(co2) >= 2 and isinstance(co2[0], dict) and isinstance(co2[1], dict):
+                    issues.append(f'Potential sensor drift: air sensor 1 and 2 {self._field_label(key)} readings differ by {diff:.1f}%.')
+        co2 = [record.get('co2_sensor+0'), record.get('co2_sensor+1')]
+        if isinstance(co2[0], dict) and isinstance(co2[1], dict):
             diff = self._percent_diff(co2[0].get('co2'), co2[1].get('co2'))
             if diff is not None and diff > threshold:
-                issues.append(f'Drift in CO2: {diff:.1f}%')
+                issues.append(f'Potential sensor drift: CO2 sensor 1 and 2 readings differ by {diff:.1f}%.')
 
     def _null_fields(self, record: Dict[str, Any]) -> List[str]:
         ignore = set(self.TS_CANDIDATES + ['_id'])
@@ -152,7 +281,7 @@ class StatusService:
     def _issues_for_record(self, record: Optional[Dict[str, Any]], station: Dict[str, Any]) -> Tuple[Optional[datetime], List[str]]:
         issues: List[str] = []
         if not record:
-            return None, ['No records found']
+            return None, ['No records were found in the station collection.']
 
         ts_value = None
         for field in self.TS_CANDIDATES:
@@ -161,17 +290,20 @@ class StatusService:
                 break
         record_ts = self._parse_ts(ts_value)
         if record_ts is None:
-            issues.append('Missing or invalid timestamp')
+            issues.append('The latest record has no readable timestamp, so data freshness cannot be verified.')
         else:
             age = self._now_utc() - record_ts
             threshold = timedelta(hours=self.settings.stale_threshold_hours)
             if age > threshold:
-                issues.append(f'Stale data: {int(age.total_seconds() // 60)} minutes old')
+                issues.append(f'Latest data: {self.repo._human_dt(record_ts)}. This station has not reported within the past {self.settings.stale_threshold_hours} hours.')
 
-        nulls = self._null_fields(record)
-        if nulls:
-            preview = ', '.join(nulls[:8])
-            issues.append(f'Null fields: {preview}' + ('...' if len(nulls) > 8 else ''))
+        if station['device_type'] == 'IoTBox':
+            issues.extend(self._iot_sensor_issues(record, station))
+        else:
+            nulls = self._null_fields(record)
+            if nulls:
+                preview = ', '.join(nulls[:8])
+                issues.append(f'Some latest-record fields are missing values: {preview}' + ('...' if len(nulls) > 8 else ''))
 
         self._check_drift(record, station, issues)
         return record_ts, issues
@@ -201,7 +333,7 @@ class StatusService:
         if status not in {'Active', 'Maintenance'}:
             status = 'Active'
         if status == 'Maintenance':
-            issues = ['Marked for maintenance in station metadata']
+            issues = ['Station metadata marks this station as maintenance.']
         else:
             issues = []
         return {
@@ -223,8 +355,6 @@ class StatusService:
         collection_name, _ = self.repo._collection_for_station(station)
         record, _ = self._latest_record(collection_name) if collection_name else (None, None)
         record_ts, issues = self._issues_for_record(record, station)
-        if station.get('status') == 'Maintenance' and 'Marked for maintenance in station metadata' not in issues:
-            issues.append('Marked for maintenance in station metadata')
         computed_status = 'Maintenance' if issues else 'Active'
         return {
             'station_id': station['public_id'],
@@ -242,7 +372,7 @@ class StatusService:
         }
 
     def network_status(self) -> Dict[str, Any]:
-        cache_key = 'network_status_all_types_v3'
+        cache_key = 'network_status_all_types_v6'
         cached = self.repo.cache.get(cache_key)
         if cached:
             return cached

@@ -7,7 +7,7 @@
       ? row.issues
           .map((issue, index) => `
             <article class="issue-item">
-              <strong>Issue ${index + 1}</strong>
+              <strong>${row.issues.length === 1 ? 'Issue' : `Issue ${index + 1}`}</strong>
               <div>${App.escapeHtml(issue)}</div>
             </article>
           `)
@@ -20,7 +20,7 @@
           <div>
             <span class="eyebrow">Station issues</span>
             <h2>${App.escapeHtml(row.name)}</h2>
-            <p>${App.escapeHtml(row.device_label)} · ${App.escapeHtml(row.status)} · Last update ${App.escapeHtml(row.last_update)}</p>
+            <p>${App.escapeHtml(row.device_label)} &middot; ${App.escapeHtml(row.status)} &middot; Last update ${App.escapeHtml(row.last_update)}</p>
           </div>
           <button class="ghost-button" data-close-modal>Close</button>
         </header>
@@ -45,7 +45,7 @@
 
   function issueCell(row) {
     return row.issues.length
-      ? `<button class="ghost-button status-issues-button" type="button" data-row="${encodeURIComponent(JSON.stringify(row))}">View ${row.issue_count} issue${row.issue_count === 1 ? '' : 's'}</button>`
+      ? `<button class="ghost-button status-issues-button" type="button" data-row="${encodeURIComponent(JSON.stringify(row))}">${row.issue_count === 1 ? 'View issue' : `View ${row.issue_count} issues`}</button>`
       : '<span class="table-meta">No issues</span>';
   }
 
