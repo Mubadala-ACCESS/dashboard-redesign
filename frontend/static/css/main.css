@@ -613,7 +613,7 @@ img { max-width: 100%; }
 .tab-panel { display: none; gap: 20px; }
 .tab-panel.is-active { display: grid; }
 .summary-grid { display: grid; gap: 16px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.status-summary-grid { display: grid; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.status-summary-grid { display: grid; width: 100%; gap: 16px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .station-page .summary-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .quick-period-strip { display: flex; justify-content: space-between; align-items: center; gap: 14px; box-shadow: var(--shadow-sm); }
 .quick-period-strip span { color: var(--muted); font-size: 0.76rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
@@ -879,7 +879,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .advanced-left-rail { position: static; }
   .advanced-controls__grid { grid-template-columns: 1fr; }
   .sensor-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .summary-grid, .status-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .event-panel, .page-hero.compact-hero { grid-template-columns: 1fr; }
   .glossary-grid, .support-grid { grid-template-columns: 1fr; }
   .guide-steps, .guide-family-grid, .heat-index-grid, .metadata-term-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -919,7 +919,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .topnav { gap: 4px; overflow-x: auto; scrollbar-width: none; }
   .topnav::-webkit-scrollbar { display: none; }
   .topnav a { white-space: nowrap; font-size: 0.84rem; padding: 8px 10px; }
-  .side-kv, .drawer-kv, .drawer-metrics, .summary-grid, .status-summary-grid { grid-template-columns: 1fr; }
+  .side-kv, .drawer-kv, .drawer-metrics, .summary-grid { grid-template-columns: 1fr; }
   .station-page .summary-grid { grid-template-columns: 1fr; }
   .sensor-comparison-grid, .sensor-readout-row, .sensor-comparison-card__stats { grid-template-columns: 1fr; }
   .spectra-controls { grid-template-columns: 1fr; }
