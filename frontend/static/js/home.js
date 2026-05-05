@@ -20,6 +20,7 @@
     markers: null,
     allStations: [],
     stations: [],
+    statusSummary: null,
     selectedStationId: null,
     loadRequestId: 0,
     fitToken: 0,
@@ -143,13 +144,14 @@
 
   function updateOverview() {
     const stations = state.allStations || [];
+    const summary = state.statusSummary || {};
     const setCount = (id, value) => {
       const el = document.getElementById(id);
       if (el) el.textContent = String(value);
     };
-    setCount('overview-total', stations.length);
-    setCount('overview-active', stations.filter((station) => station.status === 'Active').length);
-    setCount('overview-maintenance', stations.filter((station) => station.status === 'Maintenance').length);
+    setCount('overview-total', summary.total ?? stations.length);
+    setCount('overview-active', summary.healthy ?? stations.filter((station) => station.status === 'Active').length);
+    setCount('overview-maintenance', summary.maintenance ?? stations.filter((station) => station.status === 'Maintenance').length);
   }
 
   function jitterStations(stations) {
@@ -362,9 +364,13 @@
   async function loadStations() {
     const requestId = ++state.loadRequestId;
     const url = new URL('/api/map/stations', window.location.origin);
-    const payload = await App.fetchJSON(url.toString());
+    const [payload, statusPayload] = await Promise.all([
+      App.fetchJSON(url.toString()),
+      App.fetchJSON('/api/status/summary', { redirectOnAuth: false }).catch(() => null),
+    ]);
     if (requestId !== state.loadRequestId) return;
     state.allStations = payload.stations || [];
+    state.statusSummary = statusPayload?.summary || null;
     updateOverview();
     applyStationFilters();
   }
