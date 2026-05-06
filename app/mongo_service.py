@@ -61,7 +61,7 @@ class MongoDashboardRepository:
     }
     SPECIAL_REALTIME_TYPES = {'IoTBox', 'Meteorological', 'Buoy', 'Fidas_Palas'}
     TIME_SERIES_TYPES = SPECIAL_REALTIME_TYPES | {'underwater_probe'}
-    DOCUMENT_METRIC_EXCLUDES = {'_id', 'datetime', 'Timestamp', 'ts', 'sizes', 'spectra', 'meta'}
+    DOCUMENT_METRIC_EXCLUDES = {'_id', 'datetime', 'Timestamp', 'ts', 'sizes', 'spectra', 'meta', 'profile_ID', 'CRC'}
     METEO_METRIC_PRIORITY = [
         'S2_TA[C]', 'S2_RH[%]', 'S2_PA', 'S2_WS[M/S]', 'S2_WD', 'S1_RAD', 'S2_PREC[MM]', 'S2_DP[C]',
     ]
@@ -79,6 +79,51 @@ class MongoDashboardRepository:
     BUOY_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2', 'chlorophyll', 'salinity_practical', 'density']
     BUOY_DEFAULT_SCALAR_PARAMS = ['wind_speed', 'air_temp', 'barometric_pressure']
     BUOY_DEFAULT_PROFILE_PARAMS = ['CTD_tmp', 'conductivity', 'O2']
+    SPOTTER_BUOY_COLLECTION = 'buoy_samples'
+    SPOTTER_BUOY_REGISTRY_COLLECTION = 'buoy_column_registry'
+    SPOTTER_BUOY_METRIC_PRIORITY = [
+        'significant_wave_height_m',
+        'peak_period_s',
+        'mean_period_s',
+        'peak_direction_deg',
+        'mean_direction_deg',
+        'mean_directional_spread_deg',
+        'wind_speed_m_s',
+        'wind_direction_deg',
+        'surface_temperature_c',
+        'mean_barometric_pressure_hpa',
+        'humidity_pct',
+        'battery_voltage_v',
+        'battery_power_w',
+        'wind_speed',
+        'wind_direction',
+        'air_temp',
+        'barometric_pressure',
+        'albedo',
+    ]
+    SPOTTER_BUOY_LABEL_OVERRIDES = {
+        'significant_wave_height_m': 'Significant Wave Height (m)',
+        'peak_period_s': 'Peak Period (s)',
+        'mean_period_s': 'Mean Period (s)',
+        'peak_direction_deg': 'Peak Wave Direction (deg)',
+        'peak_directional_spread_deg': 'Peak Directional Spread (deg)',
+        'mean_direction_deg': 'Mean Wave Direction (deg)',
+        'mean_directional_spread_deg': 'Mean Directional Spread (deg)',
+        'wind_speed_m_s': 'Wind Speed (m/s)',
+        'wind_direction_deg': 'Wind Direction (deg)',
+        'surface_temperature_c': 'Surface Temperature (C)',
+        'mean_barometric_pressure_hpa': 'Mean Barometric Pressure (hPa)',
+        'humidity_pct': 'Humidity (%)',
+        'battery_voltage_v': 'Battery Voltage (V)',
+        'battery_power_w': 'Battery Power (W)',
+        'latitude': 'Latitude',
+        'longitude': 'Longitude',
+        'wind_speed': 'Wind Speed (m/s)',
+        'wind_direction': 'Wind Direction (deg)',
+        'air_temp': 'Air Temperature (C)',
+        'barometric_pressure': 'Barometric Pressure (hPa)',
+        'albedo': 'Albedo',
+    }
     UNDERWATER_METRIC_PRIORITY = [
         'temp_c', 'c_field',
         'salinity_psu', 'sal_psu_field',
@@ -340,6 +385,10 @@ class MongoDashboardRepository:
             'location': 1,
             'model': 1,
             'last_calibration': 1,
+            'provider': 1,
+            'hull_type': 1,
+            'spotter_id': 1,
+            'sampling': 1,
         }
 
     # ------------------------------------------------------------------
@@ -434,6 +483,10 @@ class MongoDashboardRepository:
                 self.db[collection_name].create_index([('errors', ASCENDING), ('PM1', ASCENDING), (time_field, ASCENDING)], background=True, name='errors_pm1_datetime_1')
             if collection_name == self.settings.mongo_buoy_collection:
                 self.db[collection_name].create_index([(time_field, ASCENDING), ('depth', ASCENDING)], background=True)
+            if collection_name == self._spotter_samples_collection():
+                self.db[collection_name].create_index([('meta.station_id', ASCENDING), (time_field, ASCENDING)], background=True)
+                self.db[collection_name].create_index([('meta.spotter_id', ASCENDING), (time_field, ASCENDING)], background=True)
+                self.db[collection_name].create_index([('meta.provider', ASCENDING), (time_field, ASCENDING)], background=True)
             self.cache.set(cache_key, True, ttl_seconds=3600)
         except Exception:
             self.cache.set(cache_key, False, ttl_seconds=60)
@@ -493,7 +546,7 @@ class MongoDashboardRepository:
         public_id = payload.get('public_id') or self._public_station_id(str(payload.get('station_id', 'station')), payload.get('name'))
         payload['station_id'] = public_id
         payload['public_id'] = public_id
-        for key in ('mongo_id', 'collection_name', 'sensors', 'station_num'):
+        for key in ('mongo_id', 'collection_name', 'sensors', 'station_num', 'spotter_id'):
             payload.pop(key, None)
         return payload
 
@@ -512,7 +565,7 @@ class MongoDashboardRepository:
             value = self._public_station_payload(value)
         output: Dict[str, Any] = {}
         for key, item in value.items():
-            if key in {'mongo_id', 'collection_name', 'sensors', 'station_num'}:
+            if key in {'mongo_id', 'collection_name', 'sensors', 'station_num', 'spotter_id'}:
                 continue
             if key == 'station' and isinstance(item, dict):
                 output[key] = self._public_station_payload(item)
@@ -547,7 +600,89 @@ class MongoDashboardRepository:
             'location_text': doc.get('location') or 'Abu Dhabi',
             'model': doc.get('model'),
             'last_calibration': doc.get('last_calibration'),
+            'provider': doc.get('provider'),
+            'hull_type': doc.get('hull_type'),
+            'spotter_id': doc.get('spotter_id'),
+            'sampling': doc.get('sampling'),
         }
+
+    def _is_spotter_buoy(self, station: Dict[str, Any]) -> bool:
+        if station.get('device_type') != 'Buoy':
+            return False
+        provider = str(station.get('provider') or '').strip().lower()
+        hull_type = str(station.get('hull_type') or '').strip().lower()
+        station_id = str(station.get('station_id') or '').strip().upper()
+        configured_station_id = str(getattr(self.settings, 'sofar_station_id', '') or '').strip().upper()
+        name = str(station.get('name') or '').strip().lower()
+        return (
+            provider == 'sofar'
+            or hull_type == 'spotter'
+            or (configured_station_id and station_id == configured_station_id)
+            or station_id.startswith('BUOY_NYUAD')
+            or 'spotter' in name
+        )
+
+    def _spotter_samples_collection(self) -> str:
+        return str(getattr(self.settings, 'sofar_samples_collection', '') or self.SPOTTER_BUOY_COLLECTION)
+
+    def _spotter_registry_collection(self) -> str:
+        return str(getattr(self.settings, 'sofar_column_registry_collection', '') or self.SPOTTER_BUOY_REGISTRY_COLLECTION)
+
+    def _spotter_station_ids(self, station: Dict[str, Any]) -> List[str]:
+        candidates = [
+            station.get('station_id'),
+            getattr(self.settings, 'sofar_station_id', None),
+        ]
+        station_ids: List[str] = []
+        for value in candidates:
+            station_id = str(value or '').strip().upper()
+            if not station_id or '-' in station_id:
+                continue
+            if station_id not in station_ids:
+                station_ids.append(station_id)
+        return station_ids
+
+    def _spotter_spotter_ids(self, station: Dict[str, Any]) -> List[str]:
+        candidates = [
+            station.get('spotter_id'),
+            getattr(self.settings, 'sofar_spotter_id', None),
+        ]
+        spotter_ids: List[str] = []
+        for value in candidates:
+            spotter_id = str(value or '').strip().upper()
+            if not spotter_id:
+                continue
+            if spotter_id not in spotter_ids:
+                spotter_ids.append(spotter_id)
+        return spotter_ids
+
+    def _station_data_filter(self, station: Dict[str, Any]) -> Dict[str, Any]:
+        if self._is_spotter_buoy(station):
+            clauses: List[Dict[str, Any]] = []
+            for station_id in self._spotter_station_ids(station):
+                clauses.extend([
+                    {'meta.station_id': station_id},
+                    {'station_id': station_id},
+                ])
+            for spotter_id in self._spotter_spotter_ids(station):
+                clauses.extend([
+                    {'meta.spotter_id': spotter_id},
+                    {'spotter_id': spotter_id},
+                ])
+            if clauses:
+                return {'$or': clauses}
+            return {'meta.provider': 'sofar'}
+        return {}
+
+    def _with_station_data_filter(self, station: Dict[str, Any], query: Dict[str, Any]) -> Dict[str, Any]:
+        station_filter = self._station_data_filter(station)
+        if not station_filter:
+            return dict(query)
+        merged = dict(query)
+        if any(key in merged for key in station_filter):
+            return {'$and': [merged, station_filter]}
+        merged.update(station_filter)
+        return merged
 
     def _is_hidden_station_doc(self, doc: Optional[Dict[str, Any]]) -> bool:
         hidden = {item.lower() for item in self.HIDDEN_STATION_STATUSES}
@@ -748,6 +883,8 @@ class MongoDashboardRepository:
         device_type = station.get('device_type')
         if device_type == 'Meteorological' or station_num == 5463:
             return self.settings.mongo_meteo_collection, 'Timestamp'
+        if self._is_spotter_buoy(station):
+            return self._spotter_samples_collection(), 'ts'
         if device_type == 'Buoy' or station_num == 8394:
             return self.settings.mongo_buoy_collection, 'datetime'
         if device_type == 'Fidas_Palas' or station_num == 100:
@@ -908,8 +1045,9 @@ class MongoDashboardRepository:
 
         self._ensure_time_index(collection_name, time_field)
         collection = self.db[collection_name]
-        first = collection.find_one({time_field: {'$exists': True}}, sort=[(time_field, ASCENDING)], projection={time_field: 1})
-        last = collection.find_one({time_field: {'$exists': True}}, sort=[(time_field, DESCENDING)], projection={time_field: 1})
+        query = self._with_station_data_filter(station, {time_field: {'$exists': True}})
+        first = collection.find_one(query, sort=[(time_field, ASCENDING)], projection={time_field: 1})
+        last = collection.find_one(query, sort=[(time_field, DESCENDING)], projection={time_field: 1})
         payload = {
             'earliest': self._human_dt_for_station(station, first.get(time_field) if first else None) if first else None,
             'latest': self._human_dt_for_station(station, last.get(time_field) if last else None) if last else None,
@@ -929,7 +1067,8 @@ class MongoDashboardRepository:
             self.cache.set(cache_key, None, ttl_seconds=30)
             return None
         self._ensure_time_index(collection_name, time_field)
-        document = self.db[collection_name].find_one({}, projection=projection, sort=[(time_field, DESCENDING)])
+        query = self._with_station_data_filter(station, {})
+        document = self.db[collection_name].find_one(query, projection=projection, sort=[(time_field, DESCENDING)])
         self.cache.set(cache_key, document, ttl_seconds=30)
         return document
 
@@ -1092,6 +1231,8 @@ class MongoDashboardRepository:
             if key.startswith('PM') and any(char.isdigit() for char in key):
                 return f'{key} (µg/m³)'
             return self._pretty_metric_label(key)
+        if self._is_spotter_buoy(station):
+            return self.SPOTTER_BUOY_LABEL_OVERRIDES.get(key, self._pretty_metric_label(key))
         if station['device_type'] == 'underwater_probe':
             return self.UNDERWATER_LABEL_OVERRIDES.get(key, self._pretty_metric_label(key))
         return self._metric_key_to_label(station, key)
@@ -1101,6 +1242,8 @@ class MongoDashboardRepository:
             priority = self.METEO_METRIC_PRIORITY
         elif station['device_type'] == 'Fidas_Palas':
             priority = self.FIDAS_METRIC_PRIORITY
+        elif self._is_spotter_buoy(station):
+            priority = self.SPOTTER_BUOY_METRIC_PRIORITY
         elif station['device_type'] == 'underwater_probe':
             priority = self.UNDERWATER_METRIC_PRIORITY
         else:
@@ -1116,7 +1259,7 @@ class MongoDashboardRepository:
         )
 
     def _document_metric_map(self, station: Dict[str, Any], collection_name: str, time_field: str) -> Dict[str, str]:
-        cache_key = f'document_metrics:{station["device_type"]}:{collection_name}:{time_field}'
+        cache_key = f'document_metrics:{station["station_id"]}:{station["device_type"]}:{collection_name}:{time_field}'
         cached = self.cache.get(cache_key)
         if cached:
             return cached
@@ -1124,7 +1267,7 @@ class MongoDashboardRepository:
             return {}
         self._ensure_time_index(collection_name, time_field)
         collection = self.db[collection_name]
-        query = {time_field: {'$exists': True}}
+        query = self._with_station_data_filter(station, {time_field: {'$exists': True}})
         discovered: List[str] = []
         seen: set[str] = set()
         for doc in collection.find(query).sort(time_field, DESCENDING).limit(200):
@@ -1137,7 +1280,30 @@ class MongoDashboardRepository:
         self.cache.set(cache_key, metric_map, ttl_seconds=300)
         return metric_map
 
+    def _spotter_buoy_metric_map(self, station: Dict[str, Any]) -> Dict[str, str]:
+        cache_key = f'spotter_buoy_metrics:{station["station_id"]}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return cached
+        metric_map = self._document_metric_map(station, self._spotter_samples_collection(), 'ts')
+        registry_collection = self._spotter_registry_collection()
+        if not metric_map and self._collection_exists(registry_collection):
+            discovered = [
+                doc.get('target_field')
+                for doc in self.db[registry_collection].find(
+                    {'provider': 'sofar', 'target_field': {'$exists': True}},
+                    {'_id': 0, 'target_field': 1},
+                )
+                if doc.get('target_field')
+            ]
+            ordered = self._ordered_document_metrics(station, dict.fromkeys(discovered).keys())
+            metric_map = {key: self._document_metric_label(station, key) for key in ordered}
+        self.cache.set(cache_key, metric_map, ttl_seconds=300)
+        return metric_map
+
     def _buoy_label_map(self, station: Dict[str, Any]) -> Dict[str, str]:
+        if self._is_spotter_buoy(station):
+            return self._spotter_buoy_metric_map(station)
         params = self.BUOY_SCALAR_PARAMS + self.BUOY_PROFILE_PARAMS
         return {metric: self._metric_key_to_label(station, metric) for metric in params}
 
@@ -1274,6 +1440,8 @@ class MongoDashboardRepository:
             }
             return fidas_map.get(key, key)
         if station['device_type'] == 'Buoy':
+            if self._is_spotter_buoy(station):
+                return self.SPOTTER_BUOY_LABEL_OVERRIDES.get(key, self._pretty_metric_label(key))
             buoy_map = {
                 'wind_speed': 'Wind Speed (m/s)',
                 'wind_direction': 'Wind Direction (°)',
@@ -1322,6 +1490,14 @@ class MongoDashboardRepository:
             return 'pH'
         if 'depth' in low:
             return 'Depth'
+        if 'wave height' in low:
+            return 'Wave Height'
+        if 'period' in low:
+            return 'Wave Period'
+        if 'wave direction' in low or 'directional' in low:
+            return 'Wave Direction'
+        if 'battery' in low:
+            return 'Battery'
         return label
 
     def _default_metrics(self, available_map: Dict[str, str], limit: int = 6) -> List[str]:
@@ -1359,6 +1535,9 @@ class MongoDashboardRepository:
                     selected.append(key)
             return selected or self._default_metrics(available)
         if station['device_type'] == 'Buoy':
+            if self._is_spotter_buoy(station):
+                selected = [key for key in self.SPOTTER_BUOY_METRIC_PRIORITY if key in available]
+                return (selected or self._default_metrics(available, limit=6))[:6]
             return [key for key in self.BUOY_SCALAR_PARAMS if key in available]
         if station['device_type'] == 'underwater_probe':
             selected: List[str] = []
@@ -1460,7 +1639,7 @@ class MongoDashboardRepository:
                 }
             }
         pipeline = [
-            {'$match': {time_field: {'$exists': True}}},
+            {'$match': self._with_station_data_filter(station, {time_field: {'$exists': True}})},
             {'$project': {
                 'date': {
                     '$dateToString': {
@@ -1713,7 +1892,10 @@ class MongoDashboardRepository:
             for metric in metrics
         }
 
-        query = self._base_query_for_station_window(station, period, time_field, start_date, end_date)
+        query = self._with_station_data_filter(
+            station,
+            self._base_query_for_station_window(station, period, time_field, start_date, end_date),
+        )
         projection = {'_id': 0, time_field: 1}
         for metric in metrics:
             for source_metric in metric_sources[metric]:
@@ -1877,6 +2059,28 @@ class MongoDashboardRepository:
         return self._document_dataframe(station, collection_name, time_field, metrics, period, aggregation, start_date=start_date, end_date=end_date, display_points=display_points)
 
     def _buoy_dataframe(self, station: Dict[str, Any], metrics: List[str], period: str, aggregation: str, start_date: Optional[str] = None, end_date: Optional[str] = None, display_points: Optional[int] = MAX_CHART_POINTS) -> Tuple[pd.DataFrame, Dict[str, str], List[Dict[str, Any]]]:
+        if self._is_spotter_buoy(station):
+            collection_name, time_field = self._collection_for_station(station)
+            if not collection_name or not time_field:
+                return pd.DataFrame(), self._spotter_buoy_metric_map(station), []
+            if not metrics:
+                available = self._spotter_buoy_metric_map(station)
+                metrics = [key for key in self.SPOTTER_BUOY_METRIC_PRIORITY if key in available][:3]
+                if not metrics:
+                    metrics = self._default_metrics(available, limit=3)
+            df, label_map = self._document_dataframe(
+                station,
+                collection_name,
+                time_field,
+                metrics,
+                period,
+                aggregation,
+                start_date=start_date,
+                end_date=end_date,
+                display_points=display_points,
+            )
+            return df, label_map, []
+
         scalar_params = self.BUOY_SCALAR_PARAMS
         profile_params = self.BUOY_PROFILE_PARAMS
         label_map = {metric: self._metric_key_to_label(station, metric) for metric in scalar_params + profile_params}
@@ -1937,6 +2141,19 @@ class MongoDashboardRepository:
                 'charts': [],
                 'message': 'Profile charts are only available for buoy stations.',
             }
+        if self._is_spotter_buoy(station):
+            payload = {
+                'station': station,
+                'period': self._window_label(period, start_date, end_date),
+                'start_date': start_date,
+                'end_date': end_date,
+                'metrics': [],
+                'available_metrics': [],
+                'charts': [],
+                'message': 'Spotter buoys report wave and surface telemetry; vertical profile charts are not available.',
+            }
+            self.cache.set(cache_key, payload, ttl_seconds=60)
+            return payload
 
         label_map = {metric: self._metric_key_to_label(station, metric) for metric in self.BUOY_PROFILE_PARAMS}
         default_profile_metrics = [metric for metric in self.BUOY_DEFAULT_PROFILE_PARAMS if metric in label_map]
@@ -2057,6 +2274,9 @@ class MongoDashboardRepository:
             return payload
 
         if df.empty:
+            message = 'No data was available for the selected time range.'
+            if self._is_spotter_buoy(station):
+                message = 'No Sofar Spotter buoy samples are currently loaded for this station.'
             payload = {
                 'station': station,
                 'period': period_label,
@@ -2069,7 +2289,7 @@ class MongoDashboardRepository:
                 'charts': [],
                 'table': [],
                 'events': [],
-                'message': 'No data was available for the selected time range.',
+                'message': message,
                 **extra,
             }
             if cache_key:
@@ -4149,10 +4369,12 @@ class MongoDashboardRepository:
             'trend_aggregation': aggregation,
             'supports_sensor_trends': station['device_type'] == 'IoTBox',
             'card_mode': 'statistics' if station['device_type'] == 'underwater_probe' else 'current',
+            'available_metrics': timeseries.get('available_metrics') or self._metric_options(station, self._available_metric_map(station)),
             'cards': cards,
             'trends': trends,
             'events': timeseries.get('events', []),
             'latest_table': [],
+            'message': timeseries.get('message'),
         }
         self.cache.set(cache_key, payload, ttl_seconds=30)
         return payload
@@ -4355,7 +4577,7 @@ class MongoDashboardRepository:
         end_date: Optional[str] = None,
     ) -> Optional[Iterable[str]]:
         device_type = station.get('device_type')
-        if device_type not in {'Fidas_Palas', 'Meteorological', 'underwater_probe'}:
+        if device_type not in {'Fidas_Palas', 'Meteorological', 'underwater_probe'} and not self._is_spotter_buoy(station):
             return None
         collection_name, time_field = self._collection_for_station(station)
         if not collection_name or not time_field or not self._collection_exists(collection_name):
@@ -4373,7 +4595,10 @@ class MongoDashboardRepository:
             for metric in selected
         }
 
-        query = self._base_query_for_station_window(station, period, time_field, start_date, end_date)
+        query = self._with_station_data_filter(
+            station,
+            self._base_query_for_station_window(station, period, time_field, start_date, end_date),
+        )
         projection: Dict[str, int] = {'_id': 0, time_field: 1}
         for metric in selected:
             for source_metric in metric_sources[metric]:

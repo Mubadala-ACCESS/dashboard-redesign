@@ -643,7 +643,8 @@
     if (label) label.textContent = period;
     if (!payload.cards?.length) {
       const heading = isUnderwaterStation() ? 'No statistics available' : 'No current readings';
-      container.innerHTML = `<article class="empty-state"><h2>${heading}</h2><p>No data was available for the selected display period.</p></article>`;
+      const message = payload.message || 'No data was available for the selected display period.';
+      container.innerHTML = `<article class="empty-state"><h2>${heading}</h2><p>${App.escapeHtml(message)}</p></article>`;
       renderQuickTrends(payload);
       return;
     }
