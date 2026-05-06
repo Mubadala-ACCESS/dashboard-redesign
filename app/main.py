@@ -601,13 +601,14 @@ def create_app() -> FastAPI:
         metrics: Optional[str] = Query(default=None, description='Pipe- or comma-separated metric keys'),
         split_sensors: bool = Query(default=False),
         clean: bool = Query(default=False),
+        display_points: int = Query(default=720, ge=120, le=720),
         repo: MongoDashboardRepository = Depends(get_repo),
         auth: AuthService = Depends(get_auth_service),
     ):
         metric_list = parse_metric_list(metrics)
         try:
             station = require_station_access(request, repo, auth, station_id)
-            key = f'timeseries:{station_id}:{period}:{start_date or ""}:{end_date or ""}:{aggregation}:{split_sensors}:{clean}:{metrics or ""}'
+            key = f'timeseries:{station_id}:{period}:{start_date or ""}:{end_date or ""}:{aggregation}:{split_sensors}:{clean}:{metrics or ""}:{display_points}'
             return cached_json_response(
                 repo,
                 key,
@@ -621,6 +622,7 @@ def create_app() -> FastAPI:
                     split_sensors=split_sensors,
                     clean=clean,
                     station=station,
+                    display_points=display_points,
                 ),
                 ttl_seconds=30,
             )

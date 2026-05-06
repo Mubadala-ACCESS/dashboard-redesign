@@ -628,6 +628,11 @@ class MongoDashboardRepository:
         return station
 
     def resolve_station_fresh(self, station_id: str) -> Dict[str, Any]:
+        cached = self.cache.get(self._station_cache_key(station_id))
+        if cached:
+            if self._is_hidden_station_doc(cached):
+                raise KeyError(f'Station not found: {station_id}')
+            return cached
         looks_public = '-' in station_id and not station_id.isdigit() and not ObjectId.is_valid(station_id)
         doc = self._find_station_by_public_id_fresh(station_id) if looks_public else None
         if not doc:
@@ -637,9 +642,9 @@ class MongoDashboardRepository:
         if not doc or self._is_hidden_station_doc(doc):
             raise KeyError(f'Station not found: {station_id}')
         station = self._normalize_station(doc)
-        self.cache.set(self._station_cache_key(station_id), station, ttl_seconds=20)
-        self.cache.set(self._station_cache_key(station['station_id']), station, ttl_seconds=20)
-        self.cache.set(self._station_cache_key(station['public_id']), station, ttl_seconds=20)
+        self.cache.set(self._station_cache_key(station_id), station, ttl_seconds=5)
+        self.cache.set(self._station_cache_key(station['station_id']), station, ttl_seconds=5)
+        self.cache.set(self._station_cache_key(station['public_id']), station, ttl_seconds=5)
         return station
 
     def get_filters(self) -> Dict[str, Any]:
@@ -1541,18 +1546,14 @@ class MongoDashboardRepository:
             meta.update({'source_points': len(docs), 'returned_points': len(docs), 'sampled': True})
             return docs, meta
 
-        first_page = list(collection.find(query, projection).sort(time_field, ASCENDING).limit(cap + 1))
-        if len(first_page) <= cap:
-            meta.update({'source_points': len(first_page), 'returned_points': len(first_page)})
-            return first_page, meta
-
-        first = first_page[0] if first_page else collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
+        first = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
         last = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, DESCENDING)])
         start_dt = first.get(time_field) if first else None
         end_dt = last.get(time_field) if last else None
         if not isinstance(start_dt, datetime) or not isinstance(end_dt, datetime) or start_dt >= end_dt:
-            docs = first_page[:cap]
-            meta.update({'returned_points': len(docs), 'sampled': len(first_page) > len(docs)})
+            doc = collection.find_one(query, projection=projection, sort=[(time_field, DESCENDING)])
+            docs = [doc] if doc else []
+            meta.update({'source_points': len(docs), 'returned_points': len(docs), 'sampled': False})
             return docs, meta
 
         bucket_ms = max(1, int(math.ceil((end_dt - start_dt).total_seconds() * 1000 / cap)))
@@ -1570,7 +1571,7 @@ class MongoDashboardRepository:
                     }
                 }
             }},
-            {'$group': {'_id': '$_sample_bucket', 'doc': {'$first': '$$ROOT'}}},
+            {'$group': {'_id': '$_sample_bucket', 'doc': {'$last': '$$ROOT'}}},
             {'$replaceRoot': {'newRoot': '$doc'}},
             {'$sort': {time_field: ASCENDING}},
             {'$limit': cap},
@@ -1729,7 +1730,8 @@ class MongoDashboardRepository:
                 if self._first_document_metric_number(doc, metric_sources[metric]) is not None:
                     present_fields.add(metric)
         missing_fields = [metric for metric in metrics if metric not in present_fields]
-        if missing_fields and display_points:
+        stable_document_station = station['device_type'] in {'Fidas_Palas', 'Meteorological'}
+        if missing_fields and display_points and not stable_document_station:
             seen_stamps = {doc.get(time_field) for doc in docs}
             backfill_limit = max(24, min(180, self._display_point_cap(display_points) or 180))
             collection = self.db[collection_name]
@@ -4071,7 +4073,10 @@ class MongoDashboardRepository:
             return cached
         aggregation = 'raw' if station['device_type'] == 'underwater_probe' and (start_date or end_date) else self._quick_aggregation_for_period(period)
         quick_metrics = self._quick_metrics_for_station(station)
-        trend_points = 360 if include_trends else 180
+        if include_trends and station['device_type'] == 'Fidas_Palas':
+            trend_points = 180
+        else:
+            trend_points = 360 if include_trends else 180
         timeseries = self.get_timeseries(
             station_id,
             period=period,
@@ -4182,11 +4187,7 @@ class MongoDashboardRepository:
             ])
             return list(collection.aggregate(pipeline, allowDiskUse=True))
 
-        first_page = list(collection.find(query, projection).sort(time_field, ASCENDING).limit(max_frames + 1))
-        if len(first_page) <= max_frames:
-            return first_page
-
-        first = first_page[0] if first_page else collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
+        first = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
         last = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, DESCENDING)])
         if not first or not last or not first.get(time_field) or not last.get(time_field):
             return []
@@ -4198,21 +4199,28 @@ class MongoDashboardRepository:
             doc = collection.find_one(query, projection=projection, sort=[(time_field, DESCENDING)])
             return [doc] if doc else []
 
-        sampled: List[Dict[str, Any]] = []
-        seen: set[datetime] = set()
-        for index in range(max_frames):
-            target = start_dt + timedelta(seconds=(total_seconds * index / max(1, max_frames - 1)))
-            range_query = dict(query)
-            range_query[time_field] = {'$gte': target, '$lte': end_dt}
-            doc = collection.find_one(range_query, projection=projection, sort=[(time_field, ASCENDING)])
-            if not doc:
-                continue
-            stamp = doc.get(time_field)
-            if stamp in seen:
-                continue
-            seen.add(stamp)
-            sampled.append(doc)
-        return sampled
+        bucket_ms = max(1, int(math.ceil(total_seconds * 1000 / max_frames)))
+        pipeline = [
+            {'$match': query},
+            {'$sort': {time_field: ASCENDING}},
+            {'$project': projection},
+            {'$addFields': {
+                '_sample_bucket': {
+                    '$floor': {
+                        '$divide': [
+                            {'$subtract': [f'${time_field}', start_dt]},
+                            bucket_ms,
+                        ]
+                    }
+                }
+            }},
+            {'$group': {'_id': '$_sample_bucket', 'doc': {'$last': '$$ROOT'}}},
+            {'$replaceRoot': {'newRoot': '$doc'}},
+            {'$project': {'_sample_bucket': 0}},
+            {'$sort': {time_field: ASCENDING}},
+            {'$limit': max_frames},
+        ]
+        return list(collection.aggregate(pipeline, allowDiskUse=True))
 
     def _numeric_list(self, values: Any) -> List[Optional[float]]:
         if not isinstance(values, list):
