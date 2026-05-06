@@ -1491,15 +1491,13 @@
     if (label) label.textContent = frame.label || frame.timestamp || 'Selected sample';
     host.innerHTML = '';
 
-    Plotly.newPlot(host, [
-    ...pointAreaTraces(x.map((value, index) => ({ x: value, y: y[index] })), '#5b21b6', 'Particle count'),
-    {
+    Plotly.newPlot(host, [{
       x,
       y,
       type: 'scatter',
-      mode: 'markers',
+      mode: 'lines',
       name: 'Particle count',
-      marker: { color: '#5b21b6', size: pointMarkerSize(x.length), opacity: 0.9, line: { color: '#ffffff', width: 0.7 } },
+      line: { color: '#5b21b6', width: 2.6, shape: 'hv' },
       hovertemplate: `Size %{x:.4f} ${App.escapeHtml(state.spectraPayload?.size_unit || '')}<br>Count %{y:.4f}<extra></extra>`,
     }], {
       margin: { t: 14, r: 24, b: 52, l: 68 },
@@ -1753,6 +1751,10 @@
 
   function setAdvancedPanel(panelName) {
     state.advancedPanel = panelName;
+    const advancedLayout = document.querySelector('#advanced-view .advanced-layout');
+    if (advancedLayout) {
+      advancedLayout.classList.toggle('is-spectra-full', state.stationTemplate === 'fidas' && panelName === 'spectra');
+    }
     document.querySelectorAll('#advanced-subtabs button').forEach((button) => {
       button.classList.toggle('is-active', button.dataset.advancedPanel === panelName);
     });

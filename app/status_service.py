@@ -292,6 +292,7 @@ class StatusService:
         if record_ts is None:
             issues.append('The latest record has no readable timestamp, so data freshness cannot be verified.')
         else:
+            record_ts = self.repo._station_actual_datetime(station, record_ts)
             age = self._now_utc() - record_ts
             threshold = timedelta(hours=self.settings.stale_threshold_hours)
             if age > threshold:

@@ -633,6 +633,8 @@ img { max-width: 100%; }
 .metric-stat-grid small { display: block; margin-bottom: 3px; font-size: 0.7rem; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; }
 .metric-stat-grid b { display: block; overflow-wrap: anywhere; font-size: 0.96rem; }
 .advanced-layout { display: grid; grid-template-columns: minmax(260px, 300px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.advanced-layout.is-spectra-full { grid-template-columns: minmax(0, 1fr); }
+.advanced-layout.is-spectra-full .advanced-left-rail { display: none; }
 .advanced-left-rail { align-self: start; }
 .advanced-left-rail .control-card { display: grid; gap: 18px; }
 .advanced-main { display: grid; gap: 20px; width: 100%; min-width: 0; }
