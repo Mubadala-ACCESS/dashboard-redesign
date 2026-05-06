@@ -101,6 +101,7 @@ class MongoDashboardRepository:
         'barometric_pressure',
         'albedo',
     ]
+    SPOTTER_BUOY_PARAMETER_EXCLUDES = {'latitude', 'longitude'}
     SPOTTER_BUOY_LABEL_OVERRIDES = {
         'significant_wave_height_m': 'Significant Wave Height (m)',
         'peak_period_s': 'Peak Period (s)',
@@ -1298,6 +1299,11 @@ class MongoDashboardRepository:
             ]
             ordered = self._ordered_document_metrics(station, dict.fromkeys(discovered).keys())
             metric_map = {key: self._document_metric_label(station, key) for key in ordered}
+        metric_map = {
+            key: label
+            for key, label in metric_map.items()
+            if key not in self.SPOTTER_BUOY_PARAMETER_EXCLUDES
+        }
         self.cache.set(cache_key, metric_map, ttl_seconds=300)
         return metric_map
 
