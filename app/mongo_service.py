@@ -43,6 +43,27 @@ class MongoDashboardRepository:
         'underwater_probe': 'Underwater Probes',
         'coral_reef': 'Coral Reef Monitoring',
     }
+    DEVICE_TYPE_ALIASES = {
+        'iotbox': 'IoTBox',
+        'iot_box': 'IoTBox',
+        'iot_boxes': 'IoTBox',
+        'meteorological': 'Meteorological',
+        'meteorological_station': 'Meteorological',
+        'meteostation': 'Meteorological',
+        'meteo_station': 'Meteorological',
+        'buoy': 'Buoy',
+        'fidas_palas': 'Fidas_Palas',
+        'fidas_palas_200s': 'Fidas_Palas',
+        'sbntransect': 'SBNTransect',
+        'sbn_transect': 'SBNTransect',
+        'jwcruise': 'JWCruise',
+        'jw_cruise': 'JWCruise',
+        'jaywun_cruise': 'JWCruise',
+        'underwater_probe': 'underwater_probe',
+        'underwater_probes': 'underwater_probe',
+        'coral_reef': 'coral_reef',
+        'coral_reef_monitoring': 'coral_reef',
+    }
     PERIOD_MAP = {
         '24H': timedelta(hours=24),
         '7D': timedelta(days=7),
@@ -341,6 +362,7 @@ class MongoDashboardRepository:
             'model': 1,
             'last_calibration': 1,
         }
+        self._repair_station_type_aliases()
 
     # ------------------------------------------------------------------
     # Basic helpers
@@ -478,6 +500,47 @@ class MongoDashboardRepository:
     def _station_cache_key(self, station_id: str) -> str:
         return f'station:{station_id}'
 
+    def _device_type_alias_key(self, value: Any) -> str:
+        text = str(value or '').strip()
+        text = re.sub(r'[\s-]+', '_', text)
+        return text.casefold()
+
+    def _canonical_device_type(self, value: Any) -> str:
+        raw = str(value or '').strip()
+        if not raw:
+            return 'Unknown'
+        if raw in self.DEVICE_LABELS:
+            return raw
+        return self.DEVICE_TYPE_ALIASES.get(self._device_type_alias_key(raw), raw)
+
+    def _device_type_query_values(self, device_type: str) -> List[str]:
+        canonical = self._canonical_device_type(device_type)
+        values = {canonical, canonical.lower(), device_type}
+        for alias_key, alias_target in self.DEVICE_TYPE_ALIASES.items():
+            if alias_target == canonical:
+                values.add(alias_key)
+                values.add(alias_key.replace('_', ' '))
+        return sorted({item for item in values if item})
+
+    def _repair_station_type_aliases(self) -> None:
+        cache_key = 'station_type_alias_repair:v1'
+        if self.cache.get(cache_key) is not None:
+            return
+        try:
+            collection = self.db[self.settings.mongo_stations_info_collection]
+            repaired = False
+            for raw_type in collection.distinct('type'):
+                canonical = self._canonical_device_type(raw_type)
+                if canonical != raw_type:
+                    result = collection.update_many({'type': raw_type}, {'$set': {'type': canonical}})
+                    repaired = repaired or result.modified_count > 0
+            if repaired:
+                self.cache.delete('filters:v3')
+                self.cache.delete('public_station_lookup:v3')
+            self.cache.set(cache_key, True, ttl_seconds=60)
+        except Exception:
+            self.cache.set(cache_key, False, ttl_seconds=15)
+
     def _slugify(self, value: str | None) -> str:
         text = (value or 'station').strip().lower()
         text = re.sub(r'[^a-z0-9]+', '-', text)
@@ -528,7 +591,7 @@ class MongoDashboardRepository:
 
     def _normalize_station(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         station_id = str(doc.get('id') or doc.get('_id'))
-        device_type = doc.get('type', 'Unknown')
+        device_type = self._canonical_device_type(doc.get('type', 'Unknown'))
         name = doc.get('name') or 'Monitoring station'
         return {
             'station_id': station_id,
@@ -643,6 +706,7 @@ class MongoDashboardRepository:
         return station
 
     def get_filters(self) -> Dict[str, Any]:
+        self._repair_station_type_aliases()
         cache_key = 'filters:v3'
         cached = self.cache.get(cache_key)
         if cached:
@@ -664,7 +728,7 @@ class MongoDashboardRepository:
             'device_types': [{'value': 'all', 'label': 'All'}],
             'statuses': [{'value': 'all', 'label': 'All'}],
         }
-        types = sorted({doc.get('type') for doc in docs if doc.get('type')})
+        types = sorted({self._canonical_device_type(doc.get('type')) for doc in docs if doc.get('type')})
         statuses = {doc.get('status') for doc in docs if doc.get('status') and not self._is_hidden_station_doc(doc)}
         filters['device_types'].extend([{'value': item, 'label': self.DEVICE_LABELS.get(item, item)} for item in types])
         ordered_statuses = [item for item in self.DASHBOARD_STATUS_ORDER if item in statuses]
@@ -681,7 +745,9 @@ class MongoDashboardRepository:
         search: str = '',
     ) -> Dict[str, Any]:
         normalized_search = (search or '').strip()
-        cache_key = f'list_stations:v3:{privacy}:{device_type}:{status}:{normalized_search.lower()}'
+        self._repair_station_type_aliases()
+        normalized_device_type = 'all' if device_type == 'all' else self._canonical_device_type(device_type)
+        cache_key = f'list_stations:v3:{privacy}:{normalized_device_type}:{status}:{normalized_search.lower()}'
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
@@ -705,8 +771,8 @@ class MongoDashboardRepository:
             query['public'] = True
         elif privacy == 'private':
             query['public'] = False
-        if device_type != 'all':
-            query['type'] = device_type
+        if normalized_device_type != 'all':
+            query['type'] = {'$in': self._device_type_query_values(normalized_device_type)}
         if status != 'all':
             query['status'] = status
         if normalized_search:
