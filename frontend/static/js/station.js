@@ -55,6 +55,7 @@
   const maxClientCacheEntries = 24;
   const staleAdvancedThresholdMinutes = 12 * 60;
   const liveTelemetryTypes = new Set(['IoTBox', 'Fidas_Palas', 'Meteorological', 'Buoy']);
+  let timeseriesLoadTimer = null;
 
   function rememberPayload(cache, key, payload) {
     if (!cache || !key) return;
@@ -642,7 +643,8 @@
     if (label) label.textContent = period;
     if (!payload.cards?.length) {
       const heading = isUnderwaterStation() ? 'No statistics available' : 'No current readings';
-      container.innerHTML = `<article class="empty-state"><h2>${heading}</h2><p>No data was available for the selected display period.</p></article>`;
+      const message = payload.message || 'No data was available for the selected display period.';
+      container.innerHTML = `<article class="empty-state"><h2>${heading}</h2><p>${App.escapeHtml(message)}</p></article>`;
       renderQuickTrends(payload);
       return;
     }
@@ -1016,7 +1018,7 @@
         if (isBuoyProfilePanel()) {
           loadBuoyProfiles();
         } else {
-          loadTimeseries();
+          requestTimeseriesLoad();
         }
       });
     });
@@ -1291,6 +1293,11 @@
     if (chartObserver) {
       grid.querySelectorAll('.chart-host').forEach((host) => chartObserver.unobserve(host));
     }
+    if (window.Plotly) {
+      grid.querySelectorAll('.chart-host').forEach((host) => {
+        if (host.data || host._fullLayout) Plotly.purge(host);
+      });
+    }
     grid.innerHTML = loadingHtml;
   }
 
@@ -1448,7 +1455,7 @@
     if (host) host.innerHTML = '<div class="empty-trend">Loading spectra...</div>';
     const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/spectra`, window.location.origin);
     applyWindowParams(url, 'advanced');
-    url.searchParams.set('max_frames', '240');
+    url.searchParams.set('max_frames', '120');
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     const payload = await App.fetchJSON(url.toString());
     const latestIndex = Number.isInteger(payload.latest_index) ? payload.latest_index : Math.max(0, (payload.frames || []).length - 1);
@@ -1489,19 +1496,17 @@
       return;
     }
     if (label) label.textContent = frame.label || frame.timestamp || 'Selected sample';
-    host.innerHTML = '';
 
-    Plotly.newPlot(host, [
-    ...pointAreaTraces(x.map((value, index) => ({ x: value, y: y[index] })), '#5b21b6', 'Particle count'),
-    {
+    const traces = [{
       x,
       y,
       type: 'scatter',
-      mode: 'markers',
+      mode: 'lines',
       name: 'Particle count',
-      marker: { color: '#5b21b6', size: pointMarkerSize(x.length), opacity: 0.9, line: { color: '#ffffff', width: 0.7 } },
+      line: { color: '#5b21b6', width: 2.6, shape: 'hv' },
       hovertemplate: `Size %{x:.4f} ${App.escapeHtml(state.spectraPayload?.size_unit || '')}<br>Count %{y:.4f}<extra></extra>`,
-    }], {
+    }];
+    const layout = {
       margin: { t: 14, r: 24, b: 52, l: 68 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: 'rgba(0,0,0,0)',
@@ -1517,7 +1522,15 @@
         range: [-3, 3],
       },
       showlegend: false,
-    }, { displaylogo: false, responsive: true });
+      transition: { duration: 0 },
+    };
+    const config = { displaylogo: false, responsive: true };
+    if (host.data || host._fullLayout) {
+      Plotly.react(host, traces, layout, config);
+    } else {
+      host.innerHTML = '';
+      Plotly.newPlot(host, traces, layout, config);
+    }
   }
 
   function latestCacheKey() {
@@ -1577,6 +1590,10 @@
   }
 
   async function loadTimeseries() {
+    if (timeseriesLoadTimer) {
+      window.clearTimeout(timeseriesLoadTimer);
+      timeseriesLoadTimer = null;
+    }
     const requestId = ++state.timeseriesRequestId;
     const key = timeseriesCacheKey();
     const cached = cachedPayload(state.timeseriesCache, key);
@@ -1590,6 +1607,7 @@
     applyWindowParams(url, 'advanced');
     url.searchParams.set('aggregation', state.aggregation);
     url.searchParams.set('split_sensors', state.splitSensors ? 'true' : 'false');
+    if (isFidasStation()) url.searchParams.set('display_points', '360');
     if (isFidasStation()) url.searchParams.set('clean', state.fidasClean ? 'true' : 'false');
     if (state.selectedMetrics.length || state.metricsTouched) url.searchParams.set('metrics', metricQueryValue(state.selectedMetrics));
     const payload = await App.fetchJSON(url.toString());
@@ -1597,6 +1615,18 @@
     rememberPayload(state.timeseriesCache, key, payload);
     renderTimeseriesPayload(payload);
     return payload;
+  }
+
+  function requestTimeseriesLoad() {
+    if (!isFidasStation()) {
+      return loadTimeseries();
+    }
+    if (timeseriesLoadTimer) window.clearTimeout(timeseriesLoadTimer);
+    timeseriesLoadTimer = window.setTimeout(() => {
+      timeseriesLoadTimer = null;
+      loadTimeseries();
+    }, 60);
+    return undefined;
   }
 
   function reloadAdvancedWindow() {
@@ -1685,11 +1715,11 @@
     });
     document.getElementById('aggregation-select')?.addEventListener('change', (event) => {
       state.aggregation = event.target.value;
-      if (!isBuoyProfilePanel()) loadTimeseries();
+      if (!isBuoyProfilePanel()) requestTimeseriesLoad();
     });
     document.getElementById('split-sensors-toggle')?.addEventListener('change', (event) => {
       state.splitSensors = event.target.checked;
-      loadTimeseries();
+      requestTimeseriesLoad();
     });
     document.getElementById('quick-split-sensors-toggle')?.addEventListener('change', (event) => {
       state.quickSplitSensors = event.target.checked;
@@ -1706,10 +1736,12 @@
       state.fidasClean = event.target.checked;
       state.spectraPayload = null;
       loadLatest();
-      if (state.advancedPanel === 'spectra') {
-        loadFidasSpectra(true).then(scheduleActiveChartResize);
-      } else {
-        loadTimeseries();
+      if (state.activeTab === 'advanced') {
+        if (state.advancedPanel === 'spectra') {
+          loadFidasSpectra(true).then(scheduleActiveChartResize);
+        } else {
+          requestTimeseriesLoad();
+        }
       }
     });
 
@@ -1722,6 +1754,9 @@
         document.querySelectorAll('.tab-panel').forEach((panel) => panel.classList.toggle('is-active', panel.id === `${button.dataset.tab}-view`));
         if (state.activeTab === 'advanced' && !state.dateRangeMode) {
           maybeShowStaleAdvancedPopup();
+        }
+        if (state.activeTab === 'advanced' && (isFidasStation() || !state.timeseriesPayload)) {
+          reloadAdvancedWindow();
         }
         scheduleActiveChartResize();
       });
@@ -1753,6 +1788,10 @@
 
   function setAdvancedPanel(panelName) {
     state.advancedPanel = panelName;
+    const advancedLayout = document.querySelector('#advanced-view .advanced-layout');
+    if (advancedLayout) {
+      advancedLayout.classList.toggle('is-spectra-full', state.stationTemplate === 'fidas' && panelName === 'spectra');
+    }
     document.querySelectorAll('#advanced-subtabs button').forEach((button) => {
       button.classList.toggle('is-active', button.dataset.advancedPanel === panelName);
     });
@@ -1793,7 +1832,9 @@
     await initDateRangeControls();
     syncPeriodControls();
     await loadLatest();
-    await loadTimeseries();
+    if (!isFidasStation()) {
+      await loadTimeseries();
+    }
   }
 
   init().catch((error) => {

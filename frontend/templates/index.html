@@ -57,8 +57,8 @@
         <div class="map-overview" aria-label="Network overview">
           <span class="overview-label">Overview</span>
           <span class="overview-item overview-total"><em></em><strong id="overview-total">0</strong><small>Total Stations</small></span>
-          <span class="overview-item overview-active"><em></em><strong id="overview-active">0</strong><small>Active</small></span>
-          <span class="overview-item overview-maintenance"><em></em><strong id="overview-maintenance">0</strong><small>Under Maintenance</small></span>
+          <span class="overview-item overview-active"><em></em><strong id="overview-active">0</strong><small>Healthy</small></span>
+          <span class="overview-item overview-maintenance"><em></em><strong id="overview-maintenance">0</strong><small>Maintenance</small></span>
         </div>
       </footer>
     </section>
@@ -133,5 +133,5 @@
 </main>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/home.js?v=hidden-statuses-1"></script>
+<script src="/static/js/home.js?v=status-overview-1"></script>
 {% endblock %}

@@ -6,7 +6,7 @@
   data-station-id="{{ station.station_id }}"
   data-station-template="{{ station_template }}"
   data-device-type="{{ station.device_type }}"
-  data-last-update-iso="{{ station.freshness.last_update_iso if station.freshness else '' }}"
+  data-last-update-iso="{{ station.freshness.last_update_iso or '' if station.freshness else '' }}"
   data-last-update-label="{{ station.freshness.last_update if station.freshness else 'N/A' }}"
   data-freshness-minutes="{{ station.freshness.freshness_minutes if station.freshness and station.freshness.freshness_minutes is not none else '' }}"
 >

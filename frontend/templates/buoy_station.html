@@ -1,10 +1,11 @@
 {% extends 'base.html' %}
-{% set station_template = 'buoy' %}
+{% set is_spotter_buoy = station.provider == 'sofar' or station.hull_type == 'spotter' %}
+{% set station_template = 'spotter_buoy' if is_spotter_buoy else 'buoy' %}
 {% set advanced_sensor_controls = false %}
-{% set advanced_parameter_note = 'Buoy Advanced view separates atmospheric time series from vertical water-column profiles.' %}
+{% set advanced_parameter_note = 'Spotter buoy parameters include wave height, wave period, wave direction, wind, surface temperature, pressure, humidity, and battery telemetry.' if is_spotter_buoy else 'Buoy Advanced view separates atmospheric time series from vertical water-column profiles.' %}
 {% block content %}
 {% include '_station_layout.html' %}
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/station.js?v=date-calendar-2"></script>
+<script src="/static/js/station.js?v=spotter-buoy-2"></script>
 {% endblock %}
