@@ -151,8 +151,8 @@
       if (el) el.textContent = String(value);
     };
     setCount('overview-total', summary.total ?? stations.length);
-    setCount('overview-active', summary.healthy ?? stations.filter((station) => station.status === 'Active').length);
-    setCount('overview-maintenance', summary.maintenance ?? stations.filter((station) => station.status === 'Maintenance').length);
+    setCount('overview-active', state.statusSummary ? summary.healthy : '...');
+    setCount('overview-maintenance', state.statusSummary ? summary.maintenance : '...');
   }
 
   function jitterStations(stations) {

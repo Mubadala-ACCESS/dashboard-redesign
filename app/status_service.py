@@ -29,6 +29,9 @@ class StatusService:
         'JWCruise': 'Jaywun Cruises',
     }
     LIVE_TYPES = {'IoTBox', 'Meteorological', 'Fidas_Palas', 'Buoy'}
+    OPTIONAL_NULL_FIELDS = {
+        'Meteorological': {'I3_VPOWER', 'I4_VOUT'},
+    }
     IOT_EXPECTED_SENSORS = {'air_sensor': 2, 'co2_sensor': 2, 'particulate_matter': 2}
     AIR_FIELDS = ['humidity', 'temperature', 'pressure']
     CO2_FIELDS = ['co2']
@@ -255,8 +258,9 @@ class StatusService:
             if diff is not None and diff > threshold:
                 issues.append(f'Potential sensor drift: CO2 sensor 1 and 2 readings differ by {diff:.1f}%.')
 
-    def _null_fields(self, record: Dict[str, Any]) -> List[str]:
+    def _null_fields(self, record: Dict[str, Any], station: Optional[Dict[str, Any]] = None) -> List[str]:
         ignore = set(self.TS_CANDIDATES + ['_id'])
+        optional = self.OPTIONAL_NULL_FIELDS.get((station or {}).get('device_type'), set())
         found: List[str] = []
 
         def walk(node: Any, prefix: str = '') -> None:
@@ -264,6 +268,8 @@ class StatusService:
                 for key, value in node.items():
                     name = f'{prefix}.{key}' if prefix else key
                     if key in ignore:
+                        continue
+                    if name in optional or key in optional:
                         continue
                     if key == 'gps' or name.startswith('gps.') or (prefix == '' and key in {'lat', 'long'}):
                         continue
@@ -301,7 +307,7 @@ class StatusService:
         if station['device_type'] == 'IoTBox':
             issues.extend(self._iot_sensor_issues(record, station))
         else:
-            nulls = self._null_fields(record)
+            nulls = self._null_fields(record, station)
             if nulls:
                 preview = ', '.join(nulls[:8])
                 issues.append(f'Some latest-record fields are missing values: {preview}' + ('...' if len(nulls) > 8 else ''))
@@ -373,7 +379,7 @@ class StatusService:
         }
 
     def network_status(self) -> Dict[str, Any]:
-        cache_key = 'network_status_all_types_v6'
+        cache_key = 'network_status_all_types_v7'
         cached = self.repo.cache.get(cache_key)
         if cached:
             return cached

@@ -1,0 +1,16 @@
+INFO:     127.0.0.1:50742 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50742 - "GET /static/css/main.css?v=fidas-spectra-full-1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63509 - "GET /static/img/maccess-logo.png HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50742 - "GET /static/js/app.js HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63509 - "GET /static/js/home.js?v=fast-map-1 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63509 - "GET /api/map/stations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:63509 - "GET /api/status/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50742 - "GET /static/img/favicon.ico HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57676 - "GET / HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57676 - "GET /static/js/home.js?v=fast-map-1 HTTP/1.1" 304 Not Modified
+INFO:     127.0.0.1:57676 - "GET /api/map/stations HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57676 - "GET /api/status/summary HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56888 - "GET /api/stations/fidas-palas-200s-2b2a38fe/metadata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56888 - "GET /api/stations/fidas-palas-200s-2b2a38fe/metadata HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57424 - "GET /api/stations/fidas-palas-200s-2b2a38fe/latest HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57424 - "GET /api/stations/fidas-palas-200s-2b2a38fe/latest HTTP/1.1" 200 OK

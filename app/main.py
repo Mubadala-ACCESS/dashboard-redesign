@@ -523,7 +523,8 @@ def create_app() -> FastAPI:
 
     @app.get('/api/status/summary')
     def api_status_summary(repo: MongoDashboardRepository = Depends(get_repo)):
-        return {'summary': repo.get_status_summary()}
+        status = StatusService(repo).network_status()
+        return {'summary': status['summary']}
 
     @app.get('/api/stations/{station_id}')
     def api_station_summary(

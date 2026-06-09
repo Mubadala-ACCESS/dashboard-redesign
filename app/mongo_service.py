@@ -553,7 +553,7 @@ class MongoDashboardRepository:
     def _station_actual_datetime(self, station: Dict[str, Any], value: datetime | None) -> datetime | None:
         if value is None:
             return None
-        if station.get('device_type') == 'Fidas_Palas':
+        if station.get('device_type') in {'Fidas_Palas', 'Meteorological'}:
             base = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
             return base - self._local_tz_offset()
         return value
@@ -591,6 +591,26 @@ class MongoDashboardRepository:
                 values.add(alias_key)
                 values.add(alias_key.replace('_', ' '))
         return sorted({item for item in values if item})
+
+    def _canonical_station_status(self, value: Any) -> str:
+        raw = str(value or '').strip()
+        if not raw:
+            return 'Unknown'
+        normalized = raw.casefold()
+        if normalized in {'active', 'online', 'healthy'}:
+            return 'Active'
+        if normalized in {'maintenance', 'offline', 'issue', 'issues'}:
+            return 'Maintenance'
+        return raw
+
+    def _status_query_values(self, status: str) -> List[str]:
+        canonical = self._canonical_station_status(status)
+        aliases = {canonical, canonical.lower(), status}
+        if canonical == 'Active':
+            aliases.update({'online', 'healthy'})
+        elif canonical == 'Maintenance':
+            aliases.update({'offline', 'issue', 'issues'})
+        return sorted({item for item in aliases if item})
 
     def _repair_station_type_aliases(self) -> None:
         cache_key = 'station_type_alias_repair:v1'
@@ -673,7 +693,7 @@ class MongoDashboardRepository:
             'lon': float(doc.get('long')) if doc.get('long') is not None else None,
             'device_type': device_type,
             'device_label': self.DEVICE_LABELS.get(device_type, device_type),
-            'status': doc.get('status', 'Unknown'),
+            'status': self._canonical_station_status(doc.get('status')),
             'privacy': 'Public' if doc.get('public', True) else 'Private',
             'is_public': bool(doc.get('public', True)),
             'sensors': doc.get('sensors', {}),
@@ -885,7 +905,7 @@ class MongoDashboardRepository:
             'statuses': [{'value': 'all', 'label': 'All'}],
         }
         types = sorted({self._canonical_device_type(doc.get('type')) for doc in docs if doc.get('type')})
-        statuses = {doc.get('status') for doc in docs if doc.get('status') and not self._is_hidden_station_doc(doc)}
+        statuses = {self._canonical_station_status(doc.get('status')) for doc in docs if doc.get('status') and not self._is_hidden_station_doc(doc)}
         filters['device_types'].extend([{'value': item, 'label': self.DEVICE_LABELS.get(item, item)} for item in types])
         ordered_statuses = [item for item in self.DASHBOARD_STATUS_ORDER if item in statuses]
         ordered_statuses.extend(sorted(statuses.difference(ordered_statuses)))
@@ -929,7 +949,7 @@ class MongoDashboardRepository:
         if normalized_device_type != 'all':
             query['type'] = {'$in': self._device_type_query_values(normalized_device_type)}
         if status != 'all':
-            query['status'] = status
+            query['status'] = {'$in': self._status_query_values(status)}
         if normalized_search:
             regex = {'$regex': re.escape(normalized_search), '$options': 'i'}
             query['$or'] = [{'name': regex}]
