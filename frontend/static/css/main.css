@@ -844,7 +844,7 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .home-page, .station-page { grid-template-columns: 1fr; }
   .desktop-only { display: none; }
   .mobile-only { display: flex; }
-  .left-rail, .home-sidebar-card { position: static; height: auto; }
+  .home-sidebar-card { position: static; height: auto; }
   .map-panel { display: grid; grid-template-rows: auto var(--map-height); height: auto; }
   #map { height: var(--map-height); }
   .map-help { top: 82px; }
@@ -877,8 +877,6 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .station-page .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .station-toolbar { justify-content: flex-start; flex-wrap: wrap; }
   .date-range-control { flex-basis: min(350px, 100%); min-width: min(320px, 100%); margin-left: 0; }
-  .advanced-layout { grid-template-columns: 1fr; }
-  .advanced-left-rail { position: static; }
   .advanced-controls__grid { grid-template-columns: 1fr; }
   .sensor-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -925,6 +923,8 @@ tbody tr:hover { background: rgba(91, 33, 182, 0.04); }
   .station-page .summary-grid { grid-template-columns: 1fr; }
   .sensor-comparison-grid, .sensor-readout-row, .sensor-comparison-card__stats { grid-template-columns: 1fr; }
   .spectra-controls { grid-template-columns: 1fr; }
+  .advanced-layout { grid-template-columns: 1fr; }
+  .left-rail { position: static; height: auto; }
   .analysis-header, .section-head, .map-footer, .page-hero.compact-hero { flex-direction: column; align-items: stretch; }
   .guide-steps, .guide-family-grid, .heat-index-grid, .metadata-term-grid { grid-template-columns: 1fr; }
   .quick-trend-actions { justify-content: stretch; }
