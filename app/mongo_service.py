@@ -1302,6 +1302,14 @@ class MongoDashboardRepository:
             return False
         if isinstance(value, (int, float, np.integer, np.floating)):
             return math.isfinite(float(value))
+        if isinstance(value, str):
+            text = value.strip()
+            if not text or text.upper() in {'NAN', 'NA', 'N/A', 'NULL', 'NONE'}:
+                return False
+            try:
+                return math.isfinite(float(text))
+            except ValueError:
+                return False
         return False
 
     def _nested_metric_key(self, root: str, child: str) -> str:
