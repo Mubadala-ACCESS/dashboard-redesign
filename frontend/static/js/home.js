@@ -24,6 +24,7 @@
     selectedStationId: null,
     loadRequestId: 0,
     fitToken: 0,
+    markerRenderToken: 0,
     markerKey: '',
   };
 
@@ -213,22 +214,37 @@
     const nextKey = stations.map((station) => station.station_id).join('|');
     if (nextKey === state.markerKey) return;
     state.markerKey = nextKey;
+    const renderToken = ++state.markerRenderToken;
     if (state.markers) state.markers.remove();
     state.markers = L.layerGroup();
     const plotted = jitterStations(stations);
-    plotted.forEach((station) => {
-      if (station.display_lat == null || station.display_lon == null) return;
-      const marker = L.marker([station.display_lat, station.display_lon], {
-        icon: markerIcon(station),
-        keyboard: true,
-        title: `${station.name} - ${station.device_label}`,
-        riseOnHover: true,
-      });
-      marker.on('click', () => openDrawer(station.station_id));
-      marker.addTo(state.markers);
-    });
     state.markers.addTo(map);
-    fitMapToStations(plotted);
+
+    let index = 0;
+    const batchSize = 300;
+    const addBatch = () => {
+      if (renderToken !== state.markerRenderToken || !state.markers) return;
+      const end = Math.min(index + batchSize, plotted.length);
+      for (; index < end; index += 1) {
+        const station = plotted[index];
+        if (station.display_lat == null || station.display_lon == null) continue;
+        const marker = L.marker([station.display_lat, station.display_lon], {
+          icon: markerIcon(station),
+          keyboard: true,
+          title: `${station.name} - ${station.device_label}`,
+          riseOnHover: true,
+        });
+        marker.on('click', () => openDrawer(station.station_id));
+        marker.addTo(state.markers);
+      }
+      if (index < plotted.length) {
+        requestAnimationFrame(addBatch);
+        return;
+      }
+      fitMapToStations(plotted);
+    };
+
+    requestAnimationFrame(addBatch);
   }
 
   function stationMatchesFilters(station) {
@@ -291,6 +307,24 @@
     drawer.setAttribute('aria-hidden', 'true');
   }
 
+  function renderDrawerDetails(summary, metadata = null) {
+    detailsEl.innerHTML = `
+      <article class="drawer-card">
+        <h3>Station details</h3>
+        <div class="drawer-kv compact">
+          <div><span>Device</span><strong>${App.escapeHtml(summary.device_label)}</strong></div>
+          <div><span>Status</span><strong>${App.escapeHtml(summary.status)}</strong></div>
+          <div><span>Privacy</span><strong>${App.escapeHtml(summary.privacy || privacyLabel(summary))}</strong></div>
+          <div><span>Latitude</span><strong>${summary.lat?.toFixed?.(4) ?? '—'}</strong></div>
+          <div><span>Longitude</span><strong>${summary.lon?.toFixed?.(4) ?? '—'}</strong></div>
+          <div><span>Earliest data</span><strong>${App.escapeHtml(metadata?.summary?.earliest_data || 'Loading')}</strong></div>
+          <div><span>Latest data</span><strong>${App.escapeHtml(metadata?.summary?.latest_data || 'Loading')}</strong></div>
+          <div><span>Measurement frequency</span><strong>${App.escapeHtml(metadata?.summary?.measurement_frequency || 'Loading')}</strong></div>
+        </div>
+      </article>
+    `;
+  }
+
   async function openDrawer(stationId) {
     state.selectedStationId = stationId;
     const cachedStation = state.allStations.find((station) => station.station_id === stationId || station.public_id === stationId);
@@ -307,22 +341,35 @@
     drawerOpenStation.href = `/station/${encodeURIComponent(stationId)}`;
     drawerOpenStation.classList.remove('disabled-link');
 
-    const [summary, metadata] = await Promise.all([
-      App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}`),
-      App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/metadata`),
-    ]);
+    if (cachedStation) {
+      drawerTitle.textContent = cachedStation.name;
+      drawerSubtitle.textContent = `${cachedStation.device_label} · ${cachedStation.status} · ${cachedStation.location_text}`;
+      renderDrawerDetails(cachedStation);
+    }
+
+    const summaryPromise = cachedStation
+      ? Promise.resolve(cachedStation)
+      : App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}`);
+    const metadataPromise = App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/metadata`).catch(() => null);
+    const summary = await summaryPromise;
     if (state.selectedStationId !== stationId) return;
 
     const liveCurrent = hasCurrentReadings(summary.device_type);
     setDrawerCurrentVisibility(liveCurrent);
     if (!liveCurrent) currentEl.innerHTML = '';
+
+    drawerTitle.textContent = summary.name;
+    drawerSubtitle.textContent = `${summary.device_label} · ${summary.status} · ${summary.location_text}`;
+    renderDrawerDetails(summary);
+    metadataPromise.then((metadata) => {
+      if (state.selectedStationId !== stationId || !metadata) return;
+      renderDrawerDetails(summary, metadata);
+    });
+
     const latest = liveCurrent
       ? await App.fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/latest`, { redirectOnAuth: false }).catch(() => ({ cards: [], authRequired: true }))
       : { cards: [] };
     if (state.selectedStationId !== stationId) return;
-
-    drawerTitle.textContent = summary.name;
-    drawerSubtitle.textContent = `${summary.device_label} · ${summary.status} · ${summary.location_text}`;
 
     if (liveCurrent && latest.authRequired) {
       currentEl.innerHTML = '<article class="drawer-card"><h3>Current Readings</h3><p>Sign in to view private station readings.</p></article>';
@@ -344,35 +391,29 @@
       `;
     }
 
-    detailsEl.innerHTML = `
-      <article class="drawer-card">
-        <h3>Station details</h3>
-        <div class="drawer-kv compact">
-          <div><span>Device</span><strong>${App.escapeHtml(summary.device_label)}</strong></div>
-          <div><span>Status</span><strong>${App.escapeHtml(summary.status)}</strong></div>
-          <div><span>Privacy</span><strong>${App.escapeHtml(summary.privacy)}</strong></div>
-          <div><span>Latitude</span><strong>${summary.lat?.toFixed?.(4) ?? '—'}</strong></div>
-          <div><span>Longitude</span><strong>${summary.lon?.toFixed?.(4) ?? '—'}</strong></div>
-          <div><span>Earliest data</span><strong>${App.escapeHtml(metadata.summary?.earliest_data || 'N/A')}</strong></div>
-          <div><span>Latest data</span><strong>${App.escapeHtml(metadata.summary?.latest_data || 'N/A')}</strong></div>
-          <div><span>Measurement frequency</span><strong>${App.escapeHtml(metadata.summary?.measurement_frequency || 'N/A')}</strong></div>
-        </div>
-      </article>
-    `;
+  }
+
+  async function refreshStatusSummary(requestId) {
+    const statusPayload = await App.fetchJSON('/api/status/summary', { redirectOnAuth: false }).catch(() => null);
+    if (requestId !== state.loadRequestId || !statusPayload?.summary) return;
+    state.statusSummary = statusPayload.summary;
+    updateOverview();
   }
 
   async function loadStations() {
     const requestId = ++state.loadRequestId;
     const url = new URL('/api/map/stations', window.location.origin);
-    const [payload, statusPayload] = await Promise.all([
-      App.fetchJSON(url.toString()),
-      App.fetchJSON('/api/status/summary', { redirectOnAuth: false }).catch(() => null),
-    ]);
+    const payload = await App.fetchJSON(url.toString());
     if (requestId !== state.loadRequestId) return;
+    if (payload.filters) {
+      state.filters = payload.filters;
+      renderFilterSelects();
+    }
     state.allStations = payload.stations || [];
-    state.statusSummary = statusPayload?.summary || null;
+    state.statusSummary = null;
     updateOverview();
     applyStationFilters();
+    refreshStatusSummary(requestId);
   }
 
   function debounce(fn, delay = 250) {
@@ -390,8 +431,6 @@
   }
 
   async function init() {
-    state.filters = await App.fetchJSON('/api/map/filters');
-    renderFilterSelects();
     wireTabButtons();
     await loadStations();
 

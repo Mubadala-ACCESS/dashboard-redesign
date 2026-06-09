@@ -81,7 +81,7 @@ class StatusService:
         return None
 
     def _latest_record(self, collection_name: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
-        if collection_name not in self.db.list_collection_names():
+        if not self.repo._collection_exists(collection_name):
             return None, None
         for ts_field in self.TS_CANDIDATES:
             try:

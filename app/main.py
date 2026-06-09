@@ -515,7 +515,7 @@ def create_app() -> FastAPI:
         repo: MongoDashboardRepository = Depends(get_repo),
     ):
         key = f'map_stations:v3:{privacy}:{device_type}:{status}:{search.strip().lower()}'
-        return cached_json_response(repo, key, lambda: repo.list_stations(privacy=privacy, device_type=device_type, status=status, search=search), ttl_seconds=10)
+        return cached_json_response(repo, key, lambda: repo.list_stations(privacy=privacy, device_type=device_type, status=status, search=search), ttl_seconds=300)
 
     @app.get('/api/status')
     def api_status(repo: MongoDashboardRepository = Depends(get_repo)):
@@ -523,8 +523,7 @@ def create_app() -> FastAPI:
 
     @app.get('/api/status/summary')
     def api_status_summary(repo: MongoDashboardRepository = Depends(get_repo)):
-        status = StatusService(repo).network_status()
-        return {'summary': status['summary']}
+        return {'summary': repo.get_status_summary()}
 
     @app.get('/api/stations/{station_id}')
     def api_station_summary(

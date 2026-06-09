@@ -1,4 +1,6 @@
 const App = (() => {
+  const metadataCache = new Map();
+
   async function fetchJSON(url, options = {}) {
     const redirectOnAuth = options.redirectOnAuth !== false;
     const response = await fetch(url, { headers: { Accept: 'application/json' } });
@@ -32,7 +34,7 @@ const App = (() => {
   function openModal(html) {
     const dialog = document.getElementById('global-modal');
     dialog.innerHTML = html;
-    dialog.showModal();
+    if (!dialog.open) dialog.showModal();
     dialog.addEventListener(
       'click',
       (event) => {
@@ -110,9 +112,50 @@ const App = (() => {
   }
 
   async function showMetadata(stationId) {
-    const payload = await fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/metadata`);
-    openModal(buildMetadataModal(payload));
-    wireMetadataTabs();
+    const cacheKey = String(stationId || '');
+    const cached = metadataCache.get(cacheKey);
+    if (cached) {
+      openModal(buildMetadataModal(cached));
+      wireMetadataTabs();
+      return cached;
+    }
+
+    openModal(`
+      <article class="modal-panel">
+        <header class="modal-head">
+          <div>
+            <span class="eyebrow">Station metadata</span>
+            <h2>Loading metadata</h2>
+            <p>Fetching station descriptors and data coverage.</p>
+          </div>
+          <button class="ghost-button" data-close-modal>Close</button>
+        </header>
+        <section class="drawer-stack">
+          <article class="drawer-card"><p>Loading station metadata...</p></article>
+        </section>
+      </article>
+    `);
+    try {
+      const payload = await fetchJSON(`/api/stations/${encodeURIComponent(stationId)}/metadata`);
+      metadataCache.set(cacheKey, payload);
+      openModal(buildMetadataModal(payload));
+      wireMetadataTabs();
+      return payload;
+    } catch (error) {
+      openModal(`
+        <article class="modal-panel">
+          <header class="modal-head">
+            <div>
+              <span class="eyebrow">Station metadata</span>
+              <h2>Metadata unavailable</h2>
+              <p>${escapeHtml(error.message || 'The metadata request failed.')}</p>
+            </div>
+            <button class="ghost-button" data-close-modal>Close</button>
+          </header>
+        </article>
+      `);
+      throw error;
+    }
   }
 
   return { fetchJSON, openModal, showMetadata, escapeHtml };

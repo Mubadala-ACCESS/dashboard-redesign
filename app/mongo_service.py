@@ -6,6 +6,7 @@ import math
 import re
 import hashlib
 import hmac
+import threading
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -390,9 +391,6 @@ class MongoDashboardRepository:
         self.cache = TTLCache(settings.cache_ttl_seconds)
         self.thresholds = self.metadata_service.thresholds()
         self.special_availability = self.metadata_service.special_availability()
-        self._ensure_station_indexes()
-        self._ensure_sbn_indexes()
-        self._ensure_jw_indexes()
         self.station_projection = {
             '_id': 1,
             'id': 1,
@@ -412,7 +410,16 @@ class MongoDashboardRepository:
             'spotter_id': 1,
             'sampling': 1,
         }
-        self._repair_station_type_aliases()
+        self._start_background_maintenance()
+
+    def _start_background_maintenance(self) -> None:
+        def run() -> None:
+            self._ensure_station_indexes()
+            self._ensure_sbn_indexes()
+            self._ensure_jw_indexes()
+            self._repair_station_type_aliases()
+
+        threading.Thread(target=run, name='dashboard-mongo-maintenance', daemon=True).start()
 
     # ------------------------------------------------------------------
     # Basic helpers
@@ -497,6 +504,15 @@ class MongoDashboardRepository:
         if not self._collection_exists(collection_name):
             self.cache.set(cache_key, False, ttl_seconds=60)
             return
+        self.cache.set(cache_key, 'pending', ttl_seconds=3600)
+        threading.Thread(
+            target=self._ensure_time_index_worker,
+            args=(collection_name, time_field, cache_key),
+            name=f'dashboard-index-{collection_name}-{time_field}',
+            daemon=True,
+        ).start()
+
+    def _ensure_time_index_worker(self, collection_name: str, time_field: str, cache_key: str) -> None:
         try:
             self.db[collection_name].create_index([(time_field, ASCENDING)], background=True)
             if collection_name == self.settings.mongo_fidas_collection:
@@ -591,9 +607,9 @@ class MongoDashboardRepository:
             if repaired:
                 self.cache.delete('filters:v3')
                 self.cache.delete('public_station_lookup:v3')
-            self.cache.set(cache_key, True, ttl_seconds=60)
+            self.cache.set(cache_key, True, ttl_seconds=3600)
         except Exception:
-            self.cache.set(cache_key, False, ttl_seconds=15)
+            self.cache.set(cache_key, False, ttl_seconds=300)
 
     def _slugify(self, value: str | None) -> str:
         text = (value or 'station').strip().lower()
@@ -847,7 +863,6 @@ class MongoDashboardRepository:
         return station
 
     def get_filters(self) -> Dict[str, Any]:
-        self._repair_station_type_aliases()
         cache_key = 'filters:v3'
         cached = self.cache.get(cache_key)
         if cached:
@@ -875,7 +890,7 @@ class MongoDashboardRepository:
         ordered_statuses = [item for item in self.DASHBOARD_STATUS_ORDER if item in statuses]
         ordered_statuses.extend(sorted(statuses.difference(ordered_statuses)))
         filters['statuses'].extend([{'value': item, 'label': item} for item in ordered_statuses])
-        self.cache.set(cache_key, filters, ttl_seconds=30)
+        self.cache.set(cache_key, filters, ttl_seconds=300)
         return filters
 
     def list_stations(
@@ -886,7 +901,6 @@ class MongoDashboardRepository:
         search: str = '',
     ) -> Dict[str, Any]:
         normalized_search = (search or '').strip()
-        self._repair_station_type_aliases()
         normalized_device_type = 'all' if device_type == 'all' else self._canonical_device_type(device_type)
         cache_key = f'list_stations:v3:{privacy}:{normalized_device_type}:{status}:{normalized_search.lower()}'
         cached = self.cache.get(cache_key)
@@ -904,7 +918,7 @@ class MongoDashboardRepository:
                 'status_breakdown': {},
             }
             payload = {'summary': empty_summary, 'stations': [], 'filters': self.get_filters()}
-            self.cache.set(cache_key, payload, ttl_seconds=10)
+            self.cache.set(cache_key, payload, ttl_seconds=300)
             return payload
 
         query: Dict[str, Any] = {'lat': {'$ne': None}, 'long': {'$ne': None}, **self._visible_station_filter()}
@@ -942,8 +956,29 @@ class MongoDashboardRepository:
             'status_breakdown': dict(status_counter),
         }
         payload = {'summary': summary, 'stations': [self._public_station_payload(station) for station in stations], 'filters': self.get_filters()}
-        self.cache.set(cache_key, payload, ttl_seconds=10)
+        self.cache.set(cache_key, payload, ttl_seconds=300)
         return payload
+
+    def get_status_summary(self) -> Dict[str, int]:
+        cache_key = 'status_summary:v1'
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+        docs = self.db[self.settings.mongo_stations_info_collection].find(
+            self._visible_station_filter(),
+            {'status': 1},
+        )
+        summary = {'total': 0, 'healthy': 0, 'maintenance': 0}
+        for doc in docs:
+            if self._is_hidden_station_doc(doc):
+                continue
+            summary['total'] += 1
+            if doc.get('status') == 'Maintenance':
+                summary['maintenance'] += 1
+            else:
+                summary['healthy'] += 1
+        self.cache.set(cache_key, summary, ttl_seconds=120)
+        return summary
 
     def _collection_for_station(self, station: Dict[str, Any]) -> Tuple[Optional[str], Optional[str]]:
         station_num = station.get('station_num')
@@ -1118,6 +1153,7 @@ class MongoDashboardRepository:
         payload = {
             'earliest': self._human_dt_for_station(station, first.get(time_field) if first else None) if first else None,
             'latest': self._human_dt_for_station(station, last.get(time_field) if last else None) if last else None,
+            'earliest_iso': self._dt_string_for_station(station, first.get(time_field) if first else None) if first else None,
             'latest_iso': self._dt_string_for_station(station, last.get(time_field) if last else None) if last else None,
         }
         self.cache.set(cache_key, payload, ttl_seconds=300)
@@ -1701,35 +1737,19 @@ class MongoDashboardRepository:
             return payload
 
         self._ensure_time_index(collection_name, time_field)
-        date_expression: Any = f'${time_field}'
-        if station.get('device_type') == 'Fidas_Palas':
-            date_expression = {
-                '$dateSubtract': {
-                    'startDate': f'${time_field}',
-                    'unit': 'hour',
-                    'amount': max(0, int(self._local_tz_offset().total_seconds() // 3600)),
-                }
-            }
-        pipeline = [
-            {'$match': self._with_station_data_filter(station, {time_field: {'$exists': True}})},
-            {'$project': {
-                'date': {
-                    '$dateToString': {
-                        'format': '%Y-%m-%d',
-                        'date': date_expression,
-                        'timezone': self.settings.default_timezone,
-                    }
-                }
-            }},
-            {'$group': {'_id': '$date'}},
-            {'$sort': {'_id': 1}},
-        ]
-        try:
-            dates = [doc['_id'] for doc in self.db[collection_name].aggregate(pipeline, allowDiskUse=True) if doc.get('_id')]
-        except Exception:
-            fallback_expression = f'${time_field}'
-            pipeline[1]['$project']['date']['$dateToString']['date'] = fallback_expression
-            dates = [doc['_id'] for doc in self.db[collection_name].aggregate(pipeline, allowDiskUse=True) if doc.get('_id')]
+        collection = self.db[collection_name]
+        query = self._with_station_data_filter(station, {time_field: {'$exists': True}})
+        first = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
+        last = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, DESCENDING)])
+        first_dt = self._localize_station_datetime(station, first.get(time_field) if first else None)
+        last_dt = self._localize_station_datetime(station, last.get(time_field) if last else None)
+        dates: List[str] = []
+        if first_dt and last_dt:
+            current = first_dt.date()
+            end = last_dt.date()
+            while current <= end:
+                dates.append(current.isoformat())
+                current += timedelta(days=1)
         payload = {
             'station': station,
             'dates': dates,

@@ -1,4 +1,7 @@
 {% extends 'base.html' %}
+{% block head_extra %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+{% endblock %}
 {% block content %}
 <main class="page home-page" data-network='{{ network_summary | tojson | safe }}'>
   <aside class="sidebar-card desktop-only home-sidebar-card">
@@ -132,6 +135,9 @@
   </dialog>
 </main>
 {% endblock %}
+{% block vendor_scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+{% endblock %}
 {% block scripts %}
-<script src="/static/js/home.js?v=status-overview-1"></script>
+<script src="/static/js/home.js?v=fast-map-1"></script>
 {% endblock %}

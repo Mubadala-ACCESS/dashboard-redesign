@@ -1829,12 +1829,20 @@
 
   async function init() {
     wireControls();
-    await initDateRangeControls();
     syncPeriodControls();
-    await loadLatest();
-    if (!isFidasStation()) {
-      await loadTimeseries();
+    if (shouldUseDateRangeControls()) {
+      await initDateRangeControls();
+      syncPeriodControls();
+      await loadLatest();
+      if (!isFidasStation()) requestTimeseriesLoad();
+      return;
     }
+
+    const latestReady = loadLatest();
+    if (!isFidasStation()) {
+      requestTimeseriesLoad();
+    }
+    await latestReady;
   }
 
   init().catch((error) => {
