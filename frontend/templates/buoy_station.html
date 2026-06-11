@@ -1,8 +1,10 @@
-{% extends 'base.html' %}
 {% set is_spotter_buoy = station.provider == 'sofar' or station.hull_type == 'spotter' %}
 {% set station_template = 'spotter_buoy' if is_spotter_buoy else 'buoy' %}
+{% set station_family_label = 'Sofar Spotter Buoy' if is_spotter_buoy else station.device_label %}
 {% set advanced_sensor_controls = false %}
-{% set advanced_parameter_note = 'Spotter buoy parameters include wave height, wave period, wave direction, wind, surface temperature, pressure, humidity, and battery telemetry.' if is_spotter_buoy else 'Buoy Advanced view separates atmospheric time series from vertical water-column profiles.' %}
+{% set advanced_parameter_note = 'Spotter buoy parameters include wave height, wave period, wave direction, sparse wind observations, pressure, humidity, and battery telemetry when present in MongoDB.' if is_spotter_buoy else 'Buoy Advanced view separates atmospheric time series from vertical water-column profiles.' %}
+{% extends 'base.html' %}
+{% block title %}{% if is_spotter_buoy %}{{ station.name }} Oceanographic Dashboard | {{ app_name }}{% else %}{{ page_title }} | {{ app_name }}{% endif %}{% endblock %}
 {% block content %}
 {% include '_station_layout.html' %}
 {% endblock %}
@@ -10,5 +12,5 @@
 <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 {% endblock %}
 {% block scripts %}
-<script src="/static/js/station.js?v=spotter-buoy-2"></script>
+<script src="/static/js/station.js?v=spotter-buoy-8"></script>
 {% endblock %}

@@ -1,4 +1,5 @@
 {% set station_template = station_template|default('station') %}
+{% set station_family_label = station_family_label|default(station.device_label) %}
 {% set advanced_sensor_controls = advanced_sensor_controls|default(false) %}
 {% set advanced_parameter_note = advanced_parameter_note|default('Select the parameters to plot in Advanced view.') %}
 <main
@@ -13,7 +14,7 @@
   <section class="analysis-column">
     <section class="analysis-header station-analysis-header">
       <div class="station-heading">
-        <span class="eyebrow">{{ station.device_label }}</span>
+        <span class="eyebrow">{{ station_family_label }}</span>
         <h1>{{ station.name }}</h1>
         <p>{{ station.location_text }}</p>
 
@@ -24,6 +25,10 @@
       </div>
 
       <div class="station-toolbar">
+        {% if station_template == 'spotter_buoy' %}
+        <button class="ghost-button" id="open-station-metadata" type="button">Station metadata</button>
+        <button class="primary-button" id="download-csv" type="button">Download CSV</button>
+        {% else %}
         <div class="period-control" id="period-control">
           <span class="control-label">Display period</span>
           <div class="inline-toggle" id="period-buttons">
@@ -65,10 +70,251 @@
         {% endif %}
 
         <button class="ghost-button" id="open-station-metadata" type="button">Station metadata</button>
+        {% endif %}
       </div>
     </section>
 
     <section id="quick-view" class="tab-panel is-active">
+      {% if station_template == 'spotter_buoy' %}
+      <section class="spotter-dashboard" id="spotter-dashboard">
+        <div class="spotter-controls">
+          <div class="inline-toggle spotter-period-buttons" id="spotter-period-buttons" aria-label="Spotter display period">
+            <button type="button" data-spotter-period="24H">24H</button>
+            <button type="button" data-spotter-period="7D">7D</button>
+            <button type="button" data-spotter-period="30D" class="is-active">30D</button>
+            <button type="button" data-spotter-period="ALL">All</button>
+          </div>
+          <select id="spotter-aggregation-select" class="filter-select spotter-select" aria-label="Spotter aggregation">
+            <option value="raw">Raw samples</option>
+            <option value="1h">Hourly mean</option>
+            <option value="1d" selected>Daily mean</option>
+          </select>
+          <select id="spotter-rose-mode" class="filter-select spotter-select" aria-label="Wave rose mode">
+            <option value="energy" selected>Wave rose: energy-weighted</option>
+            <option value="occurrence">Wave rose: occurrence</option>
+          </select>
+          <label class="toggle-row spotter-range-toggle">
+            <input type="checkbox" id="spotter-full-range-toggle" checked />
+            <span>Show full y-range</span>
+          </label>
+        </div>
+
+        <section class="spotter-summary-grid">
+          <article class="metric-card spotter-info-card spotter-info-card--wide">
+            <div class="metric-card__top">
+              <span>Latest sea state</span>
+              <small id="spotter-sample-time">{{ station.freshness.last_update if station.freshness else 'N/A' }}</small>
+            </div>
+            <div class="metric-current">
+              <small>Wave height, period, direction</small>
+              <strong id="spotter-wave-readout">--</strong>
+            </div>
+            <small id="spotter-wave-caption">Latest valid wave observation in the selected window.</small>
+          </article>
+
+          <article class="metric-card spotter-info-card">
+            <div class="metric-card__top">
+              <span>Station</span>
+              <small>MongoDB</small>
+            </div>
+            <h3 id="spotter-station-name">{{ station.name }}</h3>
+            <p class="spotter-card-copy" id="spotter-station-range">{{ station.freshness.last_update if station.freshness else 'N/A' }}</p>
+            <div class="metric-stat-grid spotter-station-kv">
+              <div>
+                <small>Latitude</small>
+                <b id="spotter-latitude">{{ '%.4f'|format(station.lat or 0) }}</b>
+              </div>
+              <div>
+                <small>Longitude</small>
+                <b id="spotter-longitude">{{ '%.4f'|format(station.lon or 0) }}</b>
+              </div>
+            </div>
+          </article>
+
+          <article class="metric-card spotter-info-card">
+            <div class="metric-card__top">
+              <span>Dominant direction</span>
+              <small>Latest</small>
+            </div>
+            <div class="metric-current">
+              <small>Incoming peak wave direction</small>
+              <strong id="spotter-direction-headline">--</strong>
+            </div>
+            <div class="metric-stat-grid">
+              <div>
+                <small>Spread</small>
+                <b id="spotter-directional-spread-card">--</b>
+              </div>
+              <div>
+                <small>Class</small>
+                <b id="spotter-spread-class">--</b>
+              </div>
+            </div>
+          </article>
+
+          <article class="metric-card spotter-info-card">
+            <div class="metric-card__top">
+              <span>Data coverage</span>
+              <small id="spotter-coverage-period">30D</small>
+            </div>
+            <div class="metric-current">
+              <small>Valid wave-height samples</small>
+              <strong id="spotter-valid-count">--</strong>
+            </div>
+            <div class="metric-stat-grid">
+              <div>
+                <small>Timestamps</small>
+                <b id="spotter-unique-count">--</b>
+              </div>
+              <div>
+                <small>Gaps</small>
+                <b id="spotter-gap-count">--</b>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <div class="tab-switch spotter-tabs" id="spotter-tabs" aria-label="Spotter dashboard sections">
+          <button type="button" data-spotter-panel="overview" class="is-active">Overview</button>
+          <button type="button" data-spotter-panel="waves">Wave analysis</button>
+          <button type="button" data-spotter-panel="met">Meteorology & telemetry</button>
+        </div>
+
+        <section class="spotter-panel is-active" data-spotter-panel="overview">
+          <div class="spotter-figure-grid spotter-figure-grid--overview">
+            <article class="chart-card spotter-figure-card spotter-figure-card--wide">
+              <header>
+                <h3>Sea State Timeline</h3>
+                <p>Aligned panels for wave height, wave periods, and circular peak direction.</p>
+              </header>
+              <div id="spotter-timeline" class="chart-host spotter-plot spotter-plot--large"></div>
+            </article>
+
+            <div class="spotter-side-stack">
+              <article class="chart-card spotter-figure-card spotter-compass-card">
+                <header>
+                  <h3>Current Direction &amp; Spread</h3>
+                </header>
+                <div class="spotter-compass-wrap">
+                  <svg class="spotter-compass" viewBox="0 0 180 180" role="img" aria-label="Spotter wave direction compass">
+                    <defs>
+                      <marker id="spotter-arrowhead" markerWidth="8" markerHeight="8" refX="4" refY="2.5" orient="auto" markerUnits="strokeWidth">
+                        <path d="M0,0 L0,5 L6,2.5 z"></path>
+                      </marker>
+                    </defs>
+                    <circle class="spotter-compass-ring" cx="90" cy="90" r="68"></circle>
+                    <circle class="spotter-compass-inner" cx="90" cy="90" r="46"></circle>
+                    <text x="90" y="16">N</text>
+                    <text x="166" y="94">E</text>
+                    <text x="90" y="170">S</text>
+                    <text x="14" y="94">W</text>
+                    <path id="spotter-spread-arc" class="spotter-spread-arc" d=""></path>
+                    <line id="spotter-wave-vector" class="spotter-wave-vector" x1="90" y1="24" x2="90" y2="90" marker-end="url(#spotter-arrowhead)"></line>
+                    <circle class="spotter-compass-center" cx="90" cy="90" r="6"></circle>
+                  </svg>
+                  <div class="spotter-readout-list">
+                    <div><span>Peak direction</span><strong id="spotter-peak-direction">--</strong></div>
+                    <div><span>Mean direction</span><strong id="spotter-mean-direction">--</strong></div>
+                    <div><span>Directional spread</span><strong id="spotter-directional-spread">--</strong></div>
+                    <div><span>Wave system</span><strong id="spotter-wave-system">--</strong></div>
+                  </div>
+                </div>
+                <p class="spotter-figure-note">The arrow shows incoming peak wave direction. The arc shows directional spread around that bearing.</p>
+              </article>
+
+              <article class="chart-card spotter-figure-card">
+                <header>
+                  <h3>Sea-State Category Share</h3>
+                </header>
+                <div id="spotter-sea-state-bars" class="chart-host spotter-plot spotter-plot--small"></div>
+              </article>
+            </div>
+
+            <article class="chart-card spotter-figure-card spotter-figure-card--wide">
+              <header>
+                <h3>Wave Rose</h3>
+                <p>Direction is treated as circular data. Energy weighting uses squared significant wave height.</p>
+              </header>
+              <div id="spotter-wave-rose" class="chart-host spotter-plot spotter-plot--polar"></div>
+            </article>
+
+            <article class="chart-card spotter-figure-card">
+              <header>
+                <h3>Hs vs Tp Regime Map</h3>
+                <p>Marker color is peak direction; marker size reflects directional spread.</p>
+              </header>
+              <div id="spotter-regime-scatter" class="chart-host spotter-plot"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="spotter-panel" data-spotter-panel="waves" hidden>
+          <div class="spotter-figure-grid">
+            <article class="chart-card spotter-figure-card spotter-figure-card--wide">
+              <header>
+                <h3>Exceedance Curve</h3>
+                <p>Shows how often significant wave height is above a threshold.</p>
+              </header>
+              <div id="spotter-exceedance" class="chart-host spotter-plot"></div>
+            </article>
+            <article class="chart-card spotter-figure-card">
+              <header>
+                <h3>Significant Wave Height Histogram</h3>
+                <p>Shows the observed distribution of significant wave height.</p>
+              </header>
+              <div id="spotter-histogram" class="chart-host spotter-plot"></div>
+            </article>
+            <article class="chart-card spotter-figure-card spotter-figure-card--wide">
+              <header>
+                <h3>Daily Wave Height Distribution</h3>
+                <p>Daily box plots show within-day distribution and outliers.</p>
+              </header>
+              <div id="spotter-daily-box" class="chart-host spotter-plot"></div>
+            </article>
+            <article class="chart-card spotter-figure-card">
+              <header>
+                <h3>Directional Spread Timeline</h3>
+                <p>Mean and peak directional spread over the selected window.</p>
+              </header>
+              <div id="spotter-spread-timeline" class="chart-host spotter-plot"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="spotter-panel" data-spotter-panel="met" hidden>
+          <div class="spotter-figure-grid">
+            <article class="chart-card spotter-figure-card spotter-figure-card--wide">
+              <header>
+                <h3>Wind Rose</h3>
+                <p>Wind direction grouped by observed wind speed.</p>
+              </header>
+              <div id="spotter-wind-rose" class="chart-host spotter-plot"></div>
+            </article>
+            <article class="chart-card spotter-figure-card">
+              <header>
+                <h3>Wind-Wave Alignment</h3>
+                <p>Angular difference between wind direction and peak wave direction.</p>
+              </header>
+              <div id="spotter-alignment" class="chart-host spotter-plot"></div>
+            </article>
+            <article class="chart-card spotter-figure-card spotter-figure-card--wide">
+              <header>
+                <h3>Meteorological Timeline</h3>
+                <p>Surface temperature, pressure, and humidity when present in MongoDB.</p>
+              </header>
+              <div id="spotter-met-timeline" class="chart-host spotter-plot"></div>
+            </article>
+            <article class="chart-card spotter-figure-card">
+              <header>
+                <h3>Telemetry</h3>
+                <p>Battery voltage and battery power when present in MongoDB.</p>
+              </header>
+              <div id="spotter-telemetry" class="chart-host spotter-plot"></div>
+            </article>
+          </div>
+        </section>
+      </section>
+      {% else %}
       <div class="quick-period-strip">
         <span>Statistics window</span>
         <strong id="stats-period-label">24H</strong>
@@ -96,13 +342,15 @@
         <div class="sensor-comparison-grid" id="quick-sensor-comparison" hidden></div>
         <div class="quick-trend-grid" id="quick-trends"></div>
       </section>
+      {% endif %}
     </section>
 
+    {% if station_template != 'spotter_buoy' %}
     <section id="advanced-view" class="tab-panel">
       <div class="advanced-layout">
         <aside class="left-rail advanced-left-rail">
           <section class="side-summary-card">
-            <span class="eyebrow">{{ station.device_label }}</span>
+            <span class="eyebrow">{{ station_family_label }}</span>
             <h1>{{ station.name }}</h1>
             <p>{{ station.location_text }}</p>
 
@@ -214,5 +462,6 @@
         </section>
       </div>
     </section>
+    {% endif %}
   </section>
 </main>

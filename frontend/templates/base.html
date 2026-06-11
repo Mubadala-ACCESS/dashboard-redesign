@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{{ page_title }} | {{ app_name }}</title>
+    <title>{% block title %}{{ page_title }} | {{ app_name }}{% endblock %}</title>
     <meta name="description" content="Mubadala ACCESS environmental monitoring dashboard for Abu Dhabi." />
     <meta name="theme-color" content="#5b1f8a" />
     <link rel="icon" href="/static/img/favicon.ico" sizes="any" />

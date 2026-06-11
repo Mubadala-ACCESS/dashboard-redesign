@@ -601,7 +601,7 @@ def create_app() -> FastAPI:
         metrics: Optional[str] = Query(default=None, description='Pipe- or comma-separated metric keys'),
         split_sensors: bool = Query(default=False),
         clean: bool = Query(default=False),
-        display_points: int = Query(default=720, ge=120, le=720),
+        display_points: int = Query(default=720, ge=120, le=2400),
         repo: MongoDashboardRepository = Depends(get_repo),
         auth: AuthService = Depends(get_auth_service),
     ):

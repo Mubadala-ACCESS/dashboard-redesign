@@ -28,6 +28,13 @@ db.stations_info.createIndex(
 // Special collections already called directly by the legacy app and the new FastAPI adapter
 print('Indexing special collections...');
 db.buoy_01.createIndex({ datetime: -1 }, { name: 'ix_buoy_datetime_desc' });
+db.buoy_samples.createIndex({ ts: -1 }, { name: 'ix_spotter_ts_desc' });
+db.buoy_samples.createIndex({ timestamp: -1 }, { name: 'ix_spotter_timestamp_desc', sparse: true });
+db.buoy_samples.createIndex({ 'meta.station_id': 1, ts: -1 }, { name: 'ix_spotter_meta_station_ts' });
+db.buoy_samples.createIndex({ 'meta.spotter_id': 1, ts: -1 }, { name: 'ix_spotter_meta_spotter_ts' });
+db.buoy_samples.createIndex({ station_id: 1, ts: -1 }, { name: 'ix_spotter_station_ts', sparse: true });
+db.buoy_samples.createIndex({ spotter_id: 1, ts: -1 }, { name: 'ix_spotter_spotter_ts', sparse: true });
+db.buoy_samples.createIndex({ station_name: 1, ts: -1 }, { name: 'ix_spotter_station_name_ts', sparse: true });
 db.f1_meteostation.createIndex({ Timestamp: -1 }, { name: 'ix_meteo_timestamp_desc' });
 db.fidas_nyuad.createIndex({ datetime: -1 }, { name: 'ix_fidas_datetime_desc' });
 

@@ -25,7 +25,7 @@ from .settings import Settings
 
 class MongoDashboardRepository:
     LOOKBACK = 50
-    MAX_CHART_POINTS = 720
+    MAX_CHART_POINTS = 2400
     MAX_TABLE_ROWS = 100
     HIDDEN_STATION_STATUSES = {'Decommissioned', 'Disabled'}
     DASHBOARD_STATUS_ORDER = ['Active', 'Maintenance']
@@ -123,6 +123,54 @@ class MongoDashboardRepository:
         'barometric_pressure',
         'albedo',
     ]
+    SPOTTER_BUOY_ALIASES = {
+        'significant_wave_height_m': [
+            'significant_wave_height_m', 'Significant Wave Height (m)', 'significant_wave_height',
+            'sig_wave_height', 'hs', 'hm0', 'Hsig',
+        ],
+        'peak_period_s': ['peak_period_s', 'Peak Period (s)', 'peak_period', 'tp'],
+        'mean_period_s': ['mean_period_s', 'Mean Period (s)', 'mean_period', 'tm', 'tmean'],
+        'peak_direction_deg': [
+            'peak_direction_deg', 'Peak Wave Direction (deg)', 'peak_wave_direction_deg',
+            'peak_wave_direction', 'dp', 'peak_dir',
+        ],
+        'mean_direction_deg': [
+            'mean_direction_deg', 'Mean Wave Direction (deg)', 'mean_wave_direction_deg',
+            'mean_wave_direction', 'mean_dir',
+        ],
+        'mean_directional_spread_deg': [
+            'mean_directional_spread_deg', 'Mean Directional Spread (deg)', 'mean_directional_spread',
+            'directional_spread_deg', 'spread_deg',
+        ],
+        'peak_directional_spread_deg': [
+            'peak_directional_spread_deg', 'Peak Directional Spread (deg)', 'peak_directional_spread',
+            'peak_spread_deg',
+        ],
+        'wind_speed_m_s': [
+            'wind_speed_m_s', 'Wind Speed (m/s)', 'wind_speed_mps', 'wind_speed',
+            'windspeed', 'wind_speed_ms',
+        ],
+        'wind_direction_deg': [
+            'wind_direction_deg', 'Wind Direction (deg)', 'wind_direction', 'wind_dir',
+            'wind_from_direction_deg',
+        ],
+        'surface_temperature_c': [
+            'surface_temperature_c', 'Surface Temperature (C)', 'Surface Temperature (°C)',
+            'sea_surface_temperature_c', 'water_temperature_c', 'sst_c',
+        ],
+        'mean_barometric_pressure_hpa': [
+            'mean_barometric_pressure_hpa', 'Mean Barometric Pressure (hPa)', 'Pressure (hPa)',
+            'Air Pressure (hPa)', 'air_pressure_hpa', 'pressure_hpa', 'barometric_pressure_hpa',
+        ],
+        'humidity_pct': [
+            'humidity_pct', 'Humidity (%)', 'Relative Humidity (%)', 'relative_humidity_percent',
+            'humidity_percent', 'humidity',
+        ],
+        'battery_voltage_v': ['battery_voltage_v', 'Battery Voltage (V)', 'battery_voltage', 'battery'],
+        'battery_power_w': ['battery_power_w', 'Battery Power (W)', 'battery_power'],
+        'latitude': ['latitude', 'lat'],
+        'longitude': ['longitude', 'lon', 'lng', 'long'],
+    }
     SPOTTER_BUOY_PARAMETER_EXCLUDES = {'latitude', 'longitude'}
     SPOTTER_BUOY_LABEL_OVERRIDES = {
         'significant_wave_height_m': 'Significant Wave Height (m)',
@@ -530,7 +578,28 @@ class MongoDashboardRepository:
         except Exception:
             self.cache.set(cache_key, False, ttl_seconds=60)
 
+    def _coerce_datetime(self, value: Any) -> datetime | None:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            return value
+        if isinstance(value, pd.Timestamp):
+            return value.to_pydatetime()
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            try:
+                return datetime.fromisoformat(text.replace('Z', '+00:00'))
+            except ValueError:
+                parsed = pd.to_datetime(text, errors='coerce')
+                if pd.isna(parsed):
+                    return None
+                return parsed.to_pydatetime()
+        return None
+
     def _localize(self, value: datetime | None) -> datetime | None:
+        value = self._coerce_datetime(value)
         if value is None:
             return None
         if value.tzinfo is None:
@@ -551,6 +620,7 @@ class MongoDashboardRepository:
         return self._now().astimezone(self.local_tz).utcoffset() or timedelta()
 
     def _station_actual_datetime(self, station: Dict[str, Any], value: datetime | None) -> datetime | None:
+        value = self._coerce_datetime(value)
         if value is None:
             return None
         if station.get('device_type') in {'Fidas_Palas', 'Meteorological'}:
@@ -756,6 +826,30 @@ class MongoDashboardRepository:
                 spotter_ids.append(spotter_id)
         return spotter_ids
 
+    def _spotter_station_names(self, station: Dict[str, Any]) -> List[str]:
+        names: List[str] = []
+        for value in [station.get('name'), 'NYUAD Sofar Spotter Buoy']:
+            name = str(value or '').strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def _coordinate_match_clause(self, station: Dict[str, Any]) -> Dict[str, Any] | None:
+        lat = station.get('lat')
+        lon = station.get('lon')
+        if lat is None or lon is None:
+            return None
+        try:
+            lat_value = float(lat)
+            lon_value = float(lon)
+        except (TypeError, ValueError):
+            return None
+        tolerance = 0.0002
+        return {
+            'latitude': {'$gte': lat_value - tolerance, '$lte': lat_value + tolerance},
+            'longitude': {'$gte': lon_value - tolerance, '$lte': lon_value + tolerance},
+        }
+
     def _station_data_filter(self, station: Dict[str, Any]) -> Dict[str, Any]:
         if self._is_spotter_buoy(station):
             clauses: List[Dict[str, Any]] = []
@@ -769,9 +863,19 @@ class MongoDashboardRepository:
                     {'meta.spotter_id': spotter_id},
                     {'spotter_id': spotter_id},
                 ])
+            for station_name in self._spotter_station_names(station):
+                clauses.extend([
+                    {'station_name': station_name},
+                    {'meta.station_name': station_name},
+                    {'name': station_name},
+                    {'meta.name': station_name},
+                ])
+            coordinate_clause = self._coordinate_match_clause(station)
+            if coordinate_clause:
+                clauses.append(coordinate_clause)
             if clauses:
                 return {'$or': clauses}
-            return {'meta.provider': 'sofar'}
+            return {'$or': [{'meta.provider': 'sofar'}, {'provider': 'sofar'}]}
         return {}
 
     def _with_station_data_filter(self, station: Dict[str, Any], query: Dict[str, Any]) -> Dict[str, Any]:
@@ -1006,7 +1110,7 @@ class MongoDashboardRepository:
         if device_type == 'Meteorological' or station_num == 5463:
             return self.settings.mongo_meteo_collection, 'Timestamp'
         if self._is_spotter_buoy(station):
-            return self._spotter_samples_collection(), 'ts'
+            return self._spotter_samples_collection(), self._spotter_time_field(station)
         if device_type == 'Buoy' or station_num == 8394:
             return self.settings.mongo_buoy_collection, 'datetime'
         if device_type == 'Fidas_Palas' or station_num == 100:
@@ -1016,6 +1120,52 @@ class MongoDashboardRepository:
         if station_num is not None:
             return f'station{station_num}', 'datetime'
         return None, None
+
+    def _spotter_time_field(self, station: Dict[str, Any]) -> str:
+        cache_key = f'spotter_time_field:{station["station_id"]}'
+        cached = self.cache.get(cache_key)
+        if cached:
+            return cached
+        collection_name = self._spotter_samples_collection()
+        if not self._collection_exists(collection_name):
+            return 'ts'
+        collection = self.db[collection_name]
+        for field in ('ts', 'timestamp', 'datetime', 'time'):
+            query = self._with_station_data_filter(station, {field: {'$exists': True}})
+            if collection.find_one(query, projection={field: 1}):
+                self.cache.set(cache_key, field, ttl_seconds=300)
+                return field
+        self.cache.set(cache_key, 'ts', ttl_seconds=60)
+        return 'ts'
+
+    def _spotter_time_uses_strings(self, station: Dict[str, Any], time_field: str) -> bool:
+        if not self._is_spotter_buoy(station):
+            return False
+        cache_key = f'spotter_time_is_string:{station["station_id"]}:{time_field}'
+        cached = self.cache.get(cache_key)
+        if cached is not None:
+            return bool(cached)
+        collection_name = self._spotter_samples_collection()
+        if not self._collection_exists(collection_name):
+            self.cache.set(cache_key, False, ttl_seconds=60)
+            return False
+        query = self._with_station_data_filter(station, {time_field: {'$exists': True}})
+        doc = self.db[collection_name].find_one(query, projection={time_field: 1})
+        is_string = isinstance((doc or {}).get(time_field), str)
+        self.cache.set(cache_key, is_string, ttl_seconds=300)
+        return is_string
+
+    def _datetime_string_like(self, sample: Any, value: datetime) -> str:
+        sample_text = str(sample or '')
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        if 'T' not in sample_text and ' ' in sample_text:
+            if re.search(r'[+-]\d{2}:?\d{2}$', sample_text):
+                return value.isoformat(sep=' ', timespec='seconds')
+            return value.replace(tzinfo=None).strftime('%Y-%m-%d %H:%M:%S')
+        if sample_text.endswith('Z'):
+            return value.astimezone(timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
+        return value.isoformat(timespec='seconds')
 
     def _sbn_waypoint_order(self, value: str | None) -> Optional[int]:
         if not value:
@@ -1251,7 +1401,9 @@ class MongoDashboardRepository:
                 'latest_data': station['data_extent'].get('latest') or 'N/A',
                 'measurement_frequency': measurement_frequency,
             },
-            'tabs': self.metadata_service.metadata_tabs_for_device(station['device_type']),
+            'tabs': self.metadata_service.metadata_tabs_for_device(
+                'SpotterBuoy' if self._is_spotter_buoy(station) else station['device_type']
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -1401,33 +1553,55 @@ class MongoDashboardRepository:
         query = self._with_station_data_filter(station, {time_field: {'$exists': True}})
         discovered: List[str] = []
         seen: set[str] = set()
+        is_spotter = self._is_spotter_buoy(station)
         for doc in collection.find(query).sort(time_field, DESCENDING).limit(200):
             for key in self._numeric_metric_keys_from_doc(doc, time_field):
-                if key not in seen:
-                    seen.add(key)
-                    discovered.append(key)
+                metric_key = self._spotter_canonical_metric_key(key) if is_spotter else key
+                if metric_key not in seen:
+                    seen.add(metric_key)
+                    discovered.append(metric_key)
         ordered = self._ordered_document_metrics(station, discovered)
         metric_map = {key: self._document_metric_label(station, key) for key in ordered}
         self.cache.set(cache_key, metric_map, ttl_seconds=300)
         return metric_map
+
+    def _spotter_alias_key(self, value: str) -> str:
+        text = str(value or '').lower().replace('°', 'deg')
+        return re.sub(r'[^a-z0-9]+', '', text)
+
+    def _spotter_canonical_metric_key(self, key: str) -> str:
+        normalized = self._spotter_alias_key(key)
+        for canonical, aliases in self.SPOTTER_BUOY_ALIASES.items():
+            if normalized in {self._spotter_alias_key(alias) for alias in aliases}:
+                return canonical
+        return key
+
+    def _spotter_metric_sources(self, metric: str) -> List[str]:
+        aliases = self.SPOTTER_BUOY_ALIASES.get(metric, [metric])
+        sources: List[str] = []
+        for alias in [metric, *aliases]:
+            if alias and alias not in sources:
+                sources.append(alias)
+        return sources
 
     def _spotter_buoy_metric_map(self, station: Dict[str, Any]) -> Dict[str, str]:
         cache_key = f'spotter_buoy_metrics:{station["station_id"]}'
         cached = self.cache.get(cache_key)
         if cached is not None:
             return cached
-        metric_map = self._document_metric_map(station, self._spotter_samples_collection(), 'ts')
+        metric_map = self._document_metric_map(station, self._spotter_samples_collection(), self._spotter_time_field(station))
         registry_collection = self._spotter_registry_collection()
-        if not metric_map and self._collection_exists(registry_collection):
+        if self._collection_exists(registry_collection):
             discovered = [
-                doc.get('target_field')
+                self._spotter_canonical_metric_key(doc.get('target_field'))
                 for doc in self.db[registry_collection].find(
                     {'provider': 'sofar', 'target_field': {'$exists': True}},
                     {'_id': 0, 'target_field': 1},
                 )
                 if doc.get('target_field')
             ]
-            ordered = self._ordered_document_metrics(station, dict.fromkeys(discovered).keys())
+            merged = dict.fromkeys([*metric_map.keys(), *discovered])
+            ordered = self._ordered_document_metrics(station, merged.keys())
             metric_map = {key: self._document_metric_label(station, key) for key in ordered}
         metric_map = {
             key: label
@@ -1702,15 +1876,24 @@ class MongoDashboardRepository:
         if delta is None:
             return {}
         collection_name, _ = self._collection_for_station(station)
+        latest_raw = None
         anchor = None
         if self._collection_exists(collection_name):
             self._ensure_time_index(collection_name, time_field)
             latest = self._latest_document(station, projection={time_field: 1})
-            anchor = latest.get(time_field) if latest else None
+            latest_raw = latest.get(time_field) if latest else None
+            anchor = self._coerce_datetime(latest_raw)
         if anchor is None:
             anchor = self._now()
             if station.get('device_type') == 'Fidas_Palas':
                 anchor = anchor + self._local_tz_offset()
+        if self._is_spotter_buoy(station) and isinstance(latest_raw, str):
+            return {
+                time_field: {
+                    '$gte': self._datetime_string_like(latest_raw, anchor - delta),
+                    '$lte': latest_raw,
+                }
+            }
         return {time_field: {'$gte': anchor - delta, '$lte': anchor}}
 
     def _date_boundary_for_query(self, station: Dict[str, Any], value: Optional[str], end: bool = False) -> Optional[datetime]:
@@ -1740,10 +1923,22 @@ class MongoDashboardRepository:
         end_dt = self._date_boundary_for_query(station, end_date, end=True)
         if start_dt or end_dt:
             window: Dict[str, datetime] = {}
-            if start_dt:
-                window['$gte'] = start_dt
-            if end_dt:
-                window['$lt'] = end_dt
+            if self._spotter_time_uses_strings(station, time_field):
+                sample = None
+                collection_name, _ = self._collection_for_station(station)
+                if self._collection_exists(collection_name):
+                    query = self._with_station_data_filter(station, {time_field: {'$exists': True}})
+                    sample_doc = self.db[collection_name].find_one(query, projection={time_field: 1})
+                    sample = (sample_doc or {}).get(time_field)
+                if start_dt:
+                    window['$gte'] = self._datetime_string_like(sample, start_dt)
+                if end_dt:
+                    window['$lt'] = self._datetime_string_like(sample, end_dt)
+            else:
+                if start_dt:
+                    window['$gte'] = start_dt
+                if end_dt:
+                    window['$lt'] = end_dt
             return {time_field: window}
         return self._base_query_for_station_period(station, period, time_field)
 
@@ -1847,8 +2042,14 @@ class MongoDashboardRepository:
 
         first = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, ASCENDING)])
         last = collection.find_one(query, projection={time_field: 1}, sort=[(time_field, DESCENDING)])
-        start_dt = first.get(time_field) if first else None
-        end_dt = last.get(time_field) if last else None
+        start_raw = first.get(time_field) if first else None
+        end_raw = last.get(time_field) if last else None
+        start_dt = self._coerce_datetime(start_raw)
+        end_dt = self._coerce_datetime(end_raw)
+        if not isinstance(start_raw, datetime) or not isinstance(end_raw, datetime):
+            docs = list(collection.find(query, projection).sort(time_field, ASCENDING).limit(cap))
+            meta.update({'source_points': len(docs), 'returned_points': len(docs), 'sampled': bool(cap)})
+            return docs, meta
         if not isinstance(start_dt, datetime) or not isinstance(end_dt, datetime) or start_dt >= end_dt:
             doc = collection.find_one(query, projection=projection, sort=[(time_field, DESCENDING)])
             docs = [doc] if doc else []
@@ -2007,10 +2208,14 @@ class MongoDashboardRepository:
         metrics = [metric for metric in metrics if metric in label_map]
         if not metrics:
             return pd.DataFrame(), label_map
-        metric_sources = {
-            metric: self._underwater_metric_aliases(metric) if station['device_type'] == 'underwater_probe' else [metric]
-            for metric in metrics
-        }
+        metric_sources = {}
+        for metric in metrics:
+            if station['device_type'] == 'underwater_probe':
+                metric_sources[metric] = self._underwater_metric_aliases(metric)
+            elif self._is_spotter_buoy(station):
+                metric_sources[metric] = self._spotter_metric_sources(metric)
+            else:
+                metric_sources[metric] = [metric]
 
         query = self._with_station_data_filter(
             station,
@@ -2043,7 +2248,11 @@ class MongoDashboardRepository:
                 if len(aliases) == 1:
                     metric_query[aliases[0]] = {'$exists': True}
                 else:
-                    metric_query['$or'] = [{alias: {'$exists': True}} for alias in aliases]
+                    alias_clause = {'$or': [{alias: {'$exists': True}} for alias in aliases]}
+                    if '$or' in metric_query:
+                        metric_query = {'$and': [metric_query, alias_clause]}
+                    else:
+                        metric_query['$or'] = alias_clause['$or']
                 cursor = collection.find(metric_query, projection).limit(backfill_limit)
                 hint_name = None
                 if station.get('device_type') == 'Fidas_Palas':

@@ -42,16 +42,86 @@
     profileRequestId: 0,
     userSelectedAdvancedPeriod: false,
     staleAdvancedPopupShown: false,
+    spotterPeriod: '30D',
+    spotterAggregation: '1d',
+    spotterRoseMode: 'energy',
+    spotterFullRange: true,
+    spotterPanel: 'overview',
+    spotterPayload: null,
+    spotterRows: [],
+    spotterSupplementPayload: null,
+    spotterSupplementRows: [],
+    spotterRequestId: 0,
     latestCache: new Map(),
     timeseriesCache: new Map(),
     profileCache: new Map(),
     spectraCache: new Map(),
+    spotterCache: new Map(),
   };
 
   const emptyValue = '&mdash;';
   const defaultSelectedMetricLimit = 3;
   const trendColors = ['#5b21b6', '#0f766e', '#2563eb', '#d97706', '#be185d', '#64748b'];
   const sensorTrendColors = ['#0f766e', '#2563eb', '#d97706', '#be185d'];
+  const spotterMetricKeys = [
+    'significant_wave_height_m',
+    'peak_period_s',
+    'mean_period_s',
+    'peak_direction_deg',
+    'mean_direction_deg',
+    'mean_directional_spread_deg',
+    'peak_directional_spread_deg',
+    'wind_speed_m_s',
+    'wind_direction_deg',
+    'surface_temperature_c',
+    'mean_barometric_pressure_hpa',
+    'humidity_pct',
+    'battery_voltage_v',
+    'battery_power_w',
+  ];
+  const spotterDirectionKeys = new Set(['peak_direction_deg', 'mean_direction_deg', 'wind_direction_deg']);
+  const spotterSparseMetricKeys = [
+    'wind_speed_m_s',
+    'wind_direction_deg',
+    'surface_temperature_c',
+    'mean_barometric_pressure_hpa',
+    'humidity_pct',
+    'battery_voltage_v',
+    'battery_power_w',
+  ];
+  const spotterUnits = {
+    significant_wave_height_m: 'm',
+    peak_period_s: 's',
+    mean_period_s: 's',
+    peak_direction_deg: 'deg',
+    mean_direction_deg: 'deg',
+    mean_directional_spread_deg: 'deg',
+    peak_directional_spread_deg: 'deg',
+    wind_speed_m_s: 'm/s',
+    wind_direction_deg: 'deg',
+    surface_temperature_c: 'deg C',
+    mean_barometric_pressure_hpa: 'hPa',
+    humidity_pct: '%',
+    battery_voltage_v: 'V',
+    battery_power_w: 'W',
+  };
+  const spotterWaveBins = [
+    { label: '0-0.5 m', min: 0, max: 0.5, color: '#c7f3ef' },
+    { label: '0.5-1.25 m', min: 0.5, max: 1.25, color: '#8dded9' },
+    { label: '1.25-2.5 m', min: 1.25, max: 2.5, color: '#9b7df0' },
+    { label: '2.5-4 m', min: 2.5, max: 4, color: '#6d28d9' },
+    { label: '>4 m', min: 4, max: Infinity, color: '#3b0764' },
+  ];
+  const spotterSeaStateBins = [
+    { label: 'Calm', min: 0, max: 0.5, color: '#d7f7f2' },
+    { label: 'Slight', min: 0.5, max: 1.25, color: '#a7e8e3' },
+    { label: 'Moderate', min: 1.25, max: 2.5, color: '#c4b5fd' },
+    { label: 'Rough', min: 2.5, max: 4, color: '#8b5cf6' },
+    { label: 'Very rough', min: 4, max: 6, color: '#6d28d9' },
+    { label: 'High', min: 6, max: Infinity, color: '#4c1d95' },
+  ];
+  const spotterSectorCount = 16;
+  const spotterPlotConfig = { displaylogo: false, responsive: true };
   const maxClientCacheEntries = 24;
   const staleAdvancedThresholdMinutes = 12 * 60;
   const liveTelemetryTypes = new Set(['IoTBox', 'Fidas_Palas', 'Meteorological', 'Buoy']);
@@ -221,6 +291,10 @@
 
   function isUnderwaterStation() {
     return state.stationTemplate === 'underwater';
+  }
+
+  function isSpotterBuoy() {
+    return state.stationTemplate === 'spotter_buoy';
   }
 
   function shouldUseDateRangeControls() {
@@ -576,6 +650,1028 @@
     return (metrics || []).filter((metric) => isBuoyProfilePanel() ? profileKeys.has(metric.key) : !profileKeys.has(metric.key));
   }
 
+  function setText(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.textContent = value;
+  }
+
+  function setHtml(id, value) {
+    const element = document.getElementById(id);
+    if (element) element.innerHTML = value;
+  }
+
+  function payloadCard(payload, keys) {
+    const cards = payload?.cards || [];
+    for (const key of keys) {
+      const exact = cards.find((card) => card.metric === key);
+      if (exact) return exact;
+    }
+    const normalizedKeys = keys.map((key) => String(key).toLowerCase());
+    return cards.find((card) => {
+      const text = `${card.metric || ''} ${card.label || ''}`.toLowerCase();
+      return normalizedKeys.some((key) => text.includes(key));
+    }) || null;
+  }
+
+  function numericCardValue(card) {
+    const numeric = Number(card?.latest);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  function compassSector(degrees) {
+    const numeric = Number(degrees);
+    if (!Number.isFinite(numeric)) return '';
+    const sectors = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    const index = Math.round((((numeric % 360) + 360) % 360) / 22.5) % 16;
+    return sectors[index];
+  }
+
+  function directionLabel(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return emptyValue;
+    return `${numeric.toFixed(0)} deg${compassSector(numeric) ? ` ${compassSector(numeric)}` : ''}`;
+  }
+
+  function compassPoint(degrees, radius) {
+    const radians = (Number(degrees) - 90) * Math.PI / 180;
+    return {
+      x: 90 + radius * Math.cos(radians),
+      y: 90 + radius * Math.sin(radians),
+    };
+  }
+
+  function compassArcPath(direction, spread) {
+    const numericDirection = Number(direction);
+    const numericSpread = Number(spread);
+    if (!Number.isFinite(numericDirection) || !Number.isFinite(numericSpread) || numericSpread <= 0) return '';
+    const span = Math.min(359, Math.max(1, numericSpread));
+    const startAngle = numericDirection - span / 2;
+    const endAngle = numericDirection + span / 2;
+    const start = compassPoint(endAngle, 68);
+    const end = compassPoint(startAngle, 68);
+    const largeArc = span > 180 ? 1 : 0;
+    return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A 68 68 0 ${largeArc} 0 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
+  }
+
+  function updateSpotterCompass(direction, spread) {
+    const vector = document.getElementById('spotter-wave-vector');
+    const arc = document.getElementById('spotter-spread-arc');
+    const numericDirection = Number(direction);
+    if (vector) {
+      if (Number.isFinite(numericDirection)) {
+        const outer = compassPoint(numericDirection, 66);
+        vector.setAttribute('x1', outer.x.toFixed(2));
+        vector.setAttribute('y1', outer.y.toFixed(2));
+        vector.setAttribute('x2', '90');
+        vector.setAttribute('y2', '90');
+        vector.hidden = false;
+      } else {
+        vector.hidden = true;
+      }
+    }
+    if (arc) arc.setAttribute('d', compassArcPath(direction, spread));
+  }
+
+  function updateSpotterOverview(payload) {
+    if (!isSpotterBuoy()) return;
+    const height = payloadCard(payload, ['significant_wave_height_m', 'wave height']);
+    const peakPeriod = payloadCard(payload, ['peak_period_s', 'peak period']);
+    const peakDirection = payloadCard(payload, ['peak_direction_deg', 'peak wave direction']);
+    const meanDirection = payloadCard(payload, ['mean_direction_deg', 'mean wave direction']);
+    const meanSpread = payloadCard(payload, ['mean_directional_spread_deg', 'mean directional spread']);
+    const peakSpread = payloadCard(payload, ['peak_directional_spread_deg', 'peak directional spread']);
+    const direction = numericCardValue(peakDirection) ?? numericCardValue(meanDirection);
+    const spread = numericCardValue(peakSpread) ?? numericCardValue(meanSpread);
+    const heightText = height ? metricValue(height.latest, height.unit) : emptyValue;
+    const periodText = peakPeriod ? metricValue(peakPeriod.latest, peakPeriod.unit) : emptyValue;
+    const directionText = directionLabel(direction);
+    setHtml('spotter-wave-readout', `${heightText} @ ${periodText} from ${App.escapeHtml(directionText)}`);
+    setText('spotter-sample-time', page.dataset.lastUpdateLabel || payload?.station?.freshness?.last_update || 'N/A');
+    const station = payload?.station || {};
+    const lat = Number(station.lat);
+    const lon = Number(station.lon);
+    if (Number.isFinite(lat)) setText('spotter-latitude', lat.toFixed(4));
+    if (Number.isFinite(lon)) setText('spotter-longitude', lon.toFixed(4));
+    const sampleCount = [height, peakPeriod, peakDirection, meanDirection, meanSpread]
+      .map((card) => Number(card?.count))
+      .filter((value) => Number.isFinite(value));
+    setText('spotter-sample-count', sampleCount.length ? String(Math.max(...sampleCount)) : '--');
+    setText('spotter-peak-direction', directionLabel(numericCardValue(peakDirection)));
+    setText('spotter-mean-direction', directionLabel(numericCardValue(meanDirection)));
+    setText('spotter-directional-spread', Number.isFinite(spread) ? `${spread.toFixed(0)} deg` : '--');
+    updateSpotterCompass(direction, spread);
+  }
+
+  function finiteNumber(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  }
+
+  function normalizeDegrees(value) {
+    const numeric = finiteNumber(value);
+    if (numeric === null) return null;
+    return ((numeric % 360) + 360) % 360;
+  }
+
+  function angularDifference(a, b) {
+    const first = normalizeDegrees(a);
+    const second = normalizeDegrees(b);
+    if (first === null || second === null) return null;
+    const diff = Math.abs(first - second) % 360;
+    return diff > 180 ? 360 - diff : diff;
+  }
+
+  function circularMean(values) {
+    const numericValues = (values || []).map(normalizeDegrees).filter((value) => value !== null);
+    if (!numericValues.length) return null;
+    const vector = numericValues.reduce((acc, value) => {
+      const radians = value * Math.PI / 180;
+      acc.sin += Math.sin(radians);
+      acc.cos += Math.cos(radians);
+      return acc;
+    }, { sin: 0, cos: 0 });
+    if (!vector.sin && !vector.cos) return null;
+    return normalizeDegrees(Math.atan2(vector.sin, vector.cos) * 180 / Math.PI);
+  }
+
+  function arithmeticMean(values) {
+    const numericValues = (values || []).map(finiteNumber).filter((value) => value !== null);
+    if (!numericValues.length) return null;
+    return numericValues.reduce((sum, value) => sum + value, 0) / numericValues.length;
+  }
+
+  function quantile(values, q) {
+    const numericValues = (values || []).map(finiteNumber).filter((value) => value !== null).sort((a, b) => a - b);
+    if (!numericValues.length) return null;
+    const pos = (numericValues.length - 1) * q;
+    const lower = Math.floor(pos);
+    const upper = Math.ceil(pos);
+    if (lower === upper) return numericValues[lower];
+    return numericValues[lower] + (numericValues[upper] - numericValues[lower]) * (pos - lower);
+  }
+
+  function formatSpotterNumber(value, decimals = 1, unit = '') {
+    const numeric = finiteNumber(value);
+    if (numeric === null) return '--';
+    const rounded = numeric.toFixed(decimals);
+    return `${rounded}${unit ? ` ${unit}` : ''}`;
+  }
+
+  function spotterBearing(value) {
+    const numeric = normalizeDegrees(value);
+    if (numeric === null) return '--';
+    const sector = compassSector(numeric);
+    return `${sector ? `${sector} ` : ''}${numeric.toFixed(0)} deg`;
+  }
+
+  function formatSpotterTimestamp(value) {
+    if (!value) return 'N/A';
+    const text = String(value);
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})/);
+    if (!match) return text;
+    return `${match[1]}-${match[2]}-${match[3]} ${match[4]}:${match[5]} GST`;
+  }
+
+  function compactSpotterDate(value) {
+    if (!value) return 'N/A';
+    const text = String(value);
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return match ? `${match[1]}-${match[2]}-${match[3]}` : text;
+  }
+
+  function spotterChart(payload, key) {
+    return (payload?.charts || []).find((chart) => chart.metric === key) || null;
+  }
+
+  function spotterRowsFromPayload(payload) {
+    const byTimestamp = new Map();
+    (payload?.charts || []).forEach((chart) => {
+      if (!spotterMetricKeys.includes(chart.metric)) return;
+      (chart.series || []).forEach((point) => {
+        if (!point?.x) return;
+        if (!byTimestamp.has(point.x)) {
+          byTimestamp.set(point.x, {
+            timestamp: point.x,
+            timeMs: chartTimestampMs(point.x),
+          });
+        }
+        byTimestamp.get(point.x)[chart.metric] = finiteNumber(point.y);
+      });
+    });
+    return Array.from(byTimestamp.values()).sort((a, b) => {
+      if (a.timeMs !== null && b.timeMs !== null) return a.timeMs - b.timeMs;
+      return String(a.timestamp).localeCompare(String(b.timestamp));
+    });
+  }
+
+  function spotterMetricValues(rows, key) {
+    return (rows || []).map((row) => finiteNumber(row?.[key])).filter((value) => value !== null);
+  }
+
+  function spotterRowsHaveAny(rows, keys) {
+    return (keys || []).some((key) => spotterMetricValues(rows, key).length > 0);
+  }
+
+  function spotterRowsForSparsePanels(rows) {
+    if (spotterRowsHaveAny(rows, spotterSparseMetricKeys)) return rows;
+    return state.spotterSupplementRows?.length ? state.spotterSupplementRows : rows;
+  }
+
+  function spotterDateKey(value) {
+    const text = String(value || '');
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : text.slice(0, 10);
+  }
+
+  function spotterHourKey(value) {
+    const text = String(value || '');
+    const match = text.match(/^(\d{4}-\d{2}-\d{2})[T\s](\d{2})/);
+    return match ? `${match[1]}T${match[2]}` : text.slice(0, 13);
+  }
+
+  function spotterBucketKey(row, aggregation) {
+    if (aggregation === '1d') return spotterDateKey(row.timestamp);
+    if (aggregation === '1h') return spotterHourKey(row.timestamp);
+    return row.timestamp;
+  }
+
+  function spotterBucketTimestamp(key, aggregation, fallback) {
+    if (aggregation === '1d' && /^\d{4}-\d{2}-\d{2}$/.test(key)) return `${key}T12:00:00+04:00`;
+    if (aggregation === '1h' && /^\d{4}-\d{2}-\d{2}T\d{2}$/.test(key)) return `${key}:00:00+04:00`;
+    return fallback || key;
+  }
+
+  function spotterAggregateRows(rows, aggregation) {
+    if (aggregation === 'raw') return [...(rows || [])];
+    const groups = new Map();
+    (rows || []).forEach((row) => {
+      const key = spotterBucketKey(row, aggregation);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    });
+    return Array.from(groups.entries()).map(([key, group]) => {
+      const first = group[0] || {};
+      const row = {
+        timestamp: spotterBucketTimestamp(key, aggregation, first.timestamp),
+        timeMs: chartTimestampMs(spotterBucketTimestamp(key, aggregation, first.timestamp)),
+        sample_count: group.length,
+      };
+      spotterMetricKeys.forEach((metric) => {
+        const values = group.map((item) => item?.[metric]).filter((value) => finiteNumber(value) !== null);
+        row[metric] = spotterDirectionKeys.has(metric) ? circularMean(values) : arithmeticMean(values);
+      });
+      return row;
+    }).sort((a, b) => {
+      if (a.timeMs !== null && b.timeMs !== null) return a.timeMs - b.timeMs;
+      return String(a.timestamp).localeCompare(String(b.timestamp));
+    });
+  }
+
+  function spotterLatestRow(rows) {
+    const preferred = ['significant_wave_height_m', 'peak_period_s', 'peak_direction_deg', 'mean_direction_deg'];
+    for (let index = (rows || []).length - 1; index >= 0; index -= 1) {
+      const row = rows[index];
+      if (preferred.some((key) => finiteNumber(row?.[key]) !== null)) return row;
+    }
+    return null;
+  }
+
+  function spotterSpreadClass(spread) {
+    const numeric = finiteNumber(spread);
+    if (numeric === null) return '--';
+    if (numeric < 30) return 'Narrow';
+    if (numeric < 60) return 'Moderate';
+    return 'Broad';
+  }
+
+  function spotterWaveSystem(row) {
+    const period = finiteNumber(row?.peak_period_s);
+    const spread = finiteNumber(row?.peak_directional_spread_deg ?? row?.mean_directional_spread_deg);
+    const periodText = period === null ? 'Period unavailable' : (period >= 10 ? 'Long-period' : 'Short-period');
+    const spreadText = spread === null ? 'spread unavailable' : `${spotterSpreadClass(spread).toLowerCase()} spread`;
+    return `${periodText}, ${spreadText}`;
+  }
+
+  function spotterGapStats(rows) {
+    const deltas = [];
+    let previous = null;
+    (rows || []).forEach((row) => {
+      const ms = row?.timeMs;
+      if (ms === null || ms === undefined) return;
+      if (previous !== null) {
+        const delta = ms - previous;
+        if (Number.isFinite(delta) && delta > 0) deltas.push(delta);
+      }
+      previous = ms;
+    });
+    const medianDelta = median(deltas);
+    const threshold = medianDelta ? medianDelta * 2.75 : null;
+    return {
+      unique: (rows || []).length,
+      gaps: threshold ? deltas.filter((delta) => delta > threshold).length : 0,
+      medianDelta,
+    };
+  }
+
+  function spotterSeaState(value) {
+    const numeric = finiteNumber(value);
+    if (numeric === null) return null;
+    return spotterSeaStateBins.find((bin) => numeric >= bin.min && numeric < bin.max) || null;
+  }
+
+  function spotterWaveBin(value) {
+    const numeric = finiteNumber(value);
+    if (numeric === null) return null;
+    return spotterWaveBins.find((bin) => numeric >= bin.min && numeric < bin.max) || null;
+  }
+
+  function spotterEmpty(id, message) {
+    const host = document.getElementById(id);
+    if (!host) return;
+    if (window.Plotly && (host.data || host._fullLayout)) Plotly.purge(host);
+    host.innerHTML = `<div class="spotter-empty">${App.escapeHtml(message)}</div>`;
+  }
+
+  function spotterHasTraceData(trace) {
+    if (!trace) return false;
+    if (trace.type === 'barpolar') return Array.isArray(trace.r) && trace.r.some((value) => Number(value) > 0);
+    if (trace.type === 'histogram') return Array.isArray(trace.x) && trace.x.length > 0;
+    if (trace.type === 'box') return Array.isArray(trace.y) && trace.y.length > 0;
+    return (Array.isArray(trace.x) && trace.x.length > 0) || (Array.isArray(trace.y) && trace.y.length > 0);
+  }
+
+  function spotterBaseLayout(layout = {}) {
+    return {
+      margin: { t: 18, r: 22, b: 48, l: 58 },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      plot_bgcolor: 'rgba(0,0,0,0)',
+      font: { color: '#334155', size: 11 },
+      colorway: ['#6d28d9', '#0f766e', '#2563eb', '#d97706', '#be185d', '#64748b'],
+      hovermode: 'closest',
+      ...layout,
+    };
+  }
+
+  function spotterPlot(id, traces, layout = {}, emptyMessage = 'No samples are present for this figure in the selected window.') {
+    const host = document.getElementById(id);
+    if (!host || !window.Plotly) return;
+    const usableTraces = (traces || []).filter(spotterHasTraceData);
+    if (!usableTraces.length) {
+      spotterEmpty(id, emptyMessage);
+      return;
+    }
+    host.innerHTML = '';
+    Plotly.react(host, usableTraces, spotterBaseLayout(layout), spotterPlotConfig)
+      .then(() => Plotly.Plots.resize(host));
+  }
+
+  function renderSpotterSummary(payload, rows) {
+    const station = payload?.station || {};
+    const latest = spotterLatestRow(rows);
+    const direction = finiteNumber(latest?.peak_direction_deg) ?? finiteNumber(latest?.mean_direction_deg);
+    const spread = finiteNumber(latest?.peak_directional_spread_deg) ?? finiteNumber(latest?.mean_directional_spread_deg);
+    const heightText = formatSpotterNumber(latest?.significant_wave_height_m, 2, 'm');
+    const periodText = formatSpotterNumber(latest?.peak_period_s, 1, 's');
+    setText('spotter-sample-time', formatSpotterTimestamp(latest?.timestamp || page.dataset.lastUpdateIso));
+    setText('spotter-wave-readout', `${heightText} @ ${periodText} from ${spotterBearing(direction)}`);
+    setText('spotter-wave-caption', latest ? `Latest valid wave observation: ${formatSpotterTimestamp(latest.timestamp)}.` : 'No valid wave observation in the selected window.');
+    setText('spotter-station-name', station.name || page.querySelector('.station-heading h1')?.textContent || 'Spotter buoy');
+    const first = rows?.[0]?.timestamp;
+    const last = rows?.[rows.length - 1]?.timestamp;
+    setText('spotter-station-range', first && last ? `${formatSpotterTimestamp(first)} to ${formatSpotterTimestamp(last)}` : 'No timestamp range available.');
+    const lat = finiteNumber(station.lat);
+    const lon = finiteNumber(station.lon);
+    setText('spotter-latitude', lat === null ? '--' : lat.toFixed(4));
+    setText('spotter-longitude', lon === null ? '--' : lon.toFixed(4));
+    setText('spotter-direction-headline', spotterBearing(direction));
+    setText('spotter-directional-spread-card', spread === null ? '--' : `${spread.toFixed(0)} deg`);
+    setText('spotter-spread-class', spotterSpreadClass(spread));
+    setText('spotter-peak-direction', spotterBearing(finiteNumber(latest?.peak_direction_deg)));
+    setText('spotter-mean-direction', spotterBearing(finiteNumber(latest?.mean_direction_deg)));
+    setText('spotter-directional-spread', spread === null ? '--' : `${spread.toFixed(0)} deg (${spotterSpreadClass(spread)})`);
+    setText('spotter-wave-system', latest ? spotterWaveSystem(latest) : '--');
+    updateSpotterCompass(direction, spread);
+
+    const validHs = spotterMetricValues(rows, 'significant_wave_height_m').length;
+    const gaps = spotterGapStats(rows);
+    const sourcePoints = finiteNumber(payload?.sampling?.source_points);
+    setText('spotter-valid-count', String(validHs));
+    setText('spotter-unique-count', String(sourcePoints || gaps.unique));
+    setText('spotter-gap-count', String(gaps.gaps));
+    setText('spotter-coverage-period', state.spotterPeriod);
+  }
+
+  function renderSpotterTimeline(rows) {
+    const hsValues = spotterMetricValues(rows, 'significant_wave_height_m');
+    if (!hsValues.length) {
+      spotterEmpty('spotter-timeline', 'No significant wave height samples are present in MongoDB for the selected window.');
+      return;
+    }
+    const x = rows.map((row) => row.timestamp);
+    const maxHs = Math.max(...hsValues);
+    const focusedMax = quantile(hsValues, 0.96) || maxHs;
+    const yMax = state.spotterFullRange ? Math.max(1, Math.ceil((maxHs + 0.25) * 2) / 2) : Math.max(1, focusedMax * 1.18);
+    const shapes = spotterSeaStateBins.map((bin) => ({
+      type: 'rect',
+      xref: 'paper',
+      yref: 'y',
+      x0: 0,
+      x1: 1,
+      y0: bin.min,
+      y1: Number.isFinite(bin.max) ? Math.min(bin.max, yMax) : yMax,
+      fillcolor: hexToRgba(bin.color, 0.18),
+      line: { width: 0 },
+      layer: 'below',
+    })).filter((shape) => shape.y0 < yMax);
+    spotterPlot('spotter-timeline', [
+      {
+        x,
+        y: rows.map((row) => row.significant_wave_height_m),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Significant wave height Hs',
+        line: { color: '#6d28d9', width: 2.6 },
+        marker: { size: 5, color: '#6d28d9' },
+        xaxis: 'x',
+        yaxis: 'y',
+        hovertemplate: '%{x}<br>Hs %{y:.2f} m<extra></extra>',
+      },
+      {
+        x,
+        y: rows.map((row) => row.peak_period_s),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Peak period Tp',
+        line: { color: '#0f766e', width: 2.2 },
+        marker: { size: 4 },
+        xaxis: 'x2',
+        yaxis: 'y2',
+        hovertemplate: '%{x}<br>Tp %{y:.2f} s<extra></extra>',
+      },
+      {
+        x,
+        y: rows.map((row) => row.mean_period_s),
+        type: 'scatter',
+        mode: 'lines',
+        name: 'Mean period Tm',
+        line: { color: '#64748b', width: 2, dash: 'dot' },
+        xaxis: 'x2',
+        yaxis: 'y2',
+        hovertemplate: '%{x}<br>Tm %{y:.2f} s<extra></extra>',
+      },
+      {
+        x,
+        y: rows.map((row) => normalizeDegrees(row.peak_direction_deg)),
+        type: 'scatter',
+        mode: 'markers',
+        name: 'Peak wave direction',
+        marker: { size: 7, color: rows.map((row) => normalizeDegrees(row.peak_direction_deg)), colorscale: 'Turbo', cmin: 0, cmax: 360, showscale: false },
+        xaxis: 'x3',
+        yaxis: 'y3',
+        hovertemplate: '%{x}<br>Peak direction %{y:.0f} deg<extra></extra>',
+      },
+    ], {
+      grid: { rows: 3, columns: 1, pattern: 'independent', roworder: 'top to bottom' },
+      margin: { t: 16, r: 28, b: 50, l: 62 },
+      shapes,
+      xaxis: { showticklabels: false, gridcolor: 'rgba(91,101,118,.12)' },
+      xaxis2: { showticklabels: false, gridcolor: 'rgba(91,101,118,.12)', matches: 'x' },
+      xaxis3: { gridcolor: 'rgba(91,101,118,.12)', matches: 'x' },
+      yaxis: { title: 'Hs (m)', range: [0, yMax], gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis2: { title: 'Period (s)', gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis3: { title: 'Direction', range: [0, 360], tickvals: [0, 90, 180, 270, 360], ticktext: ['N/0', 'E/90', 'S/180', 'W/270', 'N/360'], gridcolor: 'rgba(91,101,118,.12)' },
+      legend: { orientation: 'h', y: 1.06, x: 0, font: { size: 11 } },
+      showlegend: true,
+    });
+  }
+
+  function renderSpotterSeaStateBars(rows) {
+    const values = spotterMetricValues(rows, 'significant_wave_height_m');
+    if (!values.length) {
+      spotterEmpty('spotter-sea-state-bars', 'No significant wave height samples are present for category share.');
+      return;
+    }
+    const counts = new Map(spotterSeaStateBins.map((bin) => [bin.label, 0]));
+    values.forEach((value) => {
+      const bin = spotterSeaState(value);
+      if (bin) counts.set(bin.label, counts.get(bin.label) + 1);
+    });
+    const bins = [...spotterSeaStateBins].reverse();
+    const percentages = bins.map((bin) => (counts.get(bin.label) || 0) * 100 / values.length);
+    spotterPlot('spotter-sea-state-bars', [{
+      x: percentages,
+      y: bins.map((bin) => bin.label),
+      type: 'bar',
+      orientation: 'h',
+      marker: { color: bins.map((bin) => bin.color) },
+      text: percentages.map((value) => `${value.toFixed(1)}%`),
+      textposition: 'auto',
+      hovertemplate: '%{y}<br>%{x:.1f}%<extra></extra>',
+    }], {
+      margin: { t: 8, r: 20, b: 44, l: 82 },
+      xaxis: { title: 'Share (%)', range: [0, Math.max(10, Math.ceil(Math.max(...percentages) / 10) * 10)], gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis: { automargin: true },
+      showlegend: false,
+    });
+  }
+
+  function renderSpotterWaveRose(rows) {
+    const sectorWidth = 360 / spotterSectorCount;
+    const sectors = Array.from({ length: spotterSectorCount }, (_, index) => index * sectorWidth);
+    const totals = spotterWaveBins.map(() => Array(spotterSectorCount).fill(0));
+    let totalWeight = 0;
+    (rows || []).forEach((row) => {
+      const direction = normalizeDegrees(row.peak_direction_deg ?? row.mean_direction_deg);
+      const height = finiteNumber(row.significant_wave_height_m);
+      const bin = spotterWaveBin(height);
+      if (direction === null || height === null || !bin) return;
+      const sectorIndex = Math.round(direction / sectorWidth) % spotterSectorCount;
+      const binIndex = spotterWaveBins.indexOf(bin);
+      const weight = state.spotterRoseMode === 'energy' ? height * height : 1;
+      totals[binIndex][sectorIndex] += weight;
+      totalWeight += weight;
+    });
+    if (!totalWeight) {
+      spotterEmpty('spotter-wave-rose', 'No wave direction and wave height pairs are present for the selected window.');
+      return;
+    }
+    const traces = spotterWaveBins.map((bin, binIndex) => ({
+      type: 'barpolar',
+      r: totals[binIndex].map((value) => value * 100 / totalWeight),
+      theta: sectors,
+      width: sectorWidth,
+      name: `Wave ${bin.label}`,
+      marker: { color: bin.color, line: { color: 'rgba(255,255,255,.75)', width: 0.6 } },
+      hovertemplate: `%{theta:.0f} deg<br>${App.escapeHtml(bin.label)} %{r:.2f}%<extra></extra>`,
+    }));
+    spotterPlot('spotter-wave-rose', traces, {
+      margin: { t: 16, r: 18, b: 34, l: 18 },
+      polar: {
+        bgcolor: 'rgba(0,0,0,0)',
+        angularaxis: { direction: 'clockwise', rotation: 90, tickfont: { size: 11 } },
+        radialaxis: { ticksuffix: '%', gridcolor: 'rgba(91,101,118,.14)', angle: 90, tickfont: { size: 10 } },
+      },
+      legend: { orientation: 'h', y: -0.08, x: 0, font: { size: 11 } },
+      showlegend: true,
+    });
+  }
+
+  function renderSpotterRegime(rows) {
+    const pairs = (rows || []).filter((row) => finiteNumber(row.significant_wave_height_m) !== null && finiteNumber(row.peak_period_s) !== null);
+    if (!pairs.length) {
+      spotterEmpty('spotter-regime-scatter', 'No Hs and Tp pairs are present for the selected window.');
+      return;
+    }
+    spotterPlot('spotter-regime-scatter', [{
+      x: pairs.map((row) => row.peak_period_s),
+      y: pairs.map((row) => row.significant_wave_height_m),
+      type: 'scatter',
+      mode: 'markers',
+      name: 'Wave samples',
+      marker: {
+        size: pairs.map((row) => Math.max(7, Math.min(24, (finiteNumber(row.peak_directional_spread_deg ?? row.mean_directional_spread_deg) || 35) / 3.5))),
+        color: pairs.map((row) => normalizeDegrees(row.peak_direction_deg)),
+        colorscale: 'Turbo',
+        cmin: 0,
+        cmax: 360,
+        opacity: 0.82,
+        line: { color: '#ffffff', width: 0.7 },
+        colorbar: { title: { text: 'Peak dir (deg)' }, thickness: 12, len: 0.78, outlinewidth: 0 },
+      },
+      hovertemplate: 'Tp %{x:.2f} s<br>Hs %{y:.2f} m<br>Peak dir %{marker.color:.0f} deg<extra></extra>',
+    }], {
+      margin: { t: 12, r: 74, b: 50, l: 58 },
+      shapes: [
+        { type: 'rect', xref: 'x', yref: 'paper', x0: 0, x1: 8, y0: 0, y1: 1, fillcolor: 'rgba(15,118,110,.08)', line: { width: 0 }, layer: 'below' },
+        { type: 'rect', xref: 'x', yref: 'paper', x0: 8, x1: 28, y0: 0, y1: 1, fillcolor: 'rgba(91,33,182,.08)', line: { width: 0 }, layer: 'below' },
+        { type: 'line', xref: 'x', yref: 'paper', x0: 8, x1: 8, y0: 0, y1: 1, line: { color: 'rgba(15,118,110,.38)', dash: 'dot', width: 1.4 } },
+      ],
+      xaxis: { title: 'Peak period Tp (s)', gridcolor: 'rgba(91,101,118,.12)', rangemode: 'tozero' },
+      yaxis: { title: 'Hs (m)', gridcolor: 'rgba(91,101,118,.12)', rangemode: 'tozero' },
+      showlegend: false,
+    });
+  }
+
+  function renderSpotterExceedance(rows) {
+    const values = spotterMetricValues(rows, 'significant_wave_height_m').sort((a, b) => a - b);
+    if (!values.length) {
+      spotterEmpty('spotter-exceedance', 'No significant wave height samples are present for exceedance.');
+      return;
+    }
+    const count = values.length;
+    const y = values.map((_, index) => (count - index) * 100 / count);
+    spotterPlot('spotter-exceedance', [{
+      x: values,
+      y,
+      type: 'scatter',
+      mode: 'lines',
+      name: 'Exceedance',
+      line: { color: '#6d28d9', width: 3 },
+      hovertemplate: 'Threshold %{x:.2f} m<br>Exceedance %{y:.1f}%<extra></extra>',
+    }], {
+      xaxis: { title: 'Significant wave height Hs (m)', gridcolor: 'rgba(91,101,118,.12)', rangemode: 'tozero' },
+      yaxis: { title: 'Exceedance (%)', range: [0, 100], gridcolor: 'rgba(91,101,118,.12)' },
+      showlegend: false,
+    });
+  }
+
+  function renderSpotterHistogram(rows) {
+    const values = spotterMetricValues(rows, 'significant_wave_height_m');
+    if (!values.length) {
+      spotterEmpty('spotter-histogram', 'No significant wave height samples are present for the histogram.');
+      return;
+    }
+    spotterPlot('spotter-histogram', [{
+      x: values,
+      type: 'histogram',
+      nbinsx: 28,
+      marker: { color: '#8b5cf6', line: { color: '#ffffff', width: 0.7 } },
+      hovertemplate: 'Hs %{x:.2f} m<br>Count %{y}<extra></extra>',
+    }], {
+      xaxis: { title: 'Hs (m)', gridcolor: 'rgba(91,101,118,.12)', rangemode: 'tozero' },
+      yaxis: { title: 'Count', gridcolor: 'rgba(91,101,118,.12)', rangemode: 'tozero' },
+      showlegend: false,
+    });
+  }
+
+  function renderSpotterDailyBox(rows) {
+    const points = (rows || []).filter((row) => finiteNumber(row.significant_wave_height_m) !== null);
+    if (!points.length) {
+      spotterEmpty('spotter-daily-box', 'No significant wave height samples are present for daily box plots.');
+      return;
+    }
+    spotterPlot('spotter-daily-box', [{
+      x: points.map((row) => spotterDateKey(row.timestamp)),
+      y: points.map((row) => row.significant_wave_height_m),
+      type: 'box',
+      name: 'Daily Hs',
+      boxpoints: 'outliers',
+      marker: { color: '#8b5cf6', opacity: 0.72 },
+      line: { color: '#6d28d9' },
+      hovertemplate: '%{x}<br>Hs %{y:.2f} m<extra></extra>',
+    }], {
+      xaxis: { title: 'Date', gridcolor: 'rgba(91,101,118,.12)', tickangle: -35 },
+      yaxis: { title: 'Hs (m)', gridcolor: 'rgba(91,101,118,.12)', rangemode: 'tozero' },
+      showlegend: false,
+    });
+  }
+
+  function renderSpotterSpreadTimeline(rows) {
+    const hasSpread = spotterMetricValues(rows, 'mean_directional_spread_deg').length || spotterMetricValues(rows, 'peak_directional_spread_deg').length;
+    if (!hasSpread) {
+      spotterEmpty('spotter-spread-timeline', 'No directional spread samples are present for the selected window.');
+      return;
+    }
+    const x = rows.map((row) => row.timestamp);
+    spotterPlot('spotter-spread-timeline', [
+      {
+        x,
+        y: rows.map((row) => row.mean_directional_spread_deg),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Mean spread',
+        line: { color: '#64748b', width: 2 },
+        marker: { size: 4 },
+        hovertemplate: '%{x}<br>Mean spread %{y:.1f} deg<extra></extra>',
+      },
+      {
+        x,
+        y: rows.map((row) => row.peak_directional_spread_deg),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Peak spread',
+        line: { color: '#6d28d9', width: 2.4 },
+        marker: { size: 4 },
+        hovertemplate: '%{x}<br>Peak spread %{y:.1f} deg<extra></extra>',
+      },
+    ], {
+      xaxis: { gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis: { title: 'Spread (deg)', range: [0, 100], gridcolor: 'rgba(91,101,118,.12)' },
+      legend: { orientation: 'h', y: 1.1, x: 0 },
+      showlegend: true,
+    });
+  }
+
+  function renderSpotterWindRose(rows) {
+    const windRows = (rows || []).filter((row) => finiteNumber(row.wind_speed_m_s) !== null && normalizeDegrees(row.wind_direction_deg) !== null);
+    if (!windRows.length) {
+      spotterEmpty('spotter-wind-rose', 'No wind speed and wind direction samples are present in MongoDB for the selected window.');
+      return;
+    }
+    const bins = [
+      { label: '0-2 m/s', min: 0, max: 2, color: '#c7f3ef' },
+      { label: '2-5 m/s', min: 2, max: 5, color: '#8dded9' },
+      { label: '5-8 m/s', min: 5, max: 8, color: '#9b7df0' },
+      { label: '>8 m/s', min: 8, max: Infinity, color: '#4c1d95' },
+    ];
+    const sectorWidth = 360 / spotterSectorCount;
+    const sectors = Array.from({ length: spotterSectorCount }, (_, index) => index * sectorWidth);
+    const totals = bins.map(() => Array(spotterSectorCount).fill(0));
+    windRows.forEach((row) => {
+      const speed = finiteNumber(row.wind_speed_m_s);
+      const direction = normalizeDegrees(row.wind_direction_deg);
+      const binIndex = bins.findIndex((bin) => speed >= bin.min && speed < bin.max);
+      if (binIndex < 0 || direction === null) return;
+      totals[binIndex][Math.round(direction / sectorWidth) % spotterSectorCount] += 1;
+    });
+    const total = windRows.length;
+    spotterPlot('spotter-wind-rose', bins.map((bin, index) => ({
+      type: 'barpolar',
+      r: totals[index].map((value) => value * 100 / total),
+      theta: sectors,
+      width: sectorWidth,
+      name: bin.label,
+      marker: { color: bin.color, line: { color: '#ffffff', width: 0.6 } },
+      hovertemplate: `%{theta:.0f} deg<br>${App.escapeHtml(bin.label)} %{r:.2f}%<extra></extra>`,
+    })), {
+      margin: { t: 16, r: 18, b: 34, l: 18 },
+      polar: {
+        bgcolor: 'rgba(0,0,0,0)',
+        angularaxis: { direction: 'clockwise', rotation: 90 },
+        radialaxis: { ticksuffix: '%', gridcolor: 'rgba(91,101,118,.14)' },
+      },
+      legend: { orientation: 'h', y: -0.08, x: 0 },
+      showlegend: true,
+    });
+  }
+
+  function renderSpotterAlignment(rows) {
+    const aligned = (rows || []).map((row) => ({
+      timestamp: row.timestamp,
+      diff: angularDifference(row.wind_direction_deg, row.peak_direction_deg),
+      speed: finiteNumber(row.wind_speed_m_s),
+    })).filter((row) => row.diff !== null);
+    if (!aligned.length) {
+      spotterEmpty('spotter-alignment', 'Wind-wave alignment needs both wind direction and peak wave direction samples in MongoDB.');
+      return;
+    }
+    spotterPlot('spotter-alignment', [{
+      x: aligned.map((row) => row.timestamp),
+      y: aligned.map((row) => row.diff),
+      type: 'scatter',
+      mode: 'markers',
+      marker: {
+        size: aligned.map((row) => Math.max(7, Math.min(20, (row.speed || 1) * 2.2))),
+        color: aligned.map((row) => row.speed || 0),
+        colorscale: 'Viridis',
+        showscale: true,
+        colorbar: { title: { text: 'Wind (m/s)' }, thickness: 12, outlinewidth: 0 },
+        line: { color: '#ffffff', width: 0.7 },
+      },
+      hovertemplate: '%{x}<br>Angular difference %{y:.1f} deg<extra></extra>',
+    }], {
+      margin: { t: 12, r: 74, b: 50, l: 58 },
+      xaxis: { gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis: { title: 'Difference (deg)', range: [0, 180], gridcolor: 'rgba(91,101,118,.12)' },
+      showlegend: false,
+    });
+  }
+
+  function renderSpotterMetTimeline(rows) {
+    const traces = [];
+    const x = (rows || []).map((row) => row.timestamp);
+    if (spotterMetricValues(rows, 'surface_temperature_c').length) {
+      traces.push({
+        x,
+        y: rows.map((row) => row.surface_temperature_c),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Surface temperature',
+        line: { color: '#d97706', width: 2 },
+        marker: { size: 4 },
+        xaxis: 'x',
+        yaxis: 'y',
+        hovertemplate: '%{x}<br>Temperature %{y:.2f} deg C<extra></extra>',
+      });
+    }
+    if (spotterMetricValues(rows, 'mean_barometric_pressure_hpa').length) {
+      traces.push({
+        x,
+        y: rows.map((row) => row.mean_barometric_pressure_hpa),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Pressure',
+        line: { color: '#2563eb', width: 2 },
+        marker: { size: 4 },
+        xaxis: 'x2',
+        yaxis: 'y2',
+        hovertemplate: '%{x}<br>Pressure %{y:.2f} hPa<extra></extra>',
+      });
+    }
+    if (spotterMetricValues(rows, 'humidity_pct').length) {
+      traces.push({
+        x,
+        y: rows.map((row) => row.humidity_pct),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Humidity',
+        line: { color: '#0f766e', width: 2 },
+        marker: { size: 4 },
+        xaxis: 'x3',
+        yaxis: 'y3',
+        hovertemplate: '%{x}<br>Humidity %{y:.1f}%<extra></extra>',
+      });
+    }
+    if (!traces.length) {
+      spotterEmpty('spotter-met-timeline', 'No surface temperature, pressure, or humidity samples are present in MongoDB for the selected window.');
+      return;
+    }
+    spotterPlot('spotter-met-timeline', traces, {
+      grid: { rows: 3, columns: 1, pattern: 'independent', roworder: 'top to bottom' },
+      margin: { t: 16, r: 28, b: 50, l: 70 },
+      xaxis: { showticklabels: false, gridcolor: 'rgba(91,101,118,.12)' },
+      xaxis2: { showticklabels: false, gridcolor: 'rgba(91,101,118,.12)', matches: 'x' },
+      xaxis3: { gridcolor: 'rgba(91,101,118,.12)', matches: 'x' },
+      yaxis: { title: 'deg C', gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis2: { title: 'hPa', gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis3: { title: '%', range: [0, 100], gridcolor: 'rgba(91,101,118,.12)' },
+      legend: { orientation: 'h', y: 1.08, x: 0 },
+      showlegend: true,
+    });
+  }
+
+  function renderSpotterTelemetry(rows) {
+    const traces = [];
+    const x = (rows || []).map((row) => row.timestamp);
+    if (spotterMetricValues(rows, 'battery_voltage_v').length) {
+      traces.push({
+        x,
+        y: rows.map((row) => row.battery_voltage_v),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Battery voltage',
+        line: { color: '#6d28d9', width: 2.4 },
+        marker: { size: 4 },
+        yaxis: 'y',
+        hovertemplate: '%{x}<br>Voltage %{y:.2f} V<extra></extra>',
+      });
+    }
+    if (spotterMetricValues(rows, 'battery_power_w').length) {
+      traces.push({
+        x,
+        y: rows.map((row) => row.battery_power_w),
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Battery power',
+        line: { color: '#0f766e', width: 2.2 },
+        marker: { size: 4 },
+        yaxis: 'y2',
+        hovertemplate: '%{x}<br>Power %{y:.2f} W<extra></extra>',
+      });
+    }
+    if (!traces.length) {
+      spotterEmpty('spotter-telemetry', 'No battery voltage or battery power samples are present in MongoDB for the selected window.');
+      return;
+    }
+    spotterPlot('spotter-telemetry', traces, {
+      margin: { t: 12, r: 64, b: 50, l: 58 },
+      xaxis: { gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis: { title: 'Voltage (V)', gridcolor: 'rgba(91,101,118,.12)' },
+      yaxis2: { title: 'Power (W)', overlaying: 'y', side: 'right', gridcolor: 'rgba(91,101,118,0)' },
+      legend: { orientation: 'h', y: 1.08, x: 0 },
+      showlegend: true,
+    });
+  }
+
+  function syncSpotterControls() {
+    document.querySelectorAll('#spotter-period-buttons button').forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.spotterPeriod === state.spotterPeriod);
+    });
+    const aggregation = document.getElementById('spotter-aggregation-select');
+    if (aggregation) aggregation.value = state.spotterAggregation;
+    const roseMode = document.getElementById('spotter-rose-mode');
+    if (roseMode) roseMode.value = state.spotterRoseMode;
+    const fullRange = document.getElementById('spotter-full-range-toggle');
+    if (fullRange) fullRange.checked = state.spotterFullRange;
+    document.querySelectorAll('#spotter-tabs button').forEach((button) => {
+      button.classList.toggle('is-active', button.dataset.spotterPanel === state.spotterPanel);
+    });
+    document.querySelectorAll('.spotter-panel[data-spotter-panel]').forEach((panel) => {
+      const active = panel.dataset.spotterPanel === state.spotterPanel;
+      panel.classList.toggle('is-active', active);
+      panel.hidden = !active;
+    });
+  }
+
+  function spotterPanelFromHash() {
+    const value = String(window.location.hash || '').replace(/^#/, '');
+    const aliases = {
+      overview: 'overview',
+      waves: 'waves',
+      'wave-analysis': 'waves',
+      met: 'met',
+      meteorology: 'met',
+      telemetry: 'met',
+    };
+    return aliases[value] || '';
+  }
+
+  function renderSpotterActivePanel() {
+    if (!isSpotterBuoy()) return;
+    const rawRows = state.spotterRows || [];
+    const displayRows = spotterAggregateRows(rawRows, state.spotterAggregation);
+    const sparseRows = spotterRowsForSparsePanels(rawRows);
+    const sparseDisplayRows = spotterAggregateRows(sparseRows, state.spotterAggregation);
+    syncSpotterControls();
+    if (state.spotterPanel === 'overview') {
+      renderSpotterTimeline(displayRows);
+      renderSpotterSeaStateBars(rawRows);
+      renderSpotterWaveRose(rawRows);
+      renderSpotterRegime(rawRows);
+    } else if (state.spotterPanel === 'waves') {
+      renderSpotterExceedance(rawRows);
+      renderSpotterHistogram(rawRows);
+      renderSpotterDailyBox(rawRows);
+      renderSpotterSpreadTimeline(displayRows);
+    } else if (state.spotterPanel === 'met') {
+      renderSpotterWindRose(sparseRows);
+      renderSpotterAlignment(sparseRows);
+      renderSpotterMetTimeline(sparseDisplayRows);
+      renderSpotterTelemetry(sparseDisplayRows);
+    }
+    scheduleActiveChartResize();
+  }
+
+  function renderSpotterDashboard(payload, supplementPayload = state.spotterSupplementPayload) {
+    state.spotterPayload = payload;
+    state.spotterRows = spotterRowsFromPayload(payload);
+    state.spotterSupplementPayload = supplementPayload || null;
+    state.spotterSupplementRows = supplementPayload ? spotterRowsFromPayload(supplementPayload) : [];
+    renderSpotterSummary(payload, state.spotterRows);
+    renderSpotterActivePanel();
+  }
+
+  function spotterCacheKey() {
+    return [state.spotterPeriod, metricQueryValue(spotterMetricKeys), 'default-display-points'].join('|');
+  }
+
+  async function loadSpotterDashboard(force = false) {
+    const key = spotterCacheKey();
+    const cached = cachedPayload(state.spotterCache, key);
+    if (!force && cached) {
+      const cachedPayloadValue = cached.payload || cached;
+      renderSpotterDashboard(cachedPayloadValue, cached.supplementPayload || null);
+      return cachedPayloadValue;
+    }
+    const requestId = ++state.spotterRequestId;
+    ['spotter-timeline', 'spotter-sea-state-bars', 'spotter-wave-rose', 'spotter-regime-scatter'].forEach((id) => {
+      spotterEmpty(id, 'Loading Spotter buoy samples from MongoDB.');
+    });
+    const url = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/timeseries`, window.location.origin);
+    url.searchParams.set('period', state.spotterPeriod);
+    url.searchParams.set('aggregation', 'raw');
+    url.searchParams.set('metrics', metricQueryValue(spotterMetricKeys));
+    const payload = await App.fetchJSON(url.toString());
+    if (requestId !== state.spotterRequestId) return null;
+    const selectedRows = spotterRowsFromPayload(payload);
+    let supplementPayload = null;
+    if (state.spotterPeriod !== 'ALL' && !spotterRowsHaveAny(selectedRows, spotterSparseMetricKeys)) {
+      const supplementUrl = new URL(`/api/stations/${encodeURIComponent(state.stationId)}/timeseries`, window.location.origin);
+      supplementUrl.searchParams.set('period', 'ALL');
+      supplementUrl.searchParams.set('aggregation', 'raw');
+      supplementUrl.searchParams.set('metrics', metricQueryValue(spotterMetricKeys));
+      supplementPayload = await App.fetchJSON(supplementUrl.toString());
+      if (requestId !== state.spotterRequestId) return null;
+    }
+    rememberPayload(state.spotterCache, key, { payload, supplementPayload });
+    renderSpotterDashboard(payload, supplementPayload);
+    return payload;
+  }
+
+  function wireSpotterControls() {
+    state.spotterPanel = spotterPanelFromHash() || state.spotterPanel;
+    syncSpotterControls();
+    document.querySelectorAll('#spotter-period-buttons button').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.spotterPeriod = button.dataset.spotterPeriod || '30D';
+        syncSpotterControls();
+        loadSpotterDashboard(true);
+      });
+    });
+    document.getElementById('spotter-aggregation-select')?.addEventListener('change', (event) => {
+      state.spotterAggregation = event.target.value || 'raw';
+      renderSpotterActivePanel();
+    });
+    document.getElementById('spotter-rose-mode')?.addEventListener('change', (event) => {
+      state.spotterRoseMode = event.target.value || 'energy';
+      renderSpotterActivePanel();
+    });
+    document.getElementById('spotter-full-range-toggle')?.addEventListener('change', (event) => {
+      state.spotterFullRange = event.target.checked;
+      renderSpotterActivePanel();
+    });
+    document.querySelectorAll('#spotter-tabs button').forEach((button) => {
+      button.addEventListener('click', () => {
+        state.spotterPanel = button.dataset.spotterPanel || 'overview';
+        if (window.history?.replaceState) {
+          window.history.replaceState(null, '', `#${state.spotterPanel}`);
+        }
+        renderSpotterActivePanel();
+      });
+    });
+  }
+
   function makeCard(card, periodLabel = state.quickPeriod) {
     const unit = card.unit || '';
     if (isUnderwaterStation()) {
@@ -613,7 +1709,7 @@
           <small>${App.escapeHtml(periodLabel)}</small>
         </div>
         <div class="metric-current">
-          <small>Current</small>
+          <small>Latest</small>
           <strong>${metricValue(card.latest, unit)}</strong>
         </div>
         <div class="metric-stat-grid">
@@ -642,14 +1738,16 @@
 
     if (label) label.textContent = period;
     if (!payload.cards?.length) {
-      const heading = isUnderwaterStation() ? 'No statistics available' : 'No current readings';
+      const heading = isUnderwaterStation() ? 'No statistics available' : 'No latest readings';
       const message = payload.message || 'No data was available for the selected display period.';
       container.innerHTML = `<article class="empty-state"><h2>${heading}</h2><p>${App.escapeHtml(message)}</p></article>`;
+      updateSpotterOverview(payload);
       renderQuickTrends(payload);
       return;
     }
 
     container.innerHTML = payload.cards.map((card) => makeCard(card, period)).join('');
+    updateSpotterOverview(payload);
     renderQuickTrends(payload);
   }
 
@@ -698,7 +1796,7 @@
         <header>
           <div>
             <h3>${App.escapeHtml(trend.label)}</h3>
-            <p>Current ${metricValue(trend.summary?.latest, trend.unit)} &middot; Mean ${displayValue(trend.summary?.mean)} &middot; Min ${displayValue(trend.summary?.min)} &middot; Max ${displayValue(trend.summary?.max)}</p>
+            <p>Latest ${metricValue(trend.summary?.latest, trend.unit)} &middot; Mean ${displayValue(trend.summary?.mean)} &middot; Min ${displayValue(trend.summary?.min)} &middot; Max ${displayValue(trend.summary?.max)}</p>
           </div>
         </header>
         <div id="${hostId}" class="chart-host quick-trend-host"></div>
@@ -838,7 +1936,7 @@
   function chartMetaHtml(chart) {
     if (!chart.sensorCharts?.length) {
       return `
-        <span>Current ${displayValue(chart.summary.latest)}</span>
+        <span>Latest ${displayValue(chart.summary.latest)}</span>
         <span>Mean ${displayValue(chart.summary.mean)}</span>
         <span>Min ${displayValue(chart.summary.min)}</span>
         <span>Max ${displayValue(chart.summary.max)}</span>
@@ -853,7 +1951,7 @@
       .filter((item) => item.value !== null);
     const gap = latest.length >= 2 ? roundStat(Math.abs(latest[0].value - latest[1].value)) : null;
     return `
-      <span>Current mean ${displayValue(chart.summary.latest)}</span>
+      <span>Latest mean ${displayValue(chart.summary.latest)}</span>
       <span>Mean ${displayValue(chart.summary.mean)}</span>
       ${latest.map((item) => `<span>${App.escapeHtml(item.label)} ${displayValue(item.value)}</span>`).join('')}
       ${gap !== null ? `<span>Gap ${displayValue(gap)}</span>` : ''}
@@ -1829,6 +2927,11 @@
 
   async function init() {
     wireControls();
+    if (isSpotterBuoy()) {
+      wireSpotterControls();
+      await loadSpotterDashboard();
+      return;
+    }
     syncPeriodControls();
     if (shouldUseDateRangeControls()) {
       await initDateRangeControls();
